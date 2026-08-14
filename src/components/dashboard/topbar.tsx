@@ -17,7 +17,7 @@ export function Topbar() {
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
       <div className="flex min-w-0 items-center gap-2">
         <span className="truncate text-sm font-medium">
-          GIS Unit · Technical Optimization
+          GIS Unit · Technical Services
         </span>
         <span className="hidden text-xs text-muted-foreground sm:inline">· FY2026</span>
       </div>

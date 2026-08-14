@@ -1,6 +1,6 @@
 # GIS Team KPI Performance Dashboard
 
-Auditable, role-based KPI performance management for the **GIS Unit** (Technical Services · Technical Optimization). Next.js 15 (App Router) + Convex + Vercel AI SDK, with a deterministic scoring engine, evidence-backed activities, review/approval workflow, structured-AI PDF reports, and professional Excel export.
+Auditable, role-based KPI performance management for the **GIS Unit** (Technical Services). Next.js 15 (App Router) + Convex + Vercel AI SDK, with a deterministic scoring engine, evidence-backed activities, review/approval workflow, structured-AI PDF reports, and professional Excel export.
 
 > Every score is reproducible from source activity + evidence; every normalization of the 2026 workbook is surfaced as an admin-approvable data-quality issue — nothing is silently corrected.
 

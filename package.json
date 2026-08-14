@@ -2,7 +2,7 @@
   "name": "gis-kpi-dashboard",
   "version": "0.1.0",
   "private": true,
-  "description": "GIS Team KPI Performance Dashboard — auditable, role-based performance management for the GIS Unit (Technical Services / Technical Optimization).",
+  "description": "GIS Team KPI Performance Dashboard — auditable, role-based performance management for the GIS Unit (Technical Services).",
   "engines": {
     "node": ">=18.18.0"
   },

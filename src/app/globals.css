@@ -12,8 +12,9 @@
  */
 @layer base {
   :root {
-    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-      "Helvetica Neue", Arial, sans-serif;
+    --font-sans:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+      Arial, sans-serif;
     --font-mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
 
     --radius: 0.625rem;
@@ -168,25 +169,21 @@
 @layer components {
   .gis-marquee {
     @apply relative overflow-hidden;
-    mask-image: linear-gradient(
-      90deg,
-      transparent,
-      black 8%,
-      black 92%,
-      transparent
-    );
+    mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
   }
   .gis-marquee__track {
     @apply flex w-max whitespace-nowrap;
-    animation: marquee-scroll 30s linear infinite;
+    animation: marquee-scroll 22s linear infinite; /* medium scroll speed */
     will-change: transform;
   }
   .gis-marquee__chip {
     @apply inline-flex items-center gap-2 px-6 text-sm font-semibold tracking-wide;
     color: hsl(var(--brand-foreground));
-    animation: marquee-breathe 6s ease-in-out infinite;
+    /* Zoom in/out while scrolling — medium pulse, clearly visible. */
+    animation: marquee-breathe 3s ease-in-out infinite;
     text-shadow: 0 0 12px hsl(var(--brand) / 0.65);
     transform-origin: center;
+    will-change: transform;
   }
   .gis-marquee:hover .gis-marquee__track,
   .gis-marquee:focus-within .gis-marquee__track {
@@ -195,6 +192,31 @@
   .gis-marquee:hover .gis-marquee__chip,
   .gis-marquee:focus-within .gis-marquee__chip {
     animation-play-state: paused;
+  }
+}
+
+/* Marquee + shimmer keyframes — defined here so they are always emitted
+   (Tailwind only emits keyframes for `animate-*` utilities that are used). */
+@keyframes marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes marquee-breathe {
+  0%,
+  100% {
+    transform: scale(0.9);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
   }
 }
 

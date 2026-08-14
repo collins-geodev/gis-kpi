@@ -70,16 +70,23 @@ export const seedBaseline = internalMutation({
         name: "Technical Services",
       }));
 
+    const UNIT_NAME = "Technical Services";
     const units = await ctx.db
       .query("units")
       .withIndex("by_department", (q) => q.eq("departmentId", departmentId))
       .collect();
-    const unitId =
-      units.find((u) => u.name === "Technical Optimization")?._id ??
-      (await ctx.db.insert("units", {
-        departmentId,
-        name: "Technical Optimization",
-      }));
+    // There is a single GIS unit under the department; adopt + rename it if it
+    // exists (so renaming the unit never creates a duplicate).
+    const existingUnit = units[0];
+    let unitId;
+    if (existingUnit) {
+      unitId = existingUnit._id;
+      if (existingUnit.name !== UNIT_NAME) {
+        await ctx.db.patch(unitId, { name: UNIT_NAME });
+      }
+    } else {
+      unitId = await ctx.db.insert("units", { departmentId, name: UNIT_NAME });
+    }
 
     const teams = await ctx.db
       .query("teams")

@@ -51,9 +51,7 @@ export default function SignInPage() {
             </div>
             <div>
               <CardTitle className="text-lg">GIS KPI Performance Dashboard</CardTitle>
-              <CardDescription>
-                Technical Services · Technical Optimization
-              </CardDescription>
+              <CardDescription>Technical Services · GIS Unit</CardDescription>
             </div>
           </div>
         </CardHeader>

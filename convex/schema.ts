@@ -65,7 +65,7 @@ export default defineSchema({
 
   units: defineTable({
     departmentId: v.id("departments"),
-    name: v.string(), // "Technical Optimization"
+    name: v.string(), // "Technical Services"
   }).index("by_department", ["departmentId"]),
 
   teams: defineTable({
