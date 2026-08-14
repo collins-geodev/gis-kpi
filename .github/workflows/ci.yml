@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Format · Lint · Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prettier check
+        run: npm run format:check
+      - name: ESLint
+        run: npm run lint
+      - name: Unit tests (scoring + reconciliation + exports)
+        run: npm test
+
+  build:
+    name: Codegen · Typecheck · Build
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # convex/_generated is committed, so typecheck/build work without codegen.
+      # This optional step re-runs codegen (when a deploy key is available) to
+      # catch drift between committed types and the current schema/functions.
+      - name: Convex codegen (drift check, optional)
+        run: npx convex codegen --typecheck disable
+        continue-on-error: true
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      - name: Ensure next-env.d.ts (generated, git-ignored)
+        run: printf '/// <reference types="next" />\n/// <reference types="next/image-types/global" />\n' > next-env.d.ts
+      - name: Type check
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+
+  e2e:
+    name: Playwright (optional)
+    runs-on: ubuntu-latest
+    needs: quality
+    if: ${{ vars.RUN_E2E == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ secrets.PLAYWRIGHT_BASE_URL }}

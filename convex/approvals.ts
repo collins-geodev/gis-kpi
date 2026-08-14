@@ -1,0 +1,207 @@
+/**
+ * Review queue + period approval.
+ *
+ * Approving an (employee, period) finalizes its provisional measurements and
+ * freezes a reproducible scoreSnapshot. A measurement whose KPI requires
+ * evidence cannot be approved until that evidence is approved, and a KPI blocked
+ * by an open data-quality issue cannot be approved — enforcing acceptance #7.
+ */
+import { mutation, query } from "./_generated/server";
+import { v } from "convex/values";
+import { assertEmployeeReadScope, readableEmployeeIds, requireRole } from "./authz";
+import { recordAudit } from "./audit";
+import { CALC_VERSION, scoreScorecard, type ScorecardItem } from "./lib/scoring";
+import { BASELINE_PERFORMANCE_YEAR } from "./lib/types";
+
+/** Provisional measurements awaiting review, within the caller's scope. */
+export const reviewQueue = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, ["manager", "reviewer", "kpi_admin", "system_admin"]);
+    const scope = await readableEmployeeIds(ctx);
+    const measurements = await ctx.db.query("kpiMeasurements").take(2000);
+    const rows = [];
+    for (const m of measurements) {
+      if (!m.isProvisional || !m.hasData) continue;
+      if (scope !== "all" && !scope.includes(m.employeeId)) continue;
+      const assignment = await ctx.db.get(m.kpiAssignmentId);
+      const employee = await ctx.db.get(m.employeeId);
+      if (!assignment || !employee) continue;
+      rows.push({
+        measurementId: m._id,
+        employeeId: m.employeeId,
+        employeeName: employee.displayName,
+        assignmentId: assignment._id,
+        objective: assignment.objective,
+        periodKey: m.periodKey,
+        cappedAttainment: m.cappedAttainment,
+        weightedContribution: m.weightedContribution,
+        status: m.status,
+        evidenceRequired: assignment.evidenceRequired,
+        evidenceComplete: m.evidenceComplete,
+        scoringBlocked: assignment.scoringBlocked,
+        ready:
+          (!assignment.evidenceRequired || m.evidenceComplete) &&
+          !assignment.scoringBlocked,
+      });
+    }
+    return rows;
+  },
+});
+
+export const approveEmployeePeriod = mutation({
+  args: {
+    employeeId: v.id("employees"),
+    periodKey: v.string(),
+    reason: v.optional(v.string()),
+  },
+  returns: v.object({
+    snapshotId: v.id("scoreSnapshots"),
+    assignedWeightScore: v.number(),
+    configuredWeight: v.number(),
+    normalizedScore: v.number(),
+  }),
+  handler: async (ctx, { employeeId, periodKey, reason }) => {
+    const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
+    await assertEmployeeReadScope(ctx, employeeId);
+
+    const year = await ctx.db
+      .query("performanceYears")
+      .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+      .first();
+    if (!year) throw new Error("Performance year not seeded");
+
+    const assignments = await ctx.db
+      .query("kpiAssignments")
+      .withIndex("by_employee_year", (q) =>
+        q.eq("employeeId", employeeId).eq("performanceYearId", year._id),
+      )
+      .collect();
+
+    const blockers: string[] = [];
+    const items: {
+      assignment: (typeof assignments)[number];
+      measurementId?: string;
+      cappedAttainment: number | null;
+      weightedContribution: number;
+      status: string;
+      evidenceComplete: boolean;
+      cadenceCompliant: boolean;
+    }[] = [];
+
+    for (const assignment of assignments) {
+      const m = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignment._id).eq("periodKey", periodKey),
+        )
+        .first();
+      if (m && m.hasData) {
+        if (assignment.evidenceRequired && !m.evidenceComplete) {
+          blockers.push(`${assignment.objective.slice(0, 48)}: evidence not approved`);
+        }
+        if (assignment.scoringBlocked) {
+          blockers.push(`${assignment.objective.slice(0, 48)}: data-quality blocked`);
+        }
+      }
+      items.push({
+        assignment,
+        measurementId: m?._id,
+        cappedAttainment: m?.cappedAttainment ?? null,
+        weightedContribution: m?.weightedContribution ?? 0,
+        status: m?.status ?? "no_data",
+        evidenceComplete: m?.evidenceComplete ?? false,
+        cadenceCompliant: m?.cadenceCompliant ?? false,
+      });
+    }
+
+    if (blockers.length > 0) {
+      throw new Error(`Cannot approve — resolve first: ${blockers.join("; ")}`);
+    }
+
+    // Finalize measurements (no longer provisional) and lock them.
+    for (const it of items) {
+      if (it.measurementId) {
+        await ctx.db.patch(it.measurementId as never, { isProvisional: false });
+      }
+    }
+
+    const scorecardItems: ScorecardItem[] = items.map((it) => ({
+      weight: it.assignment.weight,
+      cappedAttainment: it.cappedAttainment,
+      evidenceComplete: it.evidenceComplete,
+      cadenceCompliant: it.cadenceCompliant,
+    }));
+    const scorecard = scoreScorecard(scorecardItems);
+
+    const priorSnapshot = await ctx.db
+      .query("scoreSnapshots")
+      .withIndex("by_scope_period", (q) =>
+        q.eq("scope", "individual").eq("scopeRef", employeeId).eq("periodKey", periodKey),
+      )
+      .first();
+
+    const snapshotId = await ctx.db.insert("scoreSnapshots", {
+      scope: "individual",
+      scopeRef: employeeId,
+      performanceYearId: year._id,
+      periodKey,
+      calcVersion: CALC_VERSION,
+      payload: {
+        items: items.map((it) => ({
+          assignmentId: it.assignment._id,
+          canonicalKey: it.assignment.canonicalKey,
+          objective: it.assignment.objective,
+          weight: it.assignment.weight,
+          target: it.assignment.target,
+          targetType: it.assignment.targetType,
+          cappedAttainment: it.cappedAttainment,
+          weightedContribution: it.weightedContribution,
+          status: it.status,
+        })),
+        scorecard,
+      },
+      configuredWeight: scorecard.configuredWeight,
+      assignedWeightScore: scorecard.assignedWeightScore,
+      normalizedScore: scorecard.normalizedScore,
+      normalizationEnabled: year.normalizationEnabled,
+      evidenceCompletionPct: scorecard.evidenceCompletionPct,
+      cadenceCompliancePct: scorecard.cadenceCompliancePct,
+      approvalState: "approved",
+      createdByUserId: user._id,
+      createdAt: Date.now(),
+    });
+
+    await ctx.db.insert("approvals", {
+      employeeId,
+      performanceYearId: year._id,
+      periodKey,
+      approverUserId: user._id,
+      state: "approved",
+      reason,
+      priorScoreSnapshotId: priorSnapshot?._id,
+      createdAt: Date.now(),
+    });
+
+    await recordAudit(ctx, {
+      entityType: "scoreSnapshot",
+      entityId: snapshotId,
+      action: "approve_period",
+      actorUserId: user._id,
+      reason,
+      after: {
+        employeeId,
+        periodKey,
+        assignedWeightScore: scorecard.assignedWeightScore,
+        configuredWeight: scorecard.configuredWeight,
+      },
+    });
+
+    return {
+      snapshotId,
+      assignedWeightScore: scorecard.assignedWeightScore,
+      configuredWeight: scorecard.configuredWeight,
+      normalizedScore: scorecard.normalizedScore,
+    };
+  },
+});

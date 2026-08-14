@@ -1,0 +1,271 @@
+/// <reference types="vite/client" />
+/**
+ * Convex function integration tests (convex-test) — exercise the real seed,
+ * authorization, data-quality, activity→measurement, evidence gate and period
+ * approval against a simulated backend. Covers acceptance criteria #1, #4, #7,
+ * #8 and #9 at the function level.
+ */
+import { convexTest } from "convex-test";
+import { describe, expect, test } from "vitest";
+import schema from "./schema";
+import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+
+const modules = import.meta.glob("./**/*.ts");
+
+function harness() {
+  return convexTest(schema, modules);
+}
+
+type T = ReturnType<typeof harness>;
+
+async function makeUser(
+  t: T,
+  opts: { email: string; roles?: string[]; employeeBusinessId?: string },
+) {
+  const userId = await t.run(async (ctx) => {
+    let employeeId: Id<"employees"> | undefined;
+    if (opts.employeeBusinessId) {
+      const e = await ctx.db
+        .query("employees")
+        .withIndex("by_employeeId", (q) => q.eq("employeeId", opts.employeeBusinessId!))
+        .first();
+      employeeId = e?._id;
+    }
+    const uid = await ctx.db.insert("users", {
+      email: opts.email,
+      isActive: true,
+      employeeId,
+    });
+    for (const role of opts.roles ?? []) {
+      await ctx.db.insert("userRoleAssignments", {
+        userId: uid,
+        role: role as never,
+        grantedAt: 0,
+        isActive: true,
+      });
+    }
+    return uid;
+  });
+  return { as: t.withIdentity({ subject: `${userId}|test` }), userId };
+}
+
+async function employeeIdByBiz(t: T, biz: string): Promise<Id<"employees">> {
+  return await t.run(async (ctx) => {
+    const e = await ctx.db
+      .query("employees")
+      .withIndex("by_employeeId", (q) => q.eq("employeeId", biz))
+      .first();
+    if (!e) throw new Error(`employee ${biz} not found`);
+    return e._id;
+  });
+}
+
+describe("seed + reconciliation (#1)", () => {
+  test("imports 15 employees and 75 assignments with data-quality issues", async () => {
+    const t = harness();
+    const res = await t.mutation(internal.seed.seedBaseline, {});
+    expect(res.employees).toBe(15);
+    expect(res.assignments).toBe(75);
+    expect(res.kpiDefinitions).toBeGreaterThan(0);
+    expect(res.dataQualityIssues).toBeGreaterThan(0);
+  });
+
+  test("re-running the seed is idempotent (no duplicates)", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    await t.mutation(internal.seed.seedBaseline, {});
+    const counts = await t.run(async (ctx) => ({
+      employees: (await ctx.db.query("employees").collect()).length,
+      assignments: (await ctx.db.query("kpiAssignments").collect()).length,
+    }));
+    expect(counts.employees).toBe(15);
+    expect(counts.assignments).toBe(75);
+  });
+});
+
+describe("authorization (#8)", () => {
+  test("unauthenticated reads are rejected", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    await expect(t.query(api.overview.baselineSummary, {})).rejects.toThrow();
+  });
+
+  test("an employee can read their own detail but not another's", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD030835",
+    });
+    const ownId = await employeeIdByBiz(t, "IKD030835");
+    const otherId = await employeeIdByBiz(t, "IKD041386");
+
+    const detail = await emp.query(api.employees.getDetail, { employeeId: ownId });
+    expect(detail.kpis.length).toBe(5);
+    expect(detail.scorecard.configuredWeight).toBe(80);
+
+    await expect(
+      emp.query(api.employees.getDetail, { employeeId: otherId }),
+    ).rejects.toThrow();
+  });
+
+  test("an admin can read any employee", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+    const summary = await admin.query(api.overview.baselineSummary, {});
+    expect(summary.employees).toBe(15);
+    expect(summary.configuredWeightTotal).toBe(80);
+  });
+});
+
+describe("data-quality resolution (#4)", () => {
+  test("resolving the rubric requirement unblocks innovation KPIs", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: admin } = await makeUser(t, { email: "a@x.com", roles: ["kpi_admin"] });
+
+    const countBlockedInnovation = async () =>
+      t.run(async (ctx) => {
+        const year = await ctx.db
+          .query("performanceYears")
+          .withIndex("by_year", (q) => q.eq("year", 2026))
+          .first();
+        const list = await ctx.db
+          .query("kpiAssignments")
+          .withIndex("by_year_key", (q) =>
+            q.eq("performanceYearId", year!._id).eq("canonicalKey", "tech_innovation"),
+          )
+          .collect();
+        return list.filter((a) => a.scoringBlocked).length;
+      });
+
+    const before = await countBlockedInnovation();
+    expect(before).toBe(15); // all innovation KPIs blocked by the rubric requirement
+
+    const issueId = await t.run(async (ctx) => {
+      const i = await ctx.db
+        .query("dataQualityIssues")
+        .withIndex("by_code", (q) => q.eq("code", "rubric_required:tech_innovation"))
+        .first();
+      return i!._id;
+    });
+    await admin.mutation(api.dataQuality.resolveIssue, {
+      issueId,
+      decision: "resolve",
+      note: "Rubric approved",
+    });
+
+    const after = await countBlockedInnovation();
+    // Rows 18 (GIS Project Dashboard — ambiguous), 30 (truncated) and 54 (mismatch)
+    // keep their own row-level blockers; the remaining innovation KPIs clear.
+    expect(after).toBeLessThan(before);
+    expect(after).toBe(3);
+  });
+});
+
+describe("activity → measurement, evidence gate & approval (#7, #9)", () => {
+  test("captures a measurement, blocks approval without evidence, then approves & snapshots", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "sheriff@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: mgr } = await makeUser(t, { email: "mgr@x.com", roles: ["manager"] });
+
+    // The analyst's asset-integration KPI (ratio, not scoring-blocked).
+    const assignmentId = await t.run(async (ctx) => {
+      const year = await ctx.db
+        .query("performanceYears")
+        .withIndex("by_year", (q) => q.eq("year", 2026))
+        .first();
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", empId).eq("performanceYearId", year!._id),
+        )
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+
+    // Capture an activity: 9 / 10 = 90% attainment.
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+
+    const measurement = async () =>
+      t.run(async (ctx) =>
+        ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+          )
+          .first(),
+      );
+
+    const m1 = await measurement();
+    expect(m1?.cappedAttainment).toBe(0.9);
+    expect(m1?.evidenceComplete).toBe(false); // evidence required, none approved yet
+
+    // Approval blocked: required evidence not approved (#7).
+    await expect(
+      mgr.mutation(api.approvals.approveEmployeePeriod, {
+        employeeId: empId,
+        periodKey: "2026-M08",
+      }),
+    ).rejects.toThrow(/evidence/i);
+
+    // Attach + approve evidence.
+    const evidenceId = await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/qa-log",
+      originalFilename: "qa-log",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "qa_log",
+      title: "QA log",
+    });
+    await mgr.mutation(api.evidence.reviewEvidence, {
+      evidenceId,
+      decision: "approve",
+    });
+
+    const m2 = await measurement();
+    expect(m2?.evidenceComplete).toBe(true);
+
+    // Now approval succeeds and freezes a reproducible snapshot (#9).
+    const result = await mgr.mutation(api.approvals.approveEmployeePeriod, {
+      employeeId: empId,
+      periodKey: "2026-M08",
+    });
+    expect(result.assignedWeightScore).toBeCloseTo(9, 5); // 0.9 × weight 10
+    expect(result.configuredWeight).toBe(80);
+
+    const snapshot = await t.run(async (ctx) =>
+      ctx.db
+        .query("scoreSnapshots")
+        .withIndex("by_scope_period", (q) =>
+          q.eq("scope", "individual").eq("scopeRef", empId).eq("periodKey", "2026-M08"),
+        )
+        .first(),
+    );
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.approvalState).toBe("approved");
+    expect(snapshot?.calcVersion).toBeTruthy();
+  });
+});

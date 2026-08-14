@@ -1,0 +1,4 @@
+{
+  "extends": ["next/core-web-vitals", "prettier"],
+  "ignorePatterns": ["convex/_generated/", "node_modules/", ".next/"]
+}

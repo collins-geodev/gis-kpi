@@ -1,0 +1,14 @@
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    environment: "node",
+    globals: true,
+    include: ["convex/**/*.test.ts", "src/**/*.test.{ts,tsx}"],
+    coverage: {
+      provider: "v8",
+      include: ["convex/lib/**/*.ts"],
+      exclude: ["convex/lib/**/*.test.ts", "convex/lib/sourceRows.ts"],
+    },
+  },
+});

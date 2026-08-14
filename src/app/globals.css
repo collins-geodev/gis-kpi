@@ -1,0 +1,233 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * GIS KPI Dashboard — design tokens.
+ * Light palette is defined on :root; the professional dark theme is applied via
+ * the `.dark` class (managed by next-themes). Colours are HSL triplets so Tailwind
+ * opacity modifiers work. Base palette per spec §15:
+ *   deep navy #07111F · slate #0F172A · off-white #F8FAFC · GIS teal/cyan accent
+ *   success green · warning amber · critical red · corporate red #C00000 (brand).
+ */
+@layer base {
+  :root {
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+
+    --radius: 0.625rem;
+
+    /* Light theme */
+    --background: 210 40% 98%; /* #F8FAFC */
+    --foreground: 222 47% 11%; /* #0F172A */
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 213 74% 15%; /* deep navy action */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 94%;
+    --secondary-foreground: 222 47% 16%;
+
+    --muted: 210 40% 95%;
+    --muted-foreground: 215 18% 42%;
+
+    --accent: 189 94% 36%; /* GIS cyan/teal #06B6D4 darkened for AA on light */
+    --accent-foreground: 0 0% 100%;
+
+    --brand: 0 100% 38%; /* #C00000 corporate red */
+    --brand-foreground: 0 0% 100%;
+
+    --success: 142 71% 30%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 95% 38%;
+    --warning-foreground: 0 0% 100%;
+    --critical: 0 74% 44%;
+    --critical-foreground: 0 0% 100%;
+    --info: 201 90% 35%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 214 32% 88%;
+    --input: 214 32% 86%;
+    --ring: 189 94% 40%;
+
+    /* Chart series (accessible, colour-blind aware ordering) */
+    --chart-1: 189 94% 40%;
+    --chart-2: 213 74% 30%;
+    --chart-3: 142 60% 38%;
+    --chart-4: 32 90% 45%;
+    --chart-5: 280 55% 52%;
+    --chart-6: 0 74% 50%;
+  }
+
+  .dark {
+    --background: 213 63% 7%; /* #07111F deep navy */
+    --foreground: 210 40% 96%;
+
+    --card: 222 47% 11%; /* #0F172A slate */
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 45% 13%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 189 94% 48%; /* cyan action on dark */
+    --primary-foreground: 213 63% 7%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 217 33% 16%;
+    --muted-foreground: 215 20% 68%;
+
+    --accent: 187 85% 53%;
+    --accent-foreground: 213 63% 7%;
+
+    --brand: 0 84% 55%; /* brighter red keeps AA contrast on navy */
+    --brand-foreground: 0 0% 100%;
+
+    --success: 142 66% 45%;
+    --success-foreground: 213 63% 7%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 213 63% 7%;
+    --critical: 0 84% 62%;
+    --critical-foreground: 213 63% 7%;
+    --info: 189 94% 55%;
+    --info-foreground: 213 63% 7%;
+
+    --border: 217 33% 22%;
+    --input: 217 33% 24%;
+    --ring: 189 94% 55%;
+
+    --chart-1: 189 94% 55%;
+    --chart-2: 213 80% 62%;
+    --chart-3: 142 66% 50%;
+    --chart-4: 38 92% 58%;
+    --chart-5: 280 70% 68%;
+    --chart-6: 0 84% 64%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+    font-variant-numeric: tabular-nums;
+  }
+  /* Large KPI numerals read cleanly with aligned digits. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Geospatial motif — a very low-opacity coordinate grid used behind hero/shell
+ * areas. Purely decorative (aria-hidden); never implies real geography.
+ * ------------------------------------------------------------------------ */
+@layer utilities {
+  .bg-geo-grid {
+    background-image:
+      linear-gradient(hsl(var(--accent) / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--accent) / 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+    background-position: center;
+  }
+  .bg-geo-contour {
+    background-image: radial-gradient(
+      circle at 50% 40%,
+      hsl(var(--accent) / 0.06),
+      transparent 60%
+    );
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * "Powered by the GIS Team" marquee (spec §15).
+ * Scrolls horizontally, glows softly, and breathes between scale 0.98–1.02.
+ * The visible track is aria-hidden and duplicated; an sr-only static label
+ * carries the accessible text. All motion is disabled under reduced-motion.
+ * ------------------------------------------------------------------------ */
+@layer components {
+  .gis-marquee {
+    @apply relative overflow-hidden;
+    mask-image: linear-gradient(
+      90deg,
+      transparent,
+      black 8%,
+      black 92%,
+      transparent
+    );
+  }
+  .gis-marquee__track {
+    @apply flex w-max whitespace-nowrap;
+    animation: marquee-scroll 30s linear infinite;
+    will-change: transform;
+  }
+  .gis-marquee__chip {
+    @apply inline-flex items-center gap-2 px-6 text-sm font-semibold tracking-wide;
+    color: hsl(var(--brand-foreground));
+    animation: marquee-breathe 6s ease-in-out infinite;
+    text-shadow: 0 0 12px hsl(var(--brand) / 0.65);
+    transform-origin: center;
+  }
+  .gis-marquee:hover .gis-marquee__track,
+  .gis-marquee:focus-within .gis-marquee__track {
+    animation-play-state: paused;
+  }
+  .gis-marquee:hover .gis-marquee__chip,
+  .gis-marquee:focus-within .gis-marquee__chip {
+    animation-play-state: paused;
+  }
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  @apply relative overflow-hidden bg-muted;
+}
+.skeleton::after {
+  @apply absolute inset-0;
+  content: "";
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--foreground) / 0.06),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
+}
+
+/* Respect the user's motion preference everywhere. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .gis-marquee__track,
+  .gis-marquee__chip {
+    animation: none !important;
+    transform: none !important;
+  }
+}
