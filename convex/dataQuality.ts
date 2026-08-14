@@ -6,7 +6,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { requireRole, requireUser } from "./authz";
 import { recordAudit } from "./audit";
@@ -180,5 +180,93 @@ export const resolveIssue = mutation({
       after: { status },
     });
     return { status };
+  },
+});
+
+/**
+ * Bulk-approve/resolve every open issue in a category (or all categories).
+ * "approve" only touches issues that carry a proposed value. Recomputes the
+ * scoring-block state for all affected KPI assignments once at the end.
+ */
+export const bulkResolve = mutation({
+  args: {
+    category: v.optional(vDqCategory),
+    decision: v.union(v.literal("approve"), v.literal("resolve")),
+    note: v.optional(v.string()),
+  },
+  returns: v.object({ resolved: v.number(), skipped: v.number() }),
+  handler: async (ctx, { category, decision, note }) => {
+    const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
+
+    const issues = category
+      ? await ctx.db
+          .query("dataQualityIssues")
+          .withIndex("by_category", (q) => q.eq("category", category))
+          .take(5000)
+      : await ctx.db.query("dataQualityIssues").take(5000);
+
+    const status = decision === "approve" ? "approved" : "resolved";
+    const affected = new Set<Id<"kpiAssignments">>();
+    let rubricYearId: Id<"performanceYears"> | undefined;
+    let resolved = 0;
+    let skipped = 0;
+    const now = Date.now();
+
+    for (const i of issues) {
+      if (RESOLVED_STATES.includes(i.status)) continue;
+      // Approving requires a proposed value (e.g. weight_incomplete has none).
+      if (
+        decision === "approve" &&
+        (i.proposedValue === undefined || i.proposedValue === null)
+      ) {
+        skipped++;
+        continue;
+      }
+      await ctx.db.patch(i._id, {
+        status,
+        resolvedByUserId: user._id,
+        resolutionNote: note,
+        resolvedAt: now,
+      });
+      resolved++;
+      if (i.kpiAssignmentId) affected.add(i.kpiAssignmentId);
+      if (i.category === "rubric_required" && i.canonicalKey === "tech_innovation") {
+        rubricYearId = i.performanceYearId;
+      }
+    }
+
+    // Recompute scoring-block for directly-affected assignments.
+    for (const id of affected) {
+      const a = await ctx.db.get(id);
+      if (a) {
+        const blocked = await isStillBlocked(ctx, a);
+        if (a.scoringBlocked !== blocked)
+          await ctx.db.patch(a._id, { scoringBlocked: blocked });
+      }
+    }
+    // If the rubric requirement was cleared, recompute all innovation KPIs.
+    if (rubricYearId) {
+      const innovations = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_year_key", (q) =>
+          q.eq("performanceYearId", rubricYearId!).eq("canonicalKey", "tech_innovation"),
+        )
+        .take(500);
+      for (const a of innovations) {
+        const blocked = await isStillBlocked(ctx, a);
+        if (a.scoringBlocked !== blocked)
+          await ctx.db.patch(a._id, { scoringBlocked: blocked });
+      }
+    }
+
+    await recordAudit(ctx, {
+      entityType: "dataQualityIssue",
+      entityId: category ? `bulk:${category}` : "bulk:all",
+      action: `dq_bulk_${decision}`,
+      actorUserId: user._id,
+      reason: note,
+      after: { resolved, skipped, category: category ?? "all" },
+    });
+    return { resolved, skipped };
   },
 });

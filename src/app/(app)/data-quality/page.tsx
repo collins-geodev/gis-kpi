@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AccessDenied } from "@/components/access-denied";
 import { DQ_CATEGORIES, DQ_STATUSES, type AppRole } from "@convex/lib/types";
+import { CheckCheck } from "lucide-react";
 
 const SEVERITY_VARIANT = {
   info: "info",
@@ -48,6 +49,8 @@ export default function DataQualityPage() {
   );
 
   const resolve = useMutation(api.dataQuality.resolveIssue);
+  const bulkResolve = useMutation(api.dataQuality.bulkResolve);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   if (me === undefined) return <Skeleton className="h-64" />;
   if (!canView) return <AccessDenied />;
@@ -62,6 +65,31 @@ export default function DataQualityPage() {
       if (!note) return;
     }
     await resolve({ issueId: id, decision, note });
+  }
+
+  async function approveAll() {
+    const label = category === "all" ? "all categories" : category.replace(/_/g, " ");
+    if (
+      !window.confirm(
+        `Approve every open proposal in ${label}? Each proposed canonical value is applied and affected KPIs are unblocked. Items without a proposal (e.g. weight completeness) are skipped.`,
+      )
+    ) {
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      const res = await bulkResolve({
+        category: category === "all" ? undefined : (category as never),
+        decision: "approve",
+        note: "Bulk approved from the Data Quality queue",
+      });
+      window.alert(
+        `Approved ${res.resolved} issue(s)` +
+          (res.skipped ? `; skipped ${res.skipped} without a proposed value.` : "."),
+      );
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   return (
@@ -87,19 +115,29 @@ export default function DataQualityPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-3">
-        <Select
-          label="Status"
-          value={status}
-          onChange={setStatus}
-          options={[...DQ_STATUSES]}
-        />
-        <Select
-          label="Category"
-          value={category}
-          onChange={setCategory}
-          options={[...DQ_CATEGORIES]}
-        />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-3">
+          <Select
+            label="Status"
+            value={status}
+            onChange={setStatus}
+            options={[...DQ_STATUSES]}
+          />
+          <Select
+            label="Category"
+            value={category}
+            onChange={setCategory}
+            options={[...DQ_CATEGORIES]}
+          />
+        </div>
+        {canResolve && (
+          <Button variant="brand" onClick={approveAll} disabled={bulkBusy}>
+            <CheckCheck className="h-4 w-4" />
+            {category === "all"
+              ? "Approve all proposals"
+              : `Approve all ${category.replace(/_/g, " ")}`}
+          </Button>
+        )}
       </div>
 
       <Card>
