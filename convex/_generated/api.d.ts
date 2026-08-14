@@ -21,6 +21,7 @@ import type * as employees from "../employees.js";
 import type * as evidence from "../evidence.js";
 import type * as evidenceHttp from "../evidenceHttp.js";
 import type * as http from "../http.js";
+import type * as kpiSettings from "../kpiSettings.js";
 import type * as kpis from "../kpis.js";
 import type * as lib_catalogue from "../lib/catalogue.js";
 import type * as lib_dataQuality from "../lib/dataQuality.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   evidence: typeof evidence;
   evidenceHttp: typeof evidenceHttp;
   http: typeof http;
+  kpiSettings: typeof kpiSettings;
   kpis: typeof kpis;
   "lib/catalogue": typeof lib_catalogue;
   "lib/dataQuality": typeof lib_dataQuality;

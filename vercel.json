@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "npx convex deploy --cmd 'npm run build'",
+  "buildCommand": "if [ -n \"$CONVEX_DEPLOY_KEY\" ]; then npx convex deploy --cmd 'npm run build'; else NEXT_PUBLIC_CONVEX_URL=https://scintillating-bulldog-550.convex.cloud npm run build; fi",
   "installCommand": "npm ci"
 }
