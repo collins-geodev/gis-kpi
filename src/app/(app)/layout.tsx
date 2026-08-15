@@ -4,9 +4,11 @@ import { PoweredByGisTeam } from "@/components/powered-by-gis-team";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="relative flex min-h-screen bg-background">
+      {/* Drifting cyan/blue light pools behind the shell (decorative). */}
+      <div className="aurora" aria-hidden />
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <Topbar />
         <main className="flex-1">
           <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">{children}</div>

@@ -15,14 +15,13 @@ import type { ChartDatum } from "./bar-chart-card";
 
 const R = 42;
 const CIRC = 2 * Math.PI * R;
-const COLOR_VARS = [
-  "--chart-1",
-  "--chart-2",
-  "--chart-3",
-  "--chart-4",
-  "--chart-5",
-  "--chart-6",
-];
+/*
+ * Categorical tokens (globals.css) in fixed assignment order — warm/cool
+ * alternating and validated for colour-blind adjacency on both surfaces.
+ * The --chart-* series is kept for single-hue charts; its green/orange pair
+ * fails protan adjacency, so multi-hue charts must use --cat-* instead.
+ */
+const COLOR_VARS = ["--cat-1", "--cat-2", "--cat-3", "--cat-4", "--cat-5", "--cat-6"];
 
 /** Animated SVG donut with legend + accessible table alternative. */
 export function DonutChartCard({

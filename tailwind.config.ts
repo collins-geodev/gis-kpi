@@ -73,13 +73,6 @@ const config: Config = {
           foreground: "hsl(var(--info-foreground))",
         },
       },
-      boxShadow: {
-        glow: "0 0 24px -4px hsl(var(--accent) / 0.45)",
-        "glow-sm": "0 0 14px -4px hsl(var(--accent) / 0.4)",
-        "glow-brand": "0 0 24px -6px hsl(var(--brand) / 0.5)",
-        "glow-success": "0 0 18px -6px hsl(var(--success) / 0.5)",
-        lift: "0 12px 32px -12px hsl(var(--foreground) / 0.18)",
-      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
@@ -113,33 +106,6 @@ const config: Config = {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
-        float: {
-          "0%, 100%": { transform: "translateY(0)" },
-          "50%": { transform: "translateY(-4px)" },
-        },
-        "pulse-glow": {
-          "0%, 100%": { boxShadow: "0 0 0 0 hsl(var(--accent) / 0.35)" },
-          "50%": { boxShadow: "0 0 18px 4px hsl(var(--accent) / 0.18)" },
-        },
-        "spin-slow": {
-          from: { transform: "rotate(0deg)" },
-          to: { transform: "rotate(360deg)" },
-        },
-        wiggle: {
-          "0%, 100%": { transform: "rotate(-6deg)" },
-          "50%": { transform: "rotate(6deg)" },
-        },
-        "pop-in": {
-          from: { opacity: "0", transform: "scale(0.95)" },
-          to: { opacity: "1", transform: "scale(1)" },
-        },
-        "gradient-x": {
-          "0%, 100%": { backgroundPosition: "0% 50%" },
-          "50%": { backgroundPosition: "100% 50%" },
-        },
-        "ping-soft": {
-          "75%, 100%": { transform: "scale(1.8)", opacity: "0" },
-        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -147,13 +113,6 @@ const config: Config = {
         "marquee-scroll": "marquee-scroll 30s linear infinite",
         "marquee-breathe": "marquee-breathe 6s ease-in-out infinite",
         "fade-in-up": "fade-in-up 0.4s ease-out both",
-        float: "float 3s ease-in-out infinite",
-        "pulse-glow": "pulse-glow 2.6s ease-in-out infinite",
-        "spin-slow": "spin-slow 8s linear infinite",
-        wiggle: "wiggle 0.4s ease-in-out",
-        "pop-in": "pop-in 0.25s ease-out both",
-        "gradient-x": "gradient-x 6s ease infinite",
-        "ping-soft": "ping-soft 1.6s cubic-bezier(0, 0, 0.2, 1) infinite",
       },
     },
   },
