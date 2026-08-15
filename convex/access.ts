@@ -251,10 +251,10 @@ export const linkUserToEmployee = mutation({
   },
 });
 
-/** Wipe every piece of captured KPI data belonging to a user's employee. */
-async function wipeUserData(
+/** Wipe every piece of captured KPI data for one roster employee. */
+async function wipeEmployeeData(
   ctx: MutationCtx,
-  target: { _id: Id<"users">; employeeId?: Id<"employees"> },
+  emp: Id<"employees">,
 ): Promise<Record<string, number>> {
   const counts: Record<string, number> = {
     activities: 0,
@@ -265,10 +265,8 @@ async function wipeUserData(
     reviews: 0,
     approvals: 0,
     snapshots: 0,
-    notifications: 0,
   };
-  const emp = target.employeeId;
-  if (emp) {
+  {
     for (const a of await ctx.db
       .query("activities")
       .withIndex("by_employee_period", (q) => q.eq("employeeId", emp))
@@ -331,17 +329,9 @@ async function wipeUserData(
       counts.snapshots!++;
     }
   }
-  for (const n of await ctx.db
-    .query("notifications")
-    .withIndex("by_user_unread", (q) => q.eq("userId", target._id))
-    .take(1000)) {
-    await ctx.db.delete(n._id);
-    counts.notifications!++;
-  }
-
-  // Other users' notifications about this employee's KPIs (admin bells,
+  // Any user's notifications about this employee's KPIs (admin bells,
   // "KPI update — X" entries) would otherwise linger pointing at wiped data.
-  if (emp) {
+  {
     const kpiHrefs = new Set(
       (
         await ctx.db
@@ -361,6 +351,22 @@ async function wipeUserData(
   return counts;
 }
 
+/** Delete every notification addressed to one user. */
+async function wipeOwnNotifications(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+): Promise<number> {
+  let n = 0;
+  for (const row of await ctx.db
+    .query("notifications")
+    .withIndex("by_user_unread", (q) => q.eq("userId", userId))
+    .take(1000)) {
+    await ctx.db.delete(row._id);
+    n++;
+  }
+  return n;
+}
+
 /**
  * Reset a user's dashboard data (System Admin only): every captured activity,
  * evidence item (files destroyed; legal holds kept), measurement, override,
@@ -374,13 +380,44 @@ export const resetUserData = mutation({
     const { user: actor } = await requireRole(ctx, ["system_admin"]);
     const target = await ctx.db.get(userId);
     if (!target) throw new Error("User not found");
-    const counts = await wipeUserData(ctx, target);
+    if (!target.employeeId) {
+      throw new Error(
+        "This account has no linked employee, so there is no captured KPI data to reset. To wipe a roster employee's data (e.g. entries an admin logged for them), open that employee's page and use “Reset captured data” there.",
+      );
+    }
+    const counts = await wipeEmployeeData(ctx, target.employeeId);
+    counts.notifications = await wipeOwnNotifications(ctx, target._id);
     await recordAudit(ctx, {
       entityType: "user",
       entityId: userId,
       action: "reset_user_data",
       actorUserId: actor._id,
       after: counts,
+    });
+    return counts;
+  },
+});
+
+/**
+ * Reset a roster employee's captured data directly (System Admin only) —
+ * works regardless of whether any account is linked, covering entries an
+ * admin logged on the employee's behalf.
+ */
+export const resetEmployeeData = mutation({
+  args: { employeeId: v.id("employees") },
+  returns: v.record(v.string(), v.number()),
+  handler: async (ctx, { employeeId }) => {
+    const { user: actor } = await requireRole(ctx, ["system_admin"]);
+    const employee = await ctx.db.get(employeeId);
+    if (!employee) throw new Error("Employee not found");
+    const counts = await wipeEmployeeData(ctx, employeeId);
+    await recordAudit(ctx, {
+      entityType: "employee",
+      entityId: employeeId,
+      action: "reset_employee_data",
+      actorUserId: actor._id,
+      after: { ...counts, employee: undefined },
+      reason: `Reset captured data for ${employee.displayName}`,
     });
     return counts;
   },
@@ -411,7 +448,9 @@ export const deleteUser = mutation({
     }
 
     let dataCounts: Record<string, number> | undefined;
-    if (args.alsoResetData) dataCounts = await wipeUserData(ctx, target);
+    if (args.alsoResetData && target.employeeId) {
+      dataCounts = await wipeEmployeeData(ctx, target.employeeId);
+    }
 
     for (const r of await ctx.db
       .query("userRoleAssignments")

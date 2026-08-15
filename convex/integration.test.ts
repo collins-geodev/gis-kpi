@@ -1201,3 +1201,50 @@ describe("account reset & delete", () => {
     expect(gone.roles).toBe(0);
   });
 });
+
+describe("employee-level reset", () => {
+  test("resets a roster employee's data even with no linked account", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+    // Admin logs an activity FOR the employee (no account linked to them).
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    await admin.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+
+    // Account-level reset on an unlinked account explains itself.
+    await expect(
+      admin.mutation(api.access.resetUserData, {
+        userId: await t.run(
+          async (ctx) => (await ctx.db.query("users").collect())[0]!._id,
+        ),
+      }),
+    ).rejects.toThrow(/no linked employee/i);
+
+    const counts = await admin.mutation(api.access.resetEmployeeData, {
+      employeeId: empId,
+    });
+    expect(counts.activities).toBe(1);
+    const left = await t.run(
+      async (ctx) => (await ctx.db.query("activities").collect()).length,
+    );
+    expect(left).toBe(0);
+  });
+});

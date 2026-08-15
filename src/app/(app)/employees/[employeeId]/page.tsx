@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { PageHeader } from "@/components/page-header";
@@ -19,12 +19,17 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatNumber, formatPercent, formatTargetValue } from "@convex/lib/format";
-import { ArrowLeft, History, Lock } from "lucide-react";
+import { ArrowLeft, History, Lock, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { AppRole } from "@convex/lib/types";
 
 export default function IndividualPage() {
   const params = useParams<{ employeeId: string }>();
   const employeeId = params.employeeId as Id<"employees">;
   const data = useQuery(api.employees.getDetail, { employeeId });
+  const me = useQuery(api.access.currentUser);
+  const isSystemAdmin = ((me?.roles ?? []) as AppRole[]).includes("system_admin");
+  const resetEmployeeData = useMutation(api.access.resetEmployeeData);
 
   if (data === undefined) {
     return (
@@ -50,6 +55,33 @@ export default function IndividualPage() {
       <PageHeader
         title={`${employee.honorific ? employee.honorific + " " : ""}${employee.displayName}`}
         description={`${employee.jobRole} · ${employee.canonicalLocation} · ${employee.employeeId}`}
+        actions={
+          isSystemAdmin ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-critical"
+              title="Delete every captured activity, evidence item, measurement and score for this employee — KPI configuration stays"
+              onClick={() => {
+                const typed = window.prompt(
+                  `Reset ALL captured data for ${employee.displayName}?\n\nActivities, evidence, measurements and scores are permanently deleted (KPI configuration is kept). This cannot be undone.\n\nType RESET to confirm:`,
+                );
+                if (typed !== "RESET") return;
+                void resetEmployeeData({ employeeId })
+                  .then((c) =>
+                    window.alert(
+                      `Reset complete: ${c.activities ?? 0} activities, ${c.evidence ?? 0} evidence items, ${c.measurements ?? 0} measurements removed.`,
+                    ),
+                  )
+                  .catch((e) =>
+                    window.alert(e instanceof Error ? e.message : "Reset failed."),
+                  );
+              }}
+            >
+              <RotateCcw className="h-4 w-4" /> Reset captured data
+            </Button>
+          ) : undefined
+        }
       />
 
       {/* Scorecard summary */}
