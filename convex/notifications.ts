@@ -46,6 +46,33 @@ export const markRead = mutation({
   },
 });
 
+/** Dismiss (delete) one notification. */
+export const dismiss = mutation({
+  args: { notificationId: v.id("notifications") },
+  returns: v.null(),
+  handler: async (ctx, { notificationId }) => {
+    const user = await requireUser(ctx);
+    const n = await ctx.db.get(notificationId);
+    if (n && n.userId === user._id) await ctx.db.delete(notificationId);
+    return null;
+  },
+});
+
+/** Clear the caller's entire notification feed. */
+export const clearAll = mutation({
+  args: {},
+  returns: v.object({ cleared: v.number() }),
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("notifications")
+      .withIndex("by_user_unread", (q) => q.eq("userId", user._id))
+      .take(500);
+    for (const n of rows) await ctx.db.delete(n._id);
+    return { cleared: rows.length };
+  },
+});
+
 export const markAllRead = mutation({
   args: {},
   returns: v.null(),

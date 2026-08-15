@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /** Topbar bell: unread badge with a soft pulse, dropdown feed, mark-read. */
@@ -13,6 +13,8 @@ export function NotificationsBell() {
   const data = useQuery(api.notifications.listMine);
   const markRead = useMutation(api.notifications.markRead);
   const markAllRead = useMutation(api.notifications.markAllRead);
+  const dismiss = useMutation(api.notifications.dismiss);
+  const clearAll = useMutation(api.notifications.clearAll);
   const [open, setOpen] = useState(false);
 
   const unread = data?.unreadCount ?? 0;
@@ -44,17 +46,31 @@ export function NotificationsBell() {
             onClick={() => setOpen(false)}
           />
           <div className="shadow-lift absolute right-0 z-40 mt-2 w-80 animate-fade-in-up overflow-hidden rounded-xl border border-border bg-popover">
-            <div className="flex items-center justify-between border-b border-border px-3 py-2">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
               <span className="text-sm font-semibold">Notifications</span>
-              {unread > 0 && (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
-                  onClick={() => void markAllRead({})}
-                >
-                  <CheckCheck className="h-3.5 w-3.5" /> Mark all read
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {unread > 0 && (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                    onClick={() => void markAllRead({})}
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+                  </button>
+                )}
+                {(data?.items.length ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-critical hover:underline"
+                    onClick={() => {
+                      if (!window.confirm("Clear all notifications?")) return;
+                      void clearAll({});
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Clear all
+                  </button>
+                )}
+              </div>
             </div>
             <div className="max-h-96 overflow-y-auto">
               {data === undefined ? (
@@ -105,12 +121,15 @@ export function NotificationsBell() {
                       setOpen(false);
                     };
                     return (
-                      <li key={n.id} className="border-b border-border/60 last:border-0">
+                      <li
+                        key={n.id}
+                        className="flex items-stretch border-b border-border/60 last:border-0"
+                      >
                         {n.href ? (
                           <Link
                             href={n.href as never}
                             onClick={onOpen}
-                            className="block px-3 py-2.5 transition-colors hover:bg-muted/60"
+                            className="block min-w-0 flex-1 px-3 py-2.5 transition-colors hover:bg-muted/60"
                           >
                             {inner}
                           </Link>
@@ -118,11 +137,24 @@ export function NotificationsBell() {
                           <button
                             type="button"
                             onClick={onOpen}
-                            className="block w-full px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+                            className="block min-w-0 flex-1 px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
                           >
                             {inner}
                           </button>
                         )}
+                        <button
+                          type="button"
+                          aria-label={`Dismiss notification “${n.title}”`}
+                          title="Dismiss"
+                          className="flex items-center px-2 text-muted-foreground transition-colors hover:bg-critical/10 hover:text-critical"
+                          onClick={() =>
+                            void dismiss({
+                              notificationId: n.id as Id<"notifications">,
+                            })
+                          }
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
                       </li>
                     );
                   })}
