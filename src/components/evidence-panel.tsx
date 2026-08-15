@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+import { suggestEvidence } from "@/lib/evidence-suggestions";
 
 const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant"]> = {
   submitted: "muted",
@@ -18,7 +19,14 @@ const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant
   needs_changes: "warning",
 };
 
-export function EvidencePanel({ assignmentId }: { assignmentId: Id<"kpiAssignments"> }) {
+export function EvidencePanel({
+  assignmentId,
+  kpi,
+}: {
+  assignmentId: Id<"kpiAssignments">;
+  /** When provided, the title/category start with a KPI-aware suggestion. */
+  kpi?: { canonicalKey?: string; objective?: string };
+}) {
   const me = useQuery(api.access.currentUser);
   const evidence = useQuery(api.evidence.listForAssignment, {
     kpiAssignmentId: assignmentId,
@@ -38,6 +46,14 @@ export function EvidencePanel({ assignmentId }: { assignmentId: Id<"kpiAssignmen
   const [linkUrl, setLinkUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Pre-describe the evidence from the KPI it supports (always editable).
+  useEffect(() => {
+    const s = suggestEvidence(kpi?.canonicalKey, kpi?.objective);
+    setTitle(s.title);
+    setCategory(s.category);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentId, kpi?.canonicalKey]);
 
   async function attachFile(file: File) {
     setBusy(true);

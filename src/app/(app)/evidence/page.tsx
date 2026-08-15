@@ -217,7 +217,15 @@ export default function EvidenceCentrePage() {
               ))}
             </select>
             {uploadFor && (
-              <EvidencePanel assignmentId={uploadFor as Id<"kpiAssignments">} />
+              <EvidencePanel
+                assignmentId={uploadFor as Id<"kpiAssignments">}
+                kpi={(() => {
+                  const a = (myAssignments ?? []).find((x) => x.id === uploadFor);
+                  return a
+                    ? { canonicalKey: a.canonicalKey, objective: a.objective }
+                    : undefined;
+                })()}
+              />
             )}
           </CardContent>
         </Card>

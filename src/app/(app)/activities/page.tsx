@@ -299,6 +299,12 @@ export default function ActivitiesPage() {
                   <Badge variant="muted">{selected.measurementMode}</Badge>
                   <Badge variant="muted">{selected.frequency}</Badge>
                   <Badge variant="muted">weight {selected.weight}</Badge>
+                  <Badge variant="info">
+                    target{" "}
+                    {selected.targetType === "percentage"
+                      ? formatPercent(selected.target)
+                      : selected.target}
+                  </Badge>
                   {selected.evidenceRequired && (
                     <Badge variant="warning">evidence required</Badge>
                   )}

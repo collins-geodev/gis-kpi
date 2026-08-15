@@ -192,7 +192,10 @@ export default function KpiDetailPage() {
       </Card>
 
       {/* Evidence attach + review */}
-      <EvidencePanel assignmentId={assignment.id as Id<"kpiAssignments">} />
+      <EvidencePanel
+        assignmentId={assignment.id as Id<"kpiAssignments">}
+        kpi={{ canonicalKey: assignment.canonicalKey, objective: assignment.objective }}
+      />
 
       <ScoreOverridePanel assignmentId={assignment.id as Id<"kpiAssignments">} />
 
