@@ -36,6 +36,7 @@ import type * as lib_sourceRows from "../lib/sourceRows.js";
 import type * as lib_thresholds from "../lib/thresholds.js";
 import type * as lib_types from "../lib/types.js";
 import type * as measurementsModel from "../measurementsModel.js";
+import type * as migrations from "../migrations.js";
 import type * as notifications from "../notifications.js";
 import type * as overrides from "../overrides.js";
 import type * as overview from "../overview.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "lib/thresholds": typeof lib_thresholds;
   "lib/types": typeof lib_types;
   measurementsModel: typeof measurementsModel;
+  migrations: typeof migrations;
   notifications: typeof notifications;
   overrides: typeof overrides;
   overview: typeof overview;

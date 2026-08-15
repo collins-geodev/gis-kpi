@@ -142,20 +142,12 @@ export default function ActivitiesPage() {
   );
   const fields = selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : [];
 
-  // Auto-capture the title from the KPI + period. Overwrites only untouched or
-  // previously auto-filled titles, never something the user typed themselves.
-  const [autoTitle, setAutoTitle] = useState("");
+  // The title is fully auto-generated from the KPI + period (read-only field).
   useEffect(() => {
     if (editingId || !selected) return;
     const label =
       (periods ?? []).find((p) => p.periodKey === periodKey)?.label ?? periodKey;
-    const suggestion = suggestActivityTitle(
-      selected.canonicalKey,
-      selected.objective,
-      label,
-    );
-    setTitle((prev) => (prev.trim() === "" || prev === autoTitle ? suggestion : prev));
-    setAutoTitle(suggestion);
+    setTitle(suggestActivityTitle(selected.canonicalKey, selected.objective, label));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, periodKey, editingId]);
 
@@ -382,13 +374,15 @@ export default function ActivitiesPage() {
                 </select>
               </Row>
 
-              <Row label="Title" required>
+              <Row label="Title (auto-generated)" required>
                 <input
                   required
+                  readOnly
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  placeholder="e.g. Integrated Ikorodu feeder assets"
+                  tabIndex={-1}
+                  aria-label="Title — generated automatically from the KPI and period"
+                  className="h-9 w-full cursor-default rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground"
+                  placeholder="Select a KPI to generate the title"
                 />
               </Row>
 
@@ -665,11 +659,13 @@ function modeHint(a: Assignment): React.ReactNode {
     case "reduction":
       return (
         <>
-          <strong>Baseline</strong> = the reference value (e.g. prior year);{" "}
-          <strong>current</strong> = this period&apos;s value. The achieved reduction is
-          scored against the target reduction of{" "}
-          <strong>{formatPercent(a.target)}</strong>. The most recent entry in the period
-          is used.
+          Count the <strong>same thing</strong> in both boxes — e.g. QA errors found.{" "}
+          <strong>Baseline</strong> = how many there were in the agreed reference period
+          (e.g. same month last year); <strong>current</strong> = how many this period.
+          Worked example with the {formatPercent(a.target)} reduction target: baseline 50
+          → current 40 is a 20% drop = <strong>target met (100%)</strong>; current 45 is
+          only a 10% drop = 50% attainment. Use whole counts, keep the baseline fixed all
+          year, and state both numbers in your notes.
         </>
       );
     case "milestone":
