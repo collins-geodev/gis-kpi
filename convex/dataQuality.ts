@@ -262,12 +262,15 @@ export const reopenIssue = mutation({
 export const bulkResolve = mutation({
   args: {
     category: v.optional(vDqCategory),
-    decision: v.union(v.literal("approve"), v.literal("resolve")),
+    decision: v.union(v.literal("approve"), v.literal("resolve"), v.literal("reject")),
     note: v.optional(v.string()),
   },
   returns: v.object({ resolved: v.number(), skipped: v.number() }),
   handler: async (ctx, { category, decision, note }) => {
     const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
+    if (decision === "reject" && !note?.trim()) {
+      throw new Error("A reason is required to bulk-reject.");
+    }
 
     const issues = category
       ? await ctx.db
@@ -276,7 +279,12 @@ export const bulkResolve = mutation({
           .take(5000)
       : await ctx.db.query("dataQualityIssues").take(5000);
 
-    const status = decision === "approve" ? "approved" : "resolved";
+    const status =
+      decision === "approve"
+        ? "approved"
+        : decision === "reject"
+          ? "rejected"
+          : "resolved";
     const affected = new Set<Id<"kpiAssignments">>();
     let rubricYearId: Id<"performanceYears"> | undefined;
     let resolved = 0;

@@ -68,24 +68,31 @@ export default function DataQualityPage() {
     await resolve({ issueId: id, decision, note });
   }
 
-  async function approveAll() {
+  async function bulkAct(decision: "approve" | "resolve" | "reject") {
     const label = category === "all" ? "all categories" : category.replace(/_/g, " ");
-    if (
-      !window.confirm(
-        `Approve every open proposal in ${label}? Each proposed canonical value is applied and affected KPIs are unblocked. Items without a proposal (e.g. weight completeness) are skipped.`,
-      )
-    ) {
-      return;
+    let note: string | undefined;
+    if (decision === "reject") {
+      note =
+        window.prompt(`Reason for rejecting every open issue in ${label} (required):`) ??
+        undefined;
+      if (!note?.trim()) return;
+    } else {
+      const message =
+        decision === "approve"
+          ? `Approve every open proposal in ${label}? Each proposed canonical value is applied and affected KPIs are unblocked. Items without a proposal are skipped.`
+          : `Mark every open issue in ${label} as resolved? Use this when the items have been handled outside the proposal flow. Affected KPIs are unblocked.`;
+      if (!window.confirm(message)) return;
+      note = `Bulk ${decision}d from the Data Quality queue`;
     }
     setBulkBusy(true);
     try {
       const res = await bulkResolve({
         category: category === "all" ? undefined : (category as never),
-        decision: "approve",
-        note: "Bulk approved from the Data Quality queue",
+        decision,
+        note,
       });
       window.alert(
-        `Approved ${res.resolved} issue(s)` +
+        `${decision === "approve" ? "Approved" : decision === "reject" ? "Rejected" : "Resolved"} ${res.resolved} issue(s)` +
           (res.skipped ? `; skipped ${res.skipped} without a proposed value.` : "."),
       );
     } finally {
@@ -132,12 +139,33 @@ export default function DataQualityPage() {
           />
         </div>
         {canResolve && (
-          <Button variant="brand" onClick={approveAll} disabled={bulkBusy}>
-            <CheckCheck className="h-4 w-4" />
-            {category === "all"
-              ? "Approve all proposals"
-              : `Approve all ${category.replace(/_/g, " ")}`}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="brand"
+              onClick={() => bulkAct("approve")}
+              disabled={bulkBusy}
+            >
+              <CheckCheck className="h-4 w-4" />
+              {category === "all"
+                ? "Approve all proposals"
+                : `Approve all ${category.replace(/_/g, " ")}`}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => bulkAct("resolve")}
+              disabled={bulkBusy}
+            >
+              Resolve all
+            </Button>
+            <Button
+              variant="ghost"
+              className="text-muted-foreground hover:text-critical"
+              onClick={() => bulkAct("reject")}
+              disabled={bulkBusy}
+            >
+              Reject all
+            </Button>
+          </div>
         )}
       </div>
 
