@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   CheckSquare,
   ClipboardList,
@@ -8,6 +9,7 @@ import {
   ScrollText,
   Settings,
   ShieldAlert,
+  UserCircle,
   UserCog,
   Users2,
   type LucideIcon,
@@ -42,6 +44,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/activities", label: "Activity Capture", icon: ClipboardList },
       { href: "/evidence", label: "Evidence Centre", icon: FolderCheck },
+      { href: "/profile", label: "My Profile", icon: UserCircle },
       {
         href: "/review",
         label: "Review & Approval",
@@ -53,6 +56,12 @@ export const NAV: NavGroup[] = [
   {
     label: "Governance",
     items: [
+      {
+        href: "/activity-feed",
+        label: "Activity Feed",
+        icon: Activity,
+        roles: ["manager", "reviewer", "kpi_admin", "system_admin", "auditor"],
+      },
       {
         href: "/data-quality",
         label: "Data Quality",

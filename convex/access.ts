@@ -21,6 +21,7 @@ export const currentUser = query({
       userId: v.id("users"),
       name: v.optional(v.string()),
       email: v.optional(v.string()),
+      avatarUrl: v.union(v.string(), v.null()),
       isActive: v.boolean(),
       roles: v.array(vAppRole),
       employee: v.union(
@@ -61,6 +62,9 @@ export const currentUser = query({
       userId: user._id,
       name: user.name,
       email: user.email,
+      avatarUrl: user.avatarStorageId
+        ? await ctx.storage.getUrl(user.avatarStorageId)
+        : null,
       isActive: user.isActive ?? true,
       roles,
       employee,

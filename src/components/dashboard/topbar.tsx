@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@convex/_generated/api";
@@ -8,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
+import { initials } from "@convex/lib/format";
 
 export function Topbar() {
   const me = useQuery(api.access.currentUser);
   const { signOut } = useAuthActions();
+  const display = me?.name ?? me?.email ?? "";
 
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
@@ -30,12 +33,25 @@ export function Topbar() {
           ))}
         </div>
         <ThemeToggle />
-        {me?.email && (
-          <span className="hidden text-sm text-muted-foreground lg:inline">
-            {me.email}
-          </span>
-        )}
-        <Button variant="outline" size="sm" onClick={() => signOut()}>
+        <Link
+          href={"/profile" as never}
+          className="glow-pulse flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-accent/40 bg-accent/15 text-xs font-semibold text-accent transition-transform hover:scale-110"
+          title="My profile"
+          aria-label="Open my profile"
+        >
+          {me?.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={me.avatarUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            initials(display || "?")
+          )}
+        </Link>
+        <Button
+          variant="outline"
+          size="sm"
+          className="hover-wiggle"
+          onClick={() => signOut()}
+        >
           <LogOut className="h-4 w-4" />
           <span className="hidden sm:inline">Sign out</span>
         </Button>

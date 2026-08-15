@@ -7,9 +7,10 @@
  * whether a measurement can later become an approved official score.
  */
 import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { AuthError, getAuthContext, requireUser } from "./authz";
+import { AuthError, getAuthContext, requireRole, requireUser } from "./authz";
 import { recordAudit } from "./audit";
 import { recomputeMeasurement } from "./measurementsModel";
 import { BASELINE_PERFORMANCE_YEAR } from "./lib/types";
@@ -88,7 +89,59 @@ export const create = mutation({
       actorUserId: user._id,
       after: { kpiAssignmentId: args.kpiAssignmentId, periodKey: args.periodKey },
     });
+
+    // Notify admins + the actor (branded email if RESEND_API_KEY is configured,
+    // in-app notification always). Scheduled so the mutation stays transactional.
+    await ctx.scheduler.runAfter(0, internal.emails.notifyKpiUpdate, { activityId });
+
     return activityId;
+  },
+});
+
+/** Recent activities across ALL employees — the admin/manager activity feed. */
+export const listRecentAll = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    await requireRole(ctx, [
+      "system_admin",
+      "kpi_admin",
+      "manager",
+      "reviewer",
+      "auditor",
+    ]);
+    const rows = await ctx.db
+      .query("activities")
+      .order("desc")
+      .take(Math.min(limit ?? 40, 100));
+    const out = [];
+    for (const a of rows) {
+      const employee = await ctx.db.get(a.employeeId);
+      const assignment = await ctx.db.get(a.kpiAssignmentId);
+      const actor = await ctx.db.get(a.createdByUserId);
+      const measurement = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", a.kpiAssignmentId).eq("periodKey", a.periodKey),
+        )
+        .first();
+      out.push({
+        id: a._id,
+        title: a.title,
+        description: a.description,
+        periodKey: a.periodKey,
+        activityAt: a.activityAt,
+        createdAt: a.createdAt,
+        status: a.status,
+        employeeName: employee?.displayName ?? "Unknown",
+        jobRole: employee?.jobRole ?? "",
+        actorName: actor?.name ?? actor?.email ?? "system",
+        objective: assignment?.objective ?? "",
+        kpiAssignmentId: a.kpiAssignmentId,
+        cappedAttainment: measurement?.cappedAttainment ?? null,
+        measurementStatus: measurement?.status ?? "no_data",
+      });
+    }
+    return out;
   },
 });
 

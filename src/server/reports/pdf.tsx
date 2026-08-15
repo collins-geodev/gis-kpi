@@ -214,7 +214,7 @@ export async function buildReportPdf(
       {/* Cover */}
       <Page size="A4" style={s.coverPage}>
         <Text style={s.poweredBy}>
-          IKEJA ELECTRIC · GIS UNIT · TECHNICAL OPTIMIZATION
+          IKEJA ELECTRIC · GIS UNIT · TECHNICAL SERVICES
         </Text>
         <View>
           <Text style={s.coverTitle}>{ds.meta.title}</Text>

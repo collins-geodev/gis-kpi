@@ -46,6 +46,8 @@ export default defineSchema({
     isAnonymous: v.optional(v.boolean()),
     /** Links this login to a roster employee (self-service scope). */
     employeeId: v.optional(v.id("employees")),
+    /** Profile photo captured/uploaded in-app (Convex storage). */
+    avatarStorageId: v.optional(v.id("_storage")),
     isActive: v.optional(v.boolean()),
     lastSeenAt: v.optional(v.number()),
   })

@@ -45,10 +45,10 @@ export function Sidebar() {
                       <Link
                         href={item.href as never}
                         className={cn(
-                          "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
+                          "hover-wiggle flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all",
                           active
-                            ? "bg-accent/15 font-medium text-accent"
-                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                            ? "bg-accent/15 font-medium text-accent shadow-[inset_2px_0_0_hsl(var(--accent))]"
+                            : "text-muted-foreground hover:translate-x-0.5 hover:bg-muted hover:text-foreground",
                         )}
                         aria-current={active ? "page" : undefined}
                       >

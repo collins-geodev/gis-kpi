@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
+import { CountUp } from "@/components/count-up";
 import { APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
 import {
   AlertTriangle,
@@ -120,7 +121,7 @@ export default function OverviewPage() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="stagger-children grid grid-cols-2 gap-4 md:grid-cols-4">
             <StatCard
               label="Employees"
               value={summary.employees}
@@ -187,19 +188,23 @@ function StatCard({
   href?: string;
 }) {
   const body = (
-    <Card
-      className={
-        tone === "warning"
-          ? "border-warning/40 transition-colors hover:border-warning"
-          : "transition-colors hover:border-accent/50"
-      }
-    >
+    <Card className={`card-lift sheen ${tone === "warning" ? "border-warning/40" : ""}`}>
       <CardContent className="p-4">
-        <div className="flex items-center justify-between text-muted-foreground">
-          <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
-          {icon}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {label}
+          </span>
+          {icon && (
+            <span
+              className={`icon-chip ${tone === "warning" ? "icon-chip--warning" : ""}`}
+            >
+              {icon}
+            </span>
+          )}
         </div>
-        <div className="tabular mt-2 text-3xl font-semibold">{value}</div>
+        <div className="mt-2 text-3xl font-semibold">
+          <CountUp value={value} />
+        </div>
       </CardContent>
     </Card>
   );
