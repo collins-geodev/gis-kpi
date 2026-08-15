@@ -42,6 +42,8 @@ export default function SignInPage() {
 
   return (
     <main className="bg-geo-grid relative flex min-h-screen flex-col items-center justify-center bg-background px-4">
+      <div className="starfield" aria-hidden />
+      <div className="aurora" aria-hidden />
       <div className="bg-geo-contour pointer-events-none absolute inset-0" aria-hidden />
       <Card className="relative z-10 w-full max-w-md border-border/60 shadow-lg">
         <CardHeader className="space-y-3">

@@ -53,6 +53,9 @@
     --info: 201 90% 35%;
     --info-foreground: 0 0% 100%;
 
+    /* Violet halo — second decorative hue (aurora pools, constellation). */
+    --halo: 262 60% 55%;
+
     --border: 214 32% 88%;
     --input: 214 32% 86%;
     --ring: 189 94% 40%;
@@ -79,22 +82,25 @@
   }
 
   .dark {
-    --background: 213 63% 7%; /* #07111F deep navy */
+    --background: 222 62% 5%; /* #050b16 deep-space navy */
     --foreground: 210 40% 96%;
 
-    --card: 222 47% 11%; /* #0F172A slate */
+    --card: 220 50% 8%; /* #0a1220 — floats just above the void */
     --card-foreground: 210 40% 96%;
 
-    --popover: 222 45% 13%;
+    --popover: 220 48% 10%;
     --popover-foreground: 210 40% 96%;
+
+    /* Violet halo — the second hue in aurora pools and constellation lines. */
+    --halo: 262 83% 62%;
 
     --primary: 189 94% 48%; /* cyan action on dark */
     --primary-foreground: 213 63% 7%;
 
-    --secondary: 217 33% 17%;
+    --secondary: 218 38% 14%;
     --secondary-foreground: 210 40% 96%;
 
-    --muted: 217 33% 16%;
+    --muted: 218 38% 13%;
     --muted-foreground: 215 20% 68%;
 
     --accent: 187 85% 53%;
@@ -112,8 +118,8 @@
     --info: 189 94% 55%;
     --info-foreground: 213 63% 7%;
 
-    --border: 217 33% 22%;
-    --input: 217 33% 24%;
+    --border: 218 34% 18%;
+    --input: 218 34% 21%;
     --ring: 189 94% 55%;
 
     --chart-1: 189 94% 55%;
@@ -208,16 +214,80 @@
   animation: aurora-drift 22s ease-in-out infinite alternate;
 }
 .aurora::after {
-  width: 460px;
-  height: 460px;
-  bottom: -200px;
-  left: 12%;
-  background: radial-gradient(circle, hsl(var(--info)), transparent 65%);
+  width: 520px;
+  height: 520px;
+  bottom: -220px;
+  left: 10%;
+  background: radial-gradient(circle, hsl(var(--halo)), transparent 65%);
   animation: aurora-drift 28s ease-in-out infinite alternate-reverse;
 }
-.dark .aurora::before,
+.dark .aurora::before {
+  opacity: 0.2;
+}
 .dark .aurora::after {
-  opacity: 0.16;
+  opacity: 0.14;
+}
+
+/* --------------------------------------------------------------------------
+ * Starfield — pure-CSS star tiles behind the dark shell (portfolio look).
+ * Two repeating dot layers at different tile sizes; the sparser layer twinkles.
+ * Hidden in light mode; static under reduced motion via the global rule.
+ * ------------------------------------------------------------------------ */
+.starfield {
+  display: none;
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+.dark .starfield {
+  display: block;
+}
+.starfield::before,
+.starfield::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.starfield::before {
+  background-image:
+    radial-gradient(1px 1px at 22px 34px, hsl(210 40% 96% / 0.5), transparent 1.6px),
+    radial-gradient(1px 1px at 118px 92px, hsl(189 94% 75% / 0.4), transparent 1.6px),
+    radial-gradient(1.2px 1.2px at 200px 150px, hsl(210 40% 96% / 0.35), transparent 2px),
+    radial-gradient(1px 1px at 68px 190px, hsl(210 40% 96% / 0.28), transparent 1.6px),
+    radial-gradient(1px 1px at 160px 40px, hsl(262 83% 80% / 0.3), transparent 1.6px);
+  background-size: 240px 220px;
+}
+.starfield::after {
+  background-image:
+    radial-gradient(1.4px 1.4px at 60px 60px, hsl(210 40% 96% / 0.55), transparent 2.2px),
+    radial-gradient(1px 1px at 300px 210px, hsl(189 94% 75% / 0.45), transparent 1.8px),
+    radial-gradient(1.2px 1.2px at 210px 320px, hsl(210 40% 96% / 0.4), transparent 2px);
+  background-size: 380px 360px;
+  animation: star-twinkle 5.5s ease-in-out infinite alternate;
+}
+@keyframes star-twinkle {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+
+/* Gradient page headline — white into cyan, like the portfolio hero. */
+.heading-gradient {
+  background-image: linear-gradient(
+    94deg,
+    hsl(var(--foreground)),
+    hsl(var(--foreground)) 40%,
+    hsl(var(--accent)) 78%,
+    hsl(var(--info))
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 @keyframes aurora-drift {
   from {

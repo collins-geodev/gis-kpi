@@ -72,6 +72,11 @@ const config: Config = {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
         },
+        halo: "hsl(var(--halo))",
+      },
+      boxShadow: {
+        glow: "0 0 24px -4px hsl(var(--accent) / 0.5)",
+        "glow-sm": "0 0 14px -4px hsl(var(--accent) / 0.45)",
       },
       borderRadius: {
         lg: "var(--radius)",
