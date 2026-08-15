@@ -17,7 +17,7 @@ export function PageHeader({
   return (
     <div className={cn("flex flex-wrap items-end justify-between gap-4", className)}>
       <div>
-        <h1 className="heading-gradient text-balance text-xl font-semibold tracking-tight">
+        <h1 className="heading-gradient text-balance font-display text-2xl font-bold tracking-tight">
           {title}
         </h1>
         {description && (

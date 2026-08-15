@@ -12,12 +12,21 @@
  */
 @layer base {
   :root {
+    /* Portfolio type system (next/font variables with system fallbacks). */
     --font-sans:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-      Arial, sans-serif;
-    --font-mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+      var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    --font-display: var(--font-sora), var(--font-sans);
+    --font-mono:
+      var(--font-jetbrains), ui-monospace, "SFMono-Regular", "Menlo", "Consolas",
+      monospace;
 
-    --radius: 0.625rem;
+    --radius: 0.75rem;
+
+    /* Signature portfolio gradient: cyan → teal → violet at 120°. */
+    --grad-from: #22d3ee;
+    --grad-via: #2dd4bf;
+    --grad-to: #8b5cf6;
 
     /* Light theme */
     --background: 210 40% 98%; /* #F8FAFC */
@@ -82,13 +91,13 @@
   }
 
   .dark {
-    --background: 222 62% 5%; /* #050b16 deep-space navy */
+    --background: 222 52% 4%; /* #050810 — the portfolio's deep space */
     --foreground: 210 40% 96%;
 
-    --card: 220 50% 8%; /* #0a1220 — floats just above the void */
+    --card: 219 39% 9%; /* #0b1222 — the portfolio's glass panel base */
     --card-foreground: 210 40% 96%;
 
-    --popover: 220 48% 10%;
+    --popover: 220 42% 10%;
     --popover-foreground: 210 40% 96%;
 
     /* Violet halo — the second hue in aurora pools and constellation lines. */
@@ -103,8 +112,8 @@
     --muted: 218 38% 13%;
     --muted-foreground: 215 20% 68%;
 
-    --accent: 187 85% 53%;
-    --accent-foreground: 213 63% 7%;
+    --accent: 187 92% 53%; /* #22d3ee — the portfolio cyan */
+    --accent-foreground: 222 52% 4%;
 
     --brand: 0 84% 55%; /* brighter red keeps AA contrast on navy */
     --brand-foreground: 0 0% 100%;
@@ -275,19 +284,43 @@
   }
 }
 
-/* Gradient page headline — white into cyan, like the portfolio hero. */
+/*
+ * Gradient page headline — white leading into the portfolio's signature
+ * cyan → teal → violet sweep, slowly shifting like the hero name.
+ */
 .heading-gradient {
   background-image: linear-gradient(
-    94deg,
+    120deg,
     hsl(var(--foreground)),
-    hsl(var(--foreground)) 40%,
-    hsl(var(--accent)) 78%,
-    hsl(var(--info))
+    hsl(var(--foreground)) 35%,
+    var(--grad-from) 60%,
+    var(--grad-via) 80%,
+    var(--grad-to)
   );
+  background-size: 180% auto;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
+  animation: heading-shift 8s ease-in-out infinite alternate;
+}
+@keyframes heading-shift {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+
+/* The signature gradient as a fill (buttons, accents). */
+.grad-signature {
+  background-image: linear-gradient(
+    120deg,
+    var(--grad-from),
+    var(--grad-via) 35%,
+    var(--grad-to)
+  );
 }
 @keyframes aurora-drift {
   from {
