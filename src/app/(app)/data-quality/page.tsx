@@ -49,6 +49,7 @@ export default function DataQualityPage() {
   );
 
   const resolve = useMutation(api.dataQuality.resolveIssue);
+  const reopen = useMutation(api.dataQuality.reopenIssue);
   const bulkResolve = useMutation(api.dataQuality.bulkResolve);
   const [bulkBusy, setBulkBusy] = useState(false);
 
@@ -188,7 +189,26 @@ export default function DataQualityPage() {
                   {canResolve && (
                     <TableCell className="text-right">
                       {["approved", "rejected", "resolved"].includes(i.status) ? (
-                        <span className="text-xs text-muted-foreground">done</span>
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-xs text-muted-foreground">done</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground hover:text-warning"
+                            title="Undo this decision — the issue returns to open (re-blocks scoring if it was a blocker)"
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  "Reopen this issue? It returns to the open queue and re-blocks scoring if it was a blocker.",
+                                )
+                              )
+                                return;
+                              void reopen({ issueId: i.id });
+                            }}
+                          >
+                            Reopen
+                          </Button>
+                        </div>
                       ) : (
                         <div className="flex justify-end gap-1">
                           {i.proposedValue !== null && (

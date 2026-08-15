@@ -197,6 +197,63 @@ export const resolveIssue = mutation({
   },
 });
 
+/** Undo a decision: return an approved/rejected/resolved issue to open. */
+export const reopenIssue = mutation({
+  args: { issueId: v.id("dataQualityIssues"), note: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, { issueId, note }) => {
+    const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
+    const issue = await ctx.db.get(issueId);
+    if (!issue) throw new Error("Issue not found");
+    if (!RESOLVED_STATES.includes(issue.status)) {
+      throw new Error("Issue is already open.");
+    }
+
+    await ctx.db.patch(issueId, {
+      status: "open",
+      resolvedByUserId: undefined,
+      resolutionNote: undefined,
+      resolvedAt: undefined,
+    });
+
+    // Reopening a blocker re-blocks the affected assignment(s).
+    const affected: Doc<"kpiAssignments">[] = [];
+    if (issue.kpiAssignmentId) {
+      const a = await ctx.db.get(issue.kpiAssignmentId);
+      if (a) affected.push(a);
+    } else if (issue.sourceRowNumber !== undefined) {
+      affected.push(...(await assignmentsForRow(ctx, issue.sourceRowNumber)));
+    }
+    if (issue.category === "rubric_required" && issue.performanceYearId) {
+      const innovations = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_year_key", (q) =>
+          q
+            .eq("performanceYearId", issue.performanceYearId!)
+            .eq("canonicalKey", "tech_innovation"),
+        )
+        .take(500);
+      affected.push(...innovations);
+    }
+    for (const a of affected) {
+      const blocked = await isStillBlocked(ctx, a);
+      if (a.scoringBlocked !== blocked)
+        await ctx.db.patch(a._id, { scoringBlocked: blocked });
+    }
+
+    await recordAudit(ctx, {
+      entityType: "dataQualityIssue",
+      entityId: issueId,
+      action: "dq_reopen",
+      actorUserId: user._id,
+      reason: note,
+      before: { status: issue.status },
+      after: { status: "open" },
+    });
+    return null;
+  },
+});
+
 /**
  * Bulk-approve/resolve every open issue in a category (or all categories).
  * "approve" only touches issues that carry a proposed value. Recomputes the

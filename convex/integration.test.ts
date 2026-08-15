@@ -1071,3 +1071,46 @@ describe("pinned baseline & scoring-block repair", () => {
     expect(summary.blockers).toBe(0);
   });
 });
+
+describe("data-quality reopen", () => {
+  test("reopening a decided blocker re-blocks the affected KPI", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["kpi_admin"],
+    });
+    // Resolve the rubric requirement → innovation KPIs unblock (except 18/30/54).
+    const issueId = await t.run(async (ctx) => {
+      const i = await ctx.db
+        .query("dataQualityIssues")
+        .withIndex("by_code", (q) => q.eq("code", "rubric_required:tech_innovation"))
+        .first();
+      return i!._id;
+    });
+    await admin.mutation(api.dataQuality.resolveIssue, {
+      issueId,
+      decision: "resolve",
+      note: "Rubric agreed",
+    });
+    const blockedAfterResolve = await t.run(
+      async (ctx) =>
+        (await ctx.db.query("kpiAssignments").collect()).filter(
+          (a) => a.canonicalKey === "tech_innovation" && a.scoringBlocked,
+        ).length,
+    );
+    expect(blockedAfterResolve).toBe(3);
+
+    // Undo → all innovation KPIs are blocked again.
+    await admin.mutation(api.dataQuality.reopenIssue, { issueId });
+    const blockedAfterReopen = await t.run(
+      async (ctx) =>
+        (await ctx.db.query("kpiAssignments").collect()).filter(
+          (a) => a.canonicalKey === "tech_innovation" && a.scoringBlocked,
+        ).length,
+    );
+    expect(blockedAfterReopen).toBe(15);
+    const status = await t.run(async (ctx) => (await ctx.db.get(issueId))!.status);
+    expect(status).toBe("open");
+  });
+});
