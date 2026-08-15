@@ -257,6 +257,7 @@ type Assignment = {
   scoreCap: number;
   stretchCap: number;
   evidenceRequired: boolean;
+  pinnedBaseline: number | null;
   status: string;
   scoringBlocked: boolean;
   sourceRowNumber: number;
@@ -284,6 +285,7 @@ function KpiEditorCard({ a }: { a: Assignment }) {
     scoreCap: String(a.scoreCap),
     stretchCap: String(a.stretchCap),
     evidenceRequired: a.evidenceRequired,
+    pinnedBaseline: a.pinnedBaseline === null ? "" : String(a.pinnedBaseline),
     status: a.status,
   });
   const [busy, setBusy] = useState(false);
@@ -312,6 +314,10 @@ function KpiEditorCard({ a }: { a: Assignment }) {
         scoreCap: Number(f.scoreCap),
         stretchCap: Number(f.stretchCap),
         evidenceRequired: f.evidenceRequired,
+        pinnedBaseline:
+          f.measurementMode === "reduction" && f.pinnedBaseline.trim() !== ""
+            ? Number(f.pinnedBaseline)
+            : null,
         status: f.status as never,
         reason: "Edited in KPI Settings",
       });
@@ -355,6 +361,20 @@ function KpiEditorCard({ a }: { a: Assignment }) {
             className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
           />
         </Text>
+
+        {f.measurementMode === "reduction" && (
+          <div className="rounded-md bg-info/10 px-3 py-2">
+            <NumField
+              label="Pinned baseline (blank = employee enters it)"
+              value={f.pinnedBaseline}
+              onChange={(v) => set("pinnedBaseline", v)}
+            />
+            <p className="mt-1 text-xs text-info">
+              When set, employees only enter the current value — this reference figure is
+              injected automatically and stays fixed for the year.
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <NumField label="Weight" value={f.weight} onChange={(v) => set("weight", v)} />

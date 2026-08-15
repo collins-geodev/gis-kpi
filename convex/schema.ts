@@ -216,6 +216,11 @@ export default defineSchema({
     scoreCap: v.number(),
     stretchCap: v.number(),
     evidenceRequired: v.boolean(),
+    /**
+     * Admin-pinned baseline for reduction-mode KPIs: when set, employees only
+     * enter the current value — the server injects this reference figure.
+     */
+    pinnedBaseline: v.optional(v.number()),
 
     // Verbatim source layer (audit).
     sourceRowNumber: v.number(),

@@ -89,8 +89,17 @@ export const listIssues = query({
   },
 });
 
+/** All assignments sharing a source row (row-keyed issues affect them all). */
+async function assignmentsForRow(
+  ctx: QueryCtx,
+  sourceRowNumber: number,
+): Promise<Doc<"kpiAssignments">[]> {
+  const all = await ctx.db.query("kpiAssignments").take(500);
+  return all.filter((a) => a.sourceRowNumber === sourceRowNumber);
+}
+
 /** Recompute whether a KPI assignment is still blocked by open issues. */
-async function isStillBlocked(
+export async function isStillBlocked(
   ctx: QueryCtx,
   assignment: Doc<"kpiAssignments">,
 ): Promise<boolean> {
@@ -139,14 +148,19 @@ export const resolveIssue = mutation({
       resolvedAt: Date.now(),
     });
 
-    // Recompute scoring-block state for affected assignment(s).
+    // Recompute scoring-block state for affected assignment(s) — via the
+    // direct link when present, otherwise via the shared source row.
+    const affectedAssignments: Doc<"kpiAssignments">[] = [];
     if (issue.kpiAssignmentId) {
       const a = await ctx.db.get(issue.kpiAssignmentId);
-      if (a) {
-        const blocked = await isStillBlocked(ctx, a);
-        if (a.scoringBlocked !== blocked)
-          await ctx.db.patch(a._id, { scoringBlocked: blocked });
-      }
+      if (a) affectedAssignments.push(a);
+    } else if (issue.sourceRowNumber !== undefined) {
+      affectedAssignments.push(...(await assignmentsForRow(ctx, issue.sourceRowNumber)));
+    }
+    for (const a of affectedAssignments) {
+      const blocked = await isStillBlocked(ctx, a);
+      if (a.scoringBlocked !== blocked)
+        await ctx.db.patch(a._id, { scoringBlocked: blocked });
     }
     // Resolving the rubric requirement can unblock every innovation assignment.
     if (
@@ -230,6 +244,11 @@ export const bulkResolve = mutation({
       });
       resolved++;
       if (i.kpiAssignmentId) affected.add(i.kpiAssignmentId);
+      else if (i.sourceRowNumber !== undefined) {
+        for (const a of await assignmentsForRow(ctx, i.sourceRowNumber)) {
+          affected.add(a._id);
+        }
+      }
       if (i.category === "rubric_required" && i.canonicalKey === "tech_innovation") {
         rubricYearId = i.performanceYearId;
       }

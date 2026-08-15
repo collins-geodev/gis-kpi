@@ -994,3 +994,80 @@ describe("duplicate capture guard", () => {
     expect(cInfo?.count).toBe(2);
   });
 });
+
+describe("pinned baseline & scoring-block repair", () => {
+  test("pinned baseline is injected server-side for reduction KPIs", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { assignmentId, biz } = await t.run(async (ctx) => {
+      const all = await ctx.db.query("kpiAssignments").take(200);
+      const a = all.find((x) => x.measurementMode === "reduction" && !x.scoringBlocked)!;
+      const e = (await ctx.db.get(a.employeeId))!;
+      return { assignmentId: a._id, biz: e.employeeId };
+    });
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: biz,
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["kpi_admin"],
+    });
+
+    await admin.mutation(api.kpiSettings.updateAssignment, {
+      assignmentId,
+      pinnedBaseline: 50,
+      reason: "Agreed 2025 baseline",
+    });
+
+    // Employee supplies only the current value — baseline comes from the pin.
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "QA errors this month",
+      description: "40 errors vs pinned 50",
+      currentValue: 40,
+    });
+    const m = await t.run(async (ctx) =>
+      ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+        )
+        .first(),
+    );
+    // (50-40)/50 = 20% achieved reduction; attainment = 0.2 / target.
+    expect(m?.rawActual).toBeCloseTo(0.2, 5);
+  });
+
+  test("recomputeScoringBlocks clears flags once every blocker is resolved", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+    // Resolve every open blocking issue (rubric + row-level blockers).
+    await t.run(async (ctx) => {
+      const issues = await ctx.db.query("dataQualityIssues").collect();
+      for (const i of issues) {
+        if (i.blocksScoring && !["approved", "rejected", "resolved"].includes(i.status)) {
+          await ctx.db.patch(i._id, { status: "resolved", resolvedAt: 1 });
+        }
+      }
+    });
+    const res = await t.mutation(internal.migrations.recomputeScoringBlocks, {});
+    expect(res.blocked).toBe(0);
+    const stillBlocked = await t.run(
+      async (ctx) =>
+        (await ctx.db.query("kpiAssignments").collect()).filter((a) => a.scoringBlocked)
+          .length,
+    );
+    expect(stillBlocked).toBe(0);
+    // Sanity: admin board still readable afterwards.
+    const summary = await admin.query(api.dataQuality.summary, {});
+    expect(summary.blockers).toBe(0);
+  });
+});

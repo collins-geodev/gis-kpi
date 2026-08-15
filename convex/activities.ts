@@ -129,6 +129,11 @@ export const create = mutation({
       throw new AuthError("You can only log activities for your own KPIs");
     }
 
+    // Admin-pinned baseline is authoritative — whatever the client sent.
+    if (assignment.measurementMode === "reduction" && assignment.pinnedBaseline != null) {
+      args = { ...args, baseline: assignment.pinnedBaseline };
+    }
+
     assertCompleteCapture(assignment.measurementMode, args);
     await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey, {
       isAdmin,
@@ -426,6 +431,11 @@ export const update = mutation({
       throw new AuthError("You can only edit your own activities");
     }
 
+    // Admin-pinned baseline is authoritative — whatever the client sent.
+    if (assignment.measurementMode === "reduction" && assignment.pinnedBaseline != null) {
+      args = { ...args, baseline: assignment.pinnedBaseline };
+    }
+
     assertCompleteCapture(assignment.measurementMode, args);
     await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey, {
       isAdmin,
@@ -519,6 +529,7 @@ export const myAssignments = query({
         frequency: a.frequency,
         weight: a.weight,
         evidenceRequired: a.evidenceRequired,
+        pinnedBaseline: a.pinnedBaseline ?? null,
         scoringBlocked: a.scoringBlocked,
       }));
   },

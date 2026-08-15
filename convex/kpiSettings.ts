@@ -140,6 +140,7 @@ export const assignmentsForEmployee = query({
         scoreCap: a.scoreCap,
         stretchCap: a.stretchCap,
         evidenceRequired: a.evidenceRequired,
+        pinnedBaseline: a.pinnedBaseline ?? null,
         status: a.status,
         scoringBlocked: a.scoringBlocked,
         sourceRowNumber: a.sourceRowNumber,
@@ -163,6 +164,8 @@ export const updateAssignment = mutation({
     scoreCap: v.optional(v.number()),
     stretchCap: v.optional(v.number()),
     evidenceRequired: v.optional(v.boolean()),
+    /** null clears the pin (employee enters the baseline again). */
+    pinnedBaseline: v.optional(v.union(v.number(), v.null())),
     objective: v.optional(v.string()),
     metric: v.optional(v.string()),
     status: v.optional(vKpiStatus),
@@ -198,6 +201,12 @@ export const updateAssignment = mutation({
     }
     if (args.evidenceRequired !== undefined)
       patch.evidenceRequired = args.evidenceRequired;
+    if (args.pinnedBaseline !== undefined) {
+      if (args.pinnedBaseline !== null && args.pinnedBaseline < 0) {
+        throw new Error("Pinned baseline must be ≥ 0.");
+      }
+      patch.pinnedBaseline = args.pinnedBaseline ?? undefined;
+    }
     if (args.objective !== undefined) patch.objective = args.objective.slice(0, 1000);
     if (args.metric !== undefined) patch.metric = args.metric.slice(0, 1000);
     if (args.status !== undefined) patch.status = args.status;
@@ -219,6 +228,7 @@ export const updateAssignment = mutation({
         scoreCap: a.scoreCap,
         stretchCap: a.stretchCap,
         evidenceRequired: a.evidenceRequired,
+        pinnedBaseline: a.pinnedBaseline ?? null,
         objective: a.objective,
         metric: a.metric,
         status: a.status,

@@ -38,6 +38,7 @@ type Assignment = {
   frequency: string;
   weight: number;
   evidenceRequired: boolean;
+  pinnedBaseline: number | null;
   scoringBlocked: boolean;
 };
 
@@ -140,7 +141,11 @@ export default function ActivitiesPage() {
     () => (assignments ?? []).find((a) => a.id === assignmentId),
     [assignments, assignmentId],
   );
-  const fields = selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : [];
+  const baselinePinned =
+    selected?.measurementMode === "reduction" && selected.pinnedBaseline !== null;
+  const fields = (selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : []).filter(
+    (fld) => !(baselinePinned && fld.name === "baseline"),
+  );
 
   // The title is fully auto-generated from the KPI + period (read-only field).
   useEffect(() => {
@@ -202,7 +207,10 @@ export default function ActivitiesPage() {
             quantity: num(values.quantity),
             numerator: num(values.numerator),
             denominator: num(values.denominator),
-            baseline: num(values.baseline),
+            baseline:
+              selected.measurementMode === "reduction" && selected.pinnedBaseline !== null
+                ? selected.pinnedBaseline
+                : num(values.baseline),
             currentValue: num(values.currentValue),
             withinThreshold: num(values.withinThreshold),
             eligible: num(values.eligible),
@@ -385,6 +393,16 @@ export default function ActivitiesPage() {
                   placeholder="Select a KPI to generate the title"
                 />
               </Row>
+
+              {baselinePinned && (
+                <p className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+                  Baseline (pinned by admin):{" "}
+                  <strong className="tabular text-foreground">
+                    {selected!.pinnedBaseline}
+                  </strong>{" "}
+                  — you only enter the current value.
+                </p>
+              )}
 
               {fields.length > 0 && (
                 <div className="grid grid-cols-2 gap-3">
