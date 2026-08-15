@@ -507,3 +507,56 @@ describe("evidence centre scope", () => {
     expect((await admin.query(api.evidence.listCentre, {})).length).toBe(1);
   });
 });
+
+describe("evidence deletion rules", () => {
+  test("owner deletes pre-review evidence; approved needs an admin", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: mgr } = await makeUser(t, { email: "m@x.com", roles: ["manager"] });
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list[0]!._id;
+    });
+    const mkEvidence = () =>
+      emp.mutation(api.evidence.saveEvidence, {
+        kpiAssignmentId: assignmentId,
+        externalUrl: "https://example.com/r",
+        originalFilename: "r",
+        mimeType: "text/uri-list",
+        fileSize: 0,
+        category: "supporting_document",
+        title: "Report",
+      });
+
+    // Owner can delete while submitted.
+    const e1 = await mkEvidence();
+    await emp.mutation(api.evidence.removeEvidence, { evidenceId: e1 });
+    expect((await emp.query(api.evidence.listCentre, {})).length).toBe(0);
+
+    // Once approved, the owner is blocked but an admin may delete.
+    const e2 = await mkEvidence();
+    await mgr.mutation(api.evidence.reviewEvidence, {
+      evidenceId: e2,
+      decision: "approve",
+    });
+    await expect(
+      emp.mutation(api.evidence.removeEvidence, { evidenceId: e2 }),
+    ).rejects.toThrow(/Admin/i);
+    await admin.mutation(api.evidence.removeEvidence, { evidenceId: e2 });
+    expect((await admin.query(api.evidence.listCentre, {})).length).toBe(0);
+  });
+});

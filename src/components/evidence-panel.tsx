@@ -7,7 +7,7 @@ import type { Id } from "@convex/_generated/dataModel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Loader2, Paperclip, Upload } from "lucide-react";
+import { ExternalLink, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 
 const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant"]> = {
@@ -26,6 +26,7 @@ export function EvidencePanel({ assignmentId }: { assignmentId: Id<"kpiAssignmen
   const generateUploadUrl = useMutation(api.evidence.generateUploadUrl);
   const saveEvidence = useMutation(api.evidence.saveEvidence);
   const reviewEvidence = useMutation(api.evidence.reviewEvidence);
+  const removeEvidence = useMutation(api.evidence.removeEvidence);
 
   const roles = (me?.roles ?? []) as AppRole[];
   const canReview = roles.some((r) =>
@@ -187,35 +188,60 @@ export function EvidencePanel({ assignmentId }: { assignmentId: Id<"kpiAssignmen
                     )}
                   </div>
                 </div>
-                {canReview && !["approved", "rejected"].includes(e.reviewStatus) && (
-                  <div className="flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        reviewEvidence({ evidenceId: e.id, decision: "approve" })
-                      }
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
+                <div className="flex items-center gap-1">
+                  {canReview && !["approved", "rejected"].includes(e.reviewStatus) && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          reviewEvidence({ evidenceId: e.id, decision: "approve" })
+                        }
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          const comment =
+                            window.prompt("Reason for rejecting?") ?? undefined;
+                          if (comment)
+                            reviewEvidence({
+                              evidenceId: e.id,
+                              decision: "reject",
+                              comment,
+                            });
+                        }}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  )}
+                  {e.canDelete && (
+                    <button
+                      type="button"
+                      aria-label={`Delete evidence “${e.title}”`}
+                      title="Delete this evidence (audited; the KPI's evidence gate recomputes)"
+                      className="rounded-md p-1.5 text-muted-foreground hover:bg-critical/10 hover:text-critical"
                       onClick={() => {
-                        const comment =
-                          window.prompt("Reason for rejecting?") ?? undefined;
-                        if (comment)
-                          reviewEvidence({
-                            evidenceId: e.id,
-                            decision: "reject",
-                            comment,
-                          });
+                        if (
+                          !window.confirm(
+                            `Delete “${e.title}”? The file is removed and the KPI's evidence status recomputes.`,
+                          )
+                        )
+                          return;
+                        void removeEvidence({ evidenceId: e.id }).catch((err) =>
+                          setError(
+                            err instanceof Error ? err.message : "Could not delete.",
+                          ),
+                        );
                       }}
                     >
-                      Reject
-                    </Button>
-                  </div>
-                )}
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

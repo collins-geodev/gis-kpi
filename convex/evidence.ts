@@ -230,6 +230,94 @@ export const reviewEvidence = mutation({
   },
 });
 
+/** May this user delete this evidence item? (Shared by queries + mutation.) */
+function canDeleteEvidence(
+  evidence: {
+    retentionState: string;
+    reviewStatus: string;
+    employeeId: string;
+    uploadedByUserId: string;
+  },
+  user: { _id: string; employeeId?: string },
+  roles: string[],
+): boolean {
+  if (evidence.retentionState !== "active") return false;
+  if (roles.includes("kpi_admin") || roles.includes("system_admin")) return true;
+  const isOwner =
+    (user.employeeId && user.employeeId === evidence.employeeId) ||
+    evidence.uploadedByUserId === user._id;
+  return (
+    Boolean(isOwner) &&
+    ["draft", "submitted", "needs_changes", "rejected"].includes(evidence.reviewStatus)
+  );
+}
+
+/**
+ * Delete an evidence item. Owners may remove their own while it is still
+ * pre-approval (submitted/needs_changes/rejected); KPI/System Admins anything
+ * except legal holds. Soft-delete: the stored file is destroyed, the metadata
+ * row is retained as `deleted` for the audit trail, and the affected KPI's
+ * evidence-completeness gate recomputes.
+ */
+export const removeEvidence = mutation({
+  args: { evidenceId: v.id("evidenceFiles") },
+  returns: v.null(),
+  handler: async (ctx, { evidenceId }) => {
+    const { user, roles } = await getAuthContext(ctx);
+    const evidence = await ctx.db.get(evidenceId);
+    if (!evidence) throw new Error("Evidence not found");
+    if (evidence.retentionState === "deleted") return null;
+    if (evidence.retentionState === "legal_hold") {
+      throw new AuthError("This item is under legal hold and cannot be deleted.");
+    }
+    if (!canDeleteEvidence(evidence, user, roles)) {
+      throw new AuthError(
+        ["approved", "verified"].includes(evidence.reviewStatus)
+          ? "Reviewed evidence can only be deleted by a KPI/System Admin."
+          : "You can only delete evidence you uploaded or that belongs to your KPIs.",
+      );
+    }
+
+    if (evidence.storageId) await ctx.storage.delete(evidence.storageId);
+    await ctx.db.patch(evidenceId, {
+      retentionState: "deleted",
+      storageId: undefined,
+    });
+
+    // Deleting approved evidence can reopen the completeness gate — recompute.
+    if (evidence.kpiAssignmentId) {
+      const assignment = await ctx.db.get(evidence.kpiAssignmentId);
+      if (assignment) {
+        const measurements = await ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignment._id),
+          )
+          .take(500);
+        const periods = new Set(measurements.map((m) => m.periodKey));
+        if (evidence.periodKey) periods.add(evidence.periodKey);
+        for (const periodKey of periods) {
+          await recomputeMeasurement(ctx, assignment, periodKey);
+        }
+      }
+    }
+
+    await recordAudit(ctx, {
+      entityType: "evidenceFile",
+      entityId: evidenceId,
+      action: "delete_evidence",
+      actorUserId: user._id,
+      before: {
+        title: evidence.title,
+        originalFilename: evidence.originalFilename,
+        reviewStatus: evidence.reviewStatus,
+        kpiAssignmentId: evidence.kpiAssignmentId,
+      },
+    });
+    return null;
+  },
+});
+
 /**
  * Every evidence item the caller may read, newest first — the Evidence Centre
  * feed. Employees see their own; managers/reviewers their scope; org-wide
@@ -257,12 +345,14 @@ export const listCentre = query({
       .sort((a, b) => b.uploadedAt - a.uploadedAt)
       .slice(0, 400);
 
+    const { user, roles } = await getAuthContext(ctx);
     const out = [];
     for (const e of rows) {
       const assignment = e.kpiAssignmentId ? await ctx.db.get(e.kpiAssignmentId) : null;
       const employee = await ctx.db.get(e.employeeId);
       out.push({
         id: e._id,
+        canDelete: canDeleteEvidence(e, user, roles),
         title: e.title,
         category: e.category,
         reviewStatus: e.reviewStatus,
@@ -289,23 +379,26 @@ export const listForAssignment = query({
   handler: async (ctx, { kpiAssignmentId }) => {
     const assignment = await ctx.db.get(kpiAssignmentId);
     if (!assignment) throw new Error("KPI assignment not found");
-    await assertEmployeeReadScope(ctx, assignment.employeeId);
+    const { user, roles } = await assertEmployeeReadScope(ctx, assignment.employeeId);
     const rows = await ctx.db
       .query("evidenceFiles")
       .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
       .take(200);
-    return rows.map((e) => ({
-      id: e._id,
-      title: e.title,
-      category: e.category,
-      originalFilename: e.originalFilename,
-      mimeType: e.mimeType,
-      fileSize: e.fileSize,
-      reviewStatus: e.reviewStatus,
-      confidentiality: e.confidentiality,
-      hasFile: e.storageId !== undefined,
-      externalUrl: e.externalUrl ?? null,
-      uploadedAt: e.uploadedAt,
-    }));
+    return rows
+      .filter((e) => e.retentionState !== "deleted")
+      .map((e) => ({
+        id: e._id,
+        canDelete: canDeleteEvidence(e, user, roles),
+        title: e.title,
+        category: e.category,
+        originalFilename: e.originalFilename,
+        mimeType: e.mimeType,
+        fileSize: e.fileSize,
+        reviewStatus: e.reviewStatus,
+        confidentiality: e.confidentiality,
+        hasFile: e.storageId !== undefined,
+        externalUrl: e.externalUrl ?? null,
+        uploadedAt: e.uploadedAt,
+      }));
   },
 });

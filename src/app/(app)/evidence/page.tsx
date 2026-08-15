@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useAuthToken } from "@convex-dev/auth/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -34,6 +34,7 @@ import {
   FolderCheck,
   Loader2,
   Paperclip,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
@@ -110,6 +111,7 @@ export default function EvidenceCentrePage() {
   const me = useQuery(api.access.currentUser);
   const rows = useQuery(api.evidence.listCentre);
   const myAssignments = useQuery(api.activities.myAssignments);
+  const removeEvidence = useMutation(api.evidence.removeEvidence);
 
   const [uploadFor, setUploadFor] = useState<string>("");
   const [search, setSearch] = useState("");
@@ -340,20 +342,47 @@ export default function EvidenceCentrePage() {
                       })}
                     </TableCell>
                     <TableCell>
-                      {r.hasFile ? (
-                        <DownloadButton evidenceId={r.id} />
-                      ) : r.externalUrl ? (
-                        <a
-                          href={r.externalUrl}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" /> link
-                        </a>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {r.hasFile ? (
+                          <DownloadButton evidenceId={r.id} />
+                        ) : r.externalUrl ? (
+                          <a
+                            href={r.externalUrl}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" /> link
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                        {r.canDelete && (
+                          <button
+                            type="button"
+                            aria-label={`Delete evidence “${r.title}”`}
+                            title="Delete this evidence (audited; the KPI's evidence gate recomputes)"
+                            className="rounded-md p-1 text-muted-foreground hover:bg-critical/10 hover:text-critical"
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  `Delete “${r.title}”? The file is removed and the KPI's evidence status recomputes.`,
+                                )
+                              )
+                                return;
+                              void removeEvidence({ evidenceId: r.id }).catch((err) =>
+                                window.alert(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "Could not delete evidence.",
+                                ),
+                              );
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
