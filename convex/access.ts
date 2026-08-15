@@ -338,6 +338,26 @@ async function wipeUserData(
     await ctx.db.delete(n._id);
     counts.notifications!++;
   }
+
+  // Other users' notifications about this employee's KPIs (admin bells,
+  // "KPI update — X" entries) would otherwise linger pointing at wiped data.
+  if (emp) {
+    const kpiHrefs = new Set(
+      (
+        await ctx.db
+          .query("kpiAssignments")
+          .withIndex("by_employee_year", (q) => q.eq("employeeId", emp))
+          .take(100)
+      ).map((a) => `/kpi/${a._id}`),
+    );
+    counts.crossNotifications = 0;
+    for (const n of await ctx.db.query("notifications").take(2000)) {
+      if (n.href && kpiHrefs.has(n.href)) {
+        await ctx.db.delete(n._id);
+        counts.crossNotifications++;
+      }
+    }
+  }
   return counts;
 }
 
