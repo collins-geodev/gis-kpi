@@ -18,6 +18,11 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, ClipboardList, Loader2, Pencil, Trash2, X } from "lucide-react";
+import { StatusBadge } from "@/components/status-badge";
+import { aggregateActivityInputs } from "@convex/lib/measure";
+import { computeAttainment } from "@convex/lib/scoring";
+import { formatPercent } from "@convex/lib/format";
+import type { Direction, MeasurementMode } from "@convex/lib/types";
 
 type Assignment = {
   id: string;
@@ -134,6 +139,43 @@ export default function ActivitiesPage() {
     [assignments, assignmentId],
   );
   const fields = selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : [];
+
+  /**
+   * Live preview through the REAL scoring engine — what this entry alone
+   * computes to, so the consequence is visible before saving.
+   */
+  const preview = useMemo(() => {
+    if (!selected) return null;
+    try {
+      const input = aggregateActivityInputs(
+        selected.measurementMode as MeasurementMode,
+        selected.direction as Direction,
+        selected.target,
+        [
+          {
+            activityAt: 1,
+            quantity: num(values.quantity),
+            numerator: num(values.numerator),
+            denominator: num(values.denominator),
+            baseline: num(values.baseline),
+            currentValue: num(values.currentValue),
+            withinThreshold: num(values.withinThreshold),
+            eligible: num(values.eligible),
+            completed: num(values.completed),
+            planned: num(values.planned),
+            pass:
+              selected.measurementMode === "binary" ? Boolean(values.pass) : undefined,
+            score: num(values.score),
+            maxScore: num(values.maxScore),
+          },
+        ],
+      );
+      const r = computeAttainment(input);
+      return r.hasData ? r : null;
+    } catch {
+      return null; // required inputs not filled in yet
+    }
+  }, [selected, values]);
 
   if (assignments === undefined) return <Skeleton className="h-64" />;
 
@@ -337,6 +379,37 @@ export default function ActivitiesPage() {
                       </label>
                     ),
                   )}
+                </div>
+              )}
+
+              {selected?.measurementMode === "ratio" && (
+                <p className="rounded-md bg-info/10 px-3 py-2 text-xs text-info">
+                  The denominator is the number of eligible items that{" "}
+                  <strong>actually existed</strong> this period (e.g. projects that came
+                  in) — not an aspirational quota. If 10 came and you handled all 10,
+                  enter 10 / 10.
+                </p>
+              )}
+
+              {preview && (
+                <div
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
+                  aria-live="polite"
+                >
+                  <span className="text-muted-foreground">Computes to:</span>
+                  <span className="tabular font-semibold">
+                    {preview.cappedAttainment !== null
+                      ? formatPercent(preview.cappedAttainment)
+                      : "—"}
+                  </span>
+                  <StatusBadge status={preview.status as never} />
+                  {preview.attainment !== null &&
+                    preview.cappedAttainment !== null &&
+                    preview.attainment > preview.cappedAttainment && (
+                      <span className="text-xs text-muted-foreground">
+                        (raw {formatPercent(preview.attainment)}, capped)
+                      </span>
+                    )}
                 </div>
               )}
 

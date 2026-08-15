@@ -8,6 +8,7 @@ import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationsBell } from "@/components/dashboard/notifications-bell";
 import { APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
 import { initials } from "@convex/lib/format";
 
@@ -32,6 +33,7 @@ export function Topbar() {
             </Badge>
           ))}
         </div>
+        <NotificationsBell />
         <ThemeToggle />
         <Link
           href={"/profile" as never}

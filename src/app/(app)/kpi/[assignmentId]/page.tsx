@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatNumber, formatPercent, formatTargetValue } from "@convex/lib/format";
 import { EvidencePanel } from "@/components/evidence-panel";
+import { ScoreOverridePanel } from "@/components/score-override-panel";
 import { ArrowLeft, GaugeCircle, Lock } from "lucide-react";
 
 function formatSource(value: number, type: string) {
@@ -192,6 +193,8 @@ export default function KpiDetailPage() {
 
       {/* Evidence attach + review */}
       <EvidencePanel assignmentId={assignment.id as Id<"kpiAssignments">} />
+
+      <ScoreOverridePanel assignmentId={assignment.id as Id<"kpiAssignments">} />
 
       {/* Measurements */}
       <Card>

@@ -6,6 +6,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { aggregateActivityInputs } from "./lib/measure";
 import { CALC_VERSION, computeAttainment, weightedContribution } from "./lib/scoring";
+import { statusFromAttainment } from "./lib/thresholds";
 
 const COUNTED_STATES = ["submitted", "verified", "approved"];
 
@@ -90,6 +91,27 @@ export async function recomputeMeasurement(
     computedAt: Date.now(),
     calcVersion: CALC_VERSION,
   };
+
+  // An admin score override (documented, audited) supersedes the computed
+  // attainment — the latest override for this (assignment, period) wins and
+  // survives recomputes until it is explicitly removed.
+  const overrides = await ctx.db
+    .query("scoreOverrides")
+    .withIndex("by_assignment_period", (q) =>
+      q.eq("kpiAssignmentId", assignment._id).eq("periodKey", periodKey),
+    )
+    .take(50);
+  const override = overrides.sort((a, b) => b.createdAt - a.createdAt)[0];
+  if (override) {
+    doc.attainment = override.overrideValue;
+    doc.cappedAttainment = override.overrideValue;
+    doc.weightedContribution = weightedContribution(
+      override.overrideValue,
+      assignment.weight,
+    );
+    doc.status = statusFromAttainment(override.overrideValue);
+    doc.hasData = true;
+  }
 
   const existing = await ctx.db
     .query("kpiMeasurements")

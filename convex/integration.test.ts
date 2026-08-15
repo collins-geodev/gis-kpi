@@ -629,3 +629,98 @@ describe("submission rejection", () => {
     expect(after).toBe("submitted");
   });
 });
+
+describe("score overrides", () => {
+  test("override supersedes the computed value, survives recompute, and reverts on removal", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["kpi_admin"],
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "10 of 15 planned — only 10 arrived",
+      numerator: 10,
+      denominator: 15,
+    });
+
+    const measurement = async () =>
+      t.run(async (ctx) =>
+        ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+          )
+          .first(),
+      );
+    expect((await measurement())?.cappedAttainment).toBeCloseTo(10 / 15, 5);
+
+    // Reason is mandatory; employees cannot override.
+    await expect(
+      admin.mutation(api.overrides.apply, {
+        kpiAssignmentId: assignmentId,
+        periodKey: "2026-M08",
+        overrideValue: 1,
+        reason: " ",
+      }),
+    ).rejects.toThrow(/reason/i);
+    await expect(
+      emp.mutation(api.overrides.apply, {
+        kpiAssignmentId: assignmentId,
+        periodKey: "2026-M08",
+        overrideValue: 1,
+        reason: "self-serve",
+      }),
+    ).rejects.toThrow();
+
+    await admin.mutation(api.overrides.apply, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      overrideValue: 1,
+      reason: "Only 10 projects arrived; all captured — counted as met.",
+    });
+    expect((await measurement())?.cappedAttainment).toBe(1);
+    expect((await measurement())?.status).toBe("on_target");
+
+    // A recompute (e.g. the employee edits the entry) keeps the override.
+    const activityId = await t.run(
+      async (ctx) =>
+        (await ctx.db.query("activities").collect()).find(
+          (a) => a.kpiAssignmentId === assignmentId,
+        )!._id,
+    );
+    await emp.mutation(api.activities.update, {
+      activityId,
+      periodKey: "2026-M08",
+      title: "Integrated assets",
+      description: "corrected",
+      numerator: 10,
+      denominator: 15,
+    });
+    expect((await measurement())?.cappedAttainment).toBe(1);
+
+    // Removing the override restores the engine value.
+    const overrideId = await t.run(
+      async (ctx) => (await ctx.db.query("scoreOverrides").collect())[0]!._id,
+    );
+    await admin.mutation(api.overrides.remove, { overrideId });
+    expect((await measurement())?.cappedAttainment).toBeCloseTo(10 / 15, 5);
+  });
+});
