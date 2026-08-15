@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, ClipboardList, Loader2 } from "lucide-react";
+import { CheckCircle2, ClipboardList, Loader2, Trash2 } from "lucide-react";
 
 type Assignment = {
   id: string;
@@ -72,6 +72,7 @@ export default function ActivitiesPage() {
   const periods = useQuery(api.activities.periods);
   const recent = useQuery(api.activities.listMine, { limit: 15 });
   const create = useMutation(api.activities.create);
+  const removeActivity = useMutation(api.activities.remove);
 
   const [assignmentId, setAssignmentId] = useState<string>("");
   const [periodKey, setPeriodKey] = useState<string>("2026-M08");
@@ -300,24 +301,52 @@ export default function ActivitiesPage() {
             ) : recent.length === 0 ? (
               <p className="text-sm text-muted-foreground">No activities yet.</p>
             ) : (
-              recent.map((a) => (
-                <Link
-                  key={a.id}
-                  href={`/kpi/${a.kpiAssignmentId}` as never}
-                  className="block rounded-md border border-border p-2.5 text-sm hover:bg-muted/50"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{a.title}</span>
-                    <Badge variant="muted">{a.status}</Badge>
+              recent.map((a) => {
+                const deletable = ["draft", "submitted", "needs_changes"].includes(
+                  a.status,
+                );
+                return (
+                  <div
+                    key={a.id}
+                    className="flex items-stretch gap-1 rounded-md border border-border text-sm transition-colors hover:bg-muted/50"
+                  >
+                    <Link
+                      href={`/kpi/${a.kpiAssignmentId}` as never}
+                      className="min-w-0 flex-1 p-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium">{a.title}</span>
+                        <Badge variant="muted">{a.status}</Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {a.periodKey} ·{" "}
+                        {new Date(a.activityAt).toLocaleDateString("en-GB", {
+                          timeZone: "Africa/Lagos",
+                        })}
+                      </div>
+                    </Link>
+                    {deletable && (
+                      <button
+                        type="button"
+                        aria-label={`Delete activity “${a.title}”`}
+                        title="Delete this activity (its measurement is recomputed)"
+                        className="flex items-center rounded-r-md px-2 text-muted-foreground hover:bg-critical/10 hover:text-critical"
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Delete “${a.title}” (${a.periodKey})? The KPI measurement will be recomputed without it.`,
+                            )
+                          )
+                            return;
+                          void removeActivity({ activityId: a.id as Id<"activities"> });
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {a.periodKey} ·{" "}
-                    {new Date(a.activityAt).toLocaleDateString("en-GB", {
-                      timeZone: "Africa/Lagos",
-                    })}
-                  </div>
-                </Link>
-              ))
+                );
+              })
             )}
           </CardContent>
         </Card>

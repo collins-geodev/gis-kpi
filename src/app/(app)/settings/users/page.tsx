@@ -14,9 +14,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AccessDenied } from "@/components/access-denied";
 import { APP_ROLES, APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
+import { Link2Off, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import { useState } from "react";
 
 export default function UsersPage() {
   const me = useQuery(api.access.currentUser);
@@ -25,6 +28,19 @@ export default function UsersPage() {
   const roster = useQuery(api.users.listRosterForLinking, isAdmin ? {} : "skip");
   const grantRole = useMutation(api.access.grantRole);
   const linkEmployee = useMutation(api.access.linkUserToEmployee);
+  const unlinkEmployee = useMutation(api.access.unlinkUserFromEmployee);
+  const revokeRole = useMutation(api.access.revokeRole);
+  const setUserActive = useMutation(api.access.setUserActive);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setActionError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Action failed.");
+    }
+  };
 
   if (me === undefined) return <Skeleton className="h-64" />;
   if (!isAdmin) return <AccessDenied message="Only a System Admin can manage users." />;
@@ -35,6 +51,15 @@ export default function UsersPage() {
         title="Users & Organization"
         description="Application roles are separate from employee job roles. Grant access and link accounts to roster employees for self-service scope."
       />
+
+      {actionError && (
+        <p
+          className="rounded-md border border-critical/40 bg-critical/5 px-3 py-2 text-sm text-critical"
+          role="alert"
+        >
+          {actionError}
+        </p>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -53,13 +78,17 @@ export default function UsersPage() {
                   <TableHead>Linked employee</TableHead>
                   <TableHead>Grant role</TableHead>
                   <TableHead>Link employee</TableHead>
+                  <TableHead>Account</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map((u) => (
-                  <TableRow key={u.id}>
+                  <TableRow key={u.id} className={u.isActive ? undefined : "opacity-60"}>
                     <TableCell>
-                      <div className="font-medium">{u.name ?? u.email}</div>
+                      <div className="flex items-center gap-2 font-medium">
+                        {u.name ?? u.email}
+                        {!u.isActive && <Badge variant="muted">deactivated</Badge>}
+                      </div>
                       <div className="text-xs text-muted-foreground">{u.email}</div>
                     </TableCell>
                     <TableCell>
@@ -68,8 +97,30 @@ export default function UsersPage() {
                           <span className="text-xs text-muted-foreground">none</span>
                         ) : (
                           u.roles.map((r) => (
-                            <Badge key={r} variant="muted">
+                            <Badge key={r} variant="muted" className="gap-1 pr-1">
                               {APP_ROLE_LABELS[r as AppRole]}
+                              <button
+                                type="button"
+                                aria-label={`Revoke ${APP_ROLE_LABELS[r as AppRole]} from ${u.name ?? u.email}`}
+                                title="Revoke role"
+                                className="rounded-full p-0.5 hover:bg-critical/15 hover:text-critical"
+                                onClick={() => {
+                                  if (
+                                    !window.confirm(
+                                      `Revoke "${APP_ROLE_LABELS[r as AppRole]}" from ${u.name ?? u.email}?`,
+                                    )
+                                  )
+                                    return;
+                                  void run(() =>
+                                    revokeRole({
+                                      userId: u.id as Id<"users">,
+                                      role: r as AppRole,
+                                    }),
+                                  );
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
                             </Badge>
                           ))
                         )}
@@ -77,11 +128,32 @@ export default function UsersPage() {
                     </TableCell>
                     <TableCell className="text-sm">
                       {u.employee ? (
-                        <span>
-                          {u.employee.displayName}
-                          <span className="block text-xs text-muted-foreground">
-                            {u.employee.jobRole}
+                        <span className="flex items-center gap-1.5">
+                          <span>
+                            {u.employee.displayName}
+                            <span className="block text-xs text-muted-foreground">
+                              {u.employee.jobRole}
+                            </span>
                           </span>
+                          <button
+                            type="button"
+                            aria-label={`Unlink ${u.employee.displayName} from ${u.name ?? u.email}`}
+                            title="Unlink employee"
+                            className="rounded-md p-1 text-muted-foreground hover:bg-critical/15 hover:text-critical"
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  `Unlink ${u.employee!.displayName} from ${u.name ?? u.email}? The account keeps its roles but loses self-service scope.`,
+                                )
+                              )
+                                return;
+                              void run(() =>
+                                unlinkEmployee({ userId: u.id as Id<"users"> }),
+                              );
+                            }}
+                          >
+                            <Link2Off className="h-3.5 w-3.5" />
+                          </button>
                         </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
@@ -126,6 +198,45 @@ export default function UsersPage() {
                           </option>
                         ))}
                       </select>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={
+                          u.isActive
+                            ? "text-muted-foreground hover:text-critical"
+                            : "text-muted-foreground hover:text-success"
+                        }
+                        disabled={u.id === me?.userId && u.isActive}
+                        title={
+                          u.id === me?.userId && u.isActive
+                            ? "You cannot deactivate your own account"
+                            : u.isActive
+                              ? "Deactivate account"
+                              : "Reactivate account"
+                        }
+                        onClick={() => {
+                          const verb = u.isActive ? "Deactivate" : "Reactivate";
+                          if (!window.confirm(`${verb} ${u.name ?? u.email}?`)) return;
+                          void run(() =>
+                            setUserActive({
+                              userId: u.id as Id<"users">,
+                              isActive: !u.isActive,
+                            }),
+                          );
+                        }}
+                      >
+                        {u.isActive ? (
+                          <>
+                            <UserRoundX className="h-4 w-4" /> Deactivate
+                          </>
+                        ) : (
+                          <>
+                            <UserRoundCheck className="h-4 w-4" /> Reactivate
+                          </>
+                        )}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

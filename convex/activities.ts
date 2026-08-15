@@ -145,6 +145,53 @@ export const listRecentAll = query({
   },
 });
 
+/**
+ * Delete a mistaken activity and recompute the affected measurement.
+ * Owners may delete their own entries while still in the pre-approval states;
+ * KPI/System Admins may delete anything except locked records. Audit-logged
+ * with the full former payload so nothing disappears untraceably.
+ */
+export const remove = mutation({
+  args: { activityId: v.id("activities") },
+  returns: v.null(),
+  handler: async (ctx, { activityId }) => {
+    const { user, roles } = await getAuthContext(ctx);
+    const activity = await ctx.db.get(activityId);
+    if (!activity) throw new Error("Activity not found");
+    const assignment = await ctx.db.get(activity.kpiAssignmentId);
+    if (!assignment) throw new Error("KPI assignment not found");
+
+    const isOwner = user.employeeId && user.employeeId === activity.employeeId;
+    const isAdmin = roles.some((r) => ["system_admin", "kpi_admin"].includes(r));
+    const OWNER_DELETABLE = ["draft", "submitted", "needs_changes"];
+    if (isAdmin) {
+      if (activity.status === "locked") {
+        throw new AuthError("Locked activities cannot be deleted.");
+      }
+    } else if (isOwner) {
+      if (!OWNER_DELETABLE.includes(activity.status)) {
+        throw new AuthError(
+          "This activity has already been reviewed — ask an admin to remove it.",
+        );
+      }
+    } else {
+      throw new AuthError("You can only delete your own activities");
+    }
+
+    await ctx.db.delete(activityId);
+    await recomputeMeasurement(ctx, assignment, activity.periodKey);
+
+    await recordAudit(ctx, {
+      entityType: "activity",
+      entityId: activityId,
+      action: "delete_activity",
+      actorUserId: user._id,
+      before: activity,
+    });
+    return null;
+  },
+});
+
 /** Tracking periods available for logging (2026 month/quarter/year). */
 export const periods = query({
   args: {},

@@ -269,3 +269,126 @@ describe("activity → measurement, evidence gate & approval (#7, #9)", () => {
     expect(snapshot?.calcVersion).toBeTruthy();
   });
 });
+
+describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
+  test("the last active System Admin cannot be revoked or deactivated", async () => {
+    const t = harness();
+    const { as: admin, userId: adminId } = await makeUser(t, {
+      email: "admin@x.com",
+      roles: ["system_admin"],
+    });
+
+    await expect(
+      admin.mutation(api.access.revokeRole, {
+        userId: adminId,
+        role: "system_admin",
+      }),
+    ).rejects.toThrow(/last active System Admin/i);
+
+    // Self-deactivation is always blocked.
+    await expect(
+      admin.mutation(api.access.setUserActive, { userId: adminId, isActive: false }),
+    ).rejects.toThrow(/own account/i);
+
+    // With a second admin the revoke goes through and is audit-logged.
+    const { userId: secondId } = await makeUser(t, {
+      email: "admin2@x.com",
+      roles: ["system_admin"],
+    });
+    const res = await admin.mutation(api.access.revokeRole, {
+      userId: secondId,
+      role: "system_admin",
+    });
+    expect(res.revoked).toBe(1);
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).filter(
+        (l) => l.action === "revoke_role",
+      ),
+    );
+    expect(audit.length).toBe(1);
+  });
+
+  test("admin can unlink a user's roster employee; non-admin cannot", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: admin } = await makeUser(t, {
+      email: "admin@x.com",
+      roles: ["system_admin"],
+    });
+    const { as: emp, userId: empUserId } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD030835",
+    });
+
+    await expect(
+      emp.mutation(api.access.unlinkUserFromEmployee, { userId: empUserId }),
+    ).rejects.toThrow();
+
+    await admin.mutation(api.access.unlinkUserFromEmployee, { userId: empUserId });
+    const linked = await t.run(async (ctx) => (await ctx.db.get(empUserId))?.employeeId);
+    // convex-test surfaces an unset optional field as null.
+    expect(linked ?? null).toBeNull();
+  });
+
+  test("owner deletes a submitted activity and the measurement recomputes", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: other } = await makeUser(t, {
+      email: "other@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD030835",
+    });
+
+    const assignmentId = await t.run(async (ctx) => {
+      const year = await ctx.db
+        .query("performanceYears")
+        .withIndex("by_year", (q) => q.eq("year", 2026))
+        .first();
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", empId).eq("performanceYearId", year!._id),
+        )
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+
+    const activityId = await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+
+    // Someone else's employee account cannot delete it.
+    await expect(other.mutation(api.activities.remove, { activityId })).rejects.toThrow();
+
+    await emp.mutation(api.activities.remove, { activityId });
+
+    const measurement = await t.run(async (ctx) =>
+      ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+        )
+        .first(),
+    );
+    expect(measurement?.hasData).toBe(false);
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).filter(
+        (l) => l.action === "delete_activity",
+      ),
+    );
+    expect(audit.length).toBe(1);
+  });
+});

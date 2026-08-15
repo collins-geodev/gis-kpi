@@ -141,6 +141,95 @@ export const grantRole = mutation({
   },
 });
 
+/**
+ * True when at least one OTHER active user besides `exceptUserId` holds an
+ * active System Admin role — the lock-out guard for revoke/deactivate.
+ */
+async function anotherActiveAdminExists(
+  ctx: Parameters<typeof requireRole>[0],
+  exceptUserId: string,
+): Promise<boolean> {
+  const admins = await ctx.db
+    .query("userRoleAssignments")
+    .withIndex("by_role", (q) => q.eq("role", "system_admin"))
+    .take(200);
+  for (const a of admins) {
+    if (!a.isActive || a.userId === exceptUserId) continue;
+    const holder = await ctx.db.get(a.userId);
+    if (holder && holder.isActive !== false) return true;
+  }
+  return false;
+}
+
+/** Revoke every active assignment of `role` from a user (System Admin only). */
+export const revokeRole = mutation({
+  args: { userId: v.id("users"), role: vAppRole },
+  returns: v.object({ revoked: v.number() }),
+  handler: async (ctx, args) => {
+    const { user: actor } = await requireRole(ctx, ["system_admin"]);
+    if (args.role === "system_admin") {
+      const stillCovered = await anotherActiveAdminExists(ctx, args.userId);
+      if (!stillCovered) {
+        throw new Error(
+          "Cannot revoke the last active System Admin — grant the role to someone else first.",
+        );
+      }
+    }
+    const rows = await ctx.db
+      .query("userRoleAssignments")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+    let revoked = 0;
+    for (const r of rows) {
+      if (r.role !== args.role || !r.isActive) continue;
+      await ctx.db.patch(r._id, { isActive: false });
+      revoked++;
+      await recordAudit(ctx, {
+        entityType: "userRoleAssignment",
+        entityId: r._id,
+        action: "revoke_role",
+        actorUserId: actor._id,
+        before: { userId: args.userId, role: args.role, isActive: true },
+        after: { isActive: false },
+      });
+    }
+    return { revoked };
+  },
+});
+
+/** Deactivate or reactivate a user account (System Admin only). */
+export const setUserActive = mutation({
+  args: { userId: v.id("users"), isActive: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user: actor } = await requireRole(ctx, ["system_admin"]);
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("User not found");
+    if (!args.isActive) {
+      if (target._id === actor._id) {
+        throw new Error("You cannot deactivate your own account.");
+      }
+      const targetRoles = await getUserRoles(ctx, target._id);
+      if (targetRoles.includes("system_admin")) {
+        const stillCovered = await anotherActiveAdminExists(ctx, target._id);
+        if (!stillCovered) {
+          throw new Error("Cannot deactivate the last active System Admin.");
+        }
+      }
+    }
+    await ctx.db.patch(args.userId, { isActive: args.isActive });
+    await recordAudit(ctx, {
+      entityType: "user",
+      entityId: args.userId,
+      action: args.isActive ? "reactivate_user" : "deactivate_user",
+      actorUserId: actor._id,
+      before: { isActive: target.isActive ?? true },
+      after: { isActive: args.isActive },
+    });
+    return null;
+  },
+});
+
 export const linkUserToEmployee = mutation({
   args: { userId: v.id("users"), employeeId: v.id("employees") },
   returns: v.null(),
@@ -155,6 +244,28 @@ export const linkUserToEmployee = mutation({
       actorUserId: actor._id,
       before: { employeeId: before?.employeeId },
       after: { employeeId: args.employeeId },
+    });
+    return null;
+  },
+});
+
+/** Remove a user's roster-employee link (System Admin only). */
+export const unlinkUserFromEmployee = mutation({
+  args: { userId: v.id("users") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user: actor } = await requireRole(ctx, ["system_admin"]);
+    const before = await ctx.db.get(args.userId);
+    if (!before) throw new Error("User not found");
+    if (!before.employeeId) return null; // already unlinked
+    await ctx.db.patch(args.userId, { employeeId: undefined });
+    await recordAudit(ctx, {
+      entityType: "user",
+      entityId: args.userId,
+      action: "unlink_employee",
+      actorUserId: actor._id,
+      before: { employeeId: before.employeeId },
+      after: { employeeId: null },
     });
     return null;
   },
