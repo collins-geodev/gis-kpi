@@ -12,11 +12,49 @@
  *   DASHBOARD_URL   — CTA link base; defaults to the production site.
  */
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { buildKpiUpdateEmail } from "./lib/emailTemplate";
+import { buildKpiUpdateEmail, buildNoticeEmail } from "./lib/emailTemplate";
 import { formatPercent } from "./lib/format";
 import { STATUS_BAND_LABELS } from "./lib/types";
+
+/**
+ * Friendly display name for greetings: profile name → linked roster name →
+ * the local part of the email address (never the full address).
+ */
+export async function resolveDisplayName(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+): Promise<string> {
+  if (user.name?.trim()) return user.name.trim();
+  if (user.employeeId) {
+    const emp = await ctx.db.get(user.employeeId);
+    if (emp) return emp.displayName;
+  }
+  return (user.email ?? "there").split("@")[0]!;
+}
+
+/** Active System Admin users with an email, deduped. */
+export async function adminUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
+  const rows = await ctx.db
+    .query("userRoleAssignments")
+    .withIndex("by_role", (q) => q.eq("role", "system_admin"))
+    .take(100);
+  const out: Doc<"users">[] = [];
+  const seen = new Set<string>();
+  for (const a of rows) {
+    if (!a.isActive) continue;
+    const u = await ctx.db.get(a.userId);
+    if (!u?.email || u.isActive === false) continue;
+    const key = u.email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u);
+  }
+  return out;
+}
 
 const vRecipient = v.object({
   email: v.string(),
@@ -65,39 +103,32 @@ export const getKpiUpdatePayload = internalQuery({
       variant: "admin" | "self";
     }[] = [];
 
-    // The person who logged the update.
+    // The person who logged the update (greeted by name, never raw email).
     if (actor?.email) {
       recipients.push({
         email: actor.email,
-        name: actor.name ?? actor.email,
+        name: await resolveDisplayName(ctx, actor),
         userId: actor._id,
         variant: "self",
       });
     }
 
     // Every active System Admin (except the actor — they get the "self" mail).
-    const adminAssignments = await ctx.db
-      .query("userRoleAssignments")
-      .withIndex("by_role", (q) => q.eq("role", "system_admin"))
-      .take(100);
     const seen = new Set(recipients.map((r) => r.email.toLowerCase()));
-    for (const a of adminAssignments) {
-      if (!a.isActive) continue;
-      const admin = await ctx.db.get(a.userId);
-      if (!admin?.email) continue;
-      const key = admin.email.toLowerCase();
+    for (const admin of await adminUsers(ctx)) {
+      const key = admin.email!.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       recipients.push({
-        email: admin.email,
-        name: admin.name ?? admin.email,
+        email: admin.email!,
+        name: await resolveDisplayName(ctx, admin),
         userId: admin._id,
         variant: "admin",
       });
     }
 
     return {
-      actorName: actor?.name ?? actor?.email ?? "A team member",
+      actorName: actor ? await resolveDisplayName(ctx, actor) : "A team member",
       employeeName: employee.displayName,
       employeeBusinessId: employee.employeeId,
       objective: assignment.objective,
@@ -149,6 +180,129 @@ export const recordNotifications = internalMutation({
         reason: args.emailed ? undefined : "RESEND_API_KEY not configured",
       },
       at: now,
+    });
+    return null;
+  },
+});
+
+const vNotice = v.object({
+  userId: v.id("users"),
+  email: v.string(),
+  recipientName: v.string(),
+  subject: v.string(),
+  intro: v.string(),
+  panelTitle: v.string(),
+  rows: v.array(
+    v.object({ label: v.string(), value: v.string(), strong: v.optional(v.boolean()) }),
+  ),
+  ctaLabel: v.string(),
+  ctaPath: v.string(),
+  inAppTitle: v.string(),
+  inAppBody: v.string(),
+});
+
+/** In-app notifications + one audit row for a batch of notices. */
+export const recordNoticeResults = internalMutation({
+  args: {
+    entityType: v.string(),
+    entityId: v.string(),
+    auditAction: v.string(),
+    emailed: v.boolean(),
+    recipients: v.array(
+      v.object({
+        userId: v.id("users"),
+        title: v.string(),
+        body: v.string(),
+        href: v.string(),
+      }),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    for (const r of args.recipients) {
+      await ctx.db.insert("notifications", {
+        userId: r.userId,
+        kind: args.auditAction,
+        title: r.title,
+        body: `${r.body}${args.emailed ? "" : " (email pending setup)"}`,
+        href: r.href,
+        createdAt: now,
+      });
+    }
+    await ctx.db.insert("auditLogs", {
+      entityType: args.entityType,
+      entityId: args.entityId,
+      action: args.emailed
+        ? `${args.auditAction}_email_sent`
+        : `${args.auditAction}_email_skipped`,
+      after: { recipients: args.recipients.length },
+      at: now,
+    });
+    return null;
+  },
+});
+
+/**
+ * Send a batch of branded notice emails (evidence submitted, review decisions,
+ * period approvals) and record in-app notifications + an audit entry. Sending
+ * is skipped gracefully until RESEND_API_KEY is configured.
+ */
+export const sendNotices = internalAction({
+  args: {
+    entityType: v.string(),
+    entityId: v.string(),
+    auditAction: v.string(),
+    notices: v.array(vNotice),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.notices.length === 0) return null;
+    const apiKey = process.env.RESEND_API_KEY;
+    const from = process.env.EMAIL_FROM ?? "GIS KPI Dashboard <onboarding@resend.dev>";
+    const dashboardUrl = process.env.DASHBOARD_URL ?? "https://gis-kpi.vercel.app";
+    let emailed = false;
+
+    if (apiKey) {
+      for (const n of args.notices) {
+        const { subject, html, text } = buildNoticeEmail({
+          recipientName: n.recipientName,
+          subject: n.subject,
+          intro: n.intro,
+          panelTitle: n.panelTitle,
+          rows: n.rows,
+          ctaLabel: n.ctaLabel,
+          ctaPath: n.ctaPath,
+          dashboardUrl,
+        });
+        try {
+          const res = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ from, to: [n.email], subject, html, text }),
+          });
+          if (res.ok) emailed = true;
+          else console.error("Resend send failed", res.status, await res.text());
+        } catch (err) {
+          console.error("Resend send error", err);
+        }
+      }
+    }
+
+    await ctx.runMutation(internal.emails.recordNoticeResults, {
+      entityType: args.entityType,
+      entityId: args.entityId,
+      auditAction: args.auditAction,
+      emailed,
+      recipients: args.notices.map((n) => ({
+        userId: n.userId,
+        title: n.inAppTitle,
+        body: n.inAppBody,
+        href: n.ctaPath,
+      })),
     });
     return null;
   },

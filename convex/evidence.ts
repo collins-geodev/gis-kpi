@@ -4,7 +4,9 @@
  * workflow; these two internal functions gate download access on every request.
  */
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { adminUsers, resolveDisplayName } from "./emails";
 import {
   assertEmployeeReadScope,
   assertEvidenceAccess,
@@ -165,6 +167,49 @@ export const saveEvidence = mutation({
       actorUserId: user._id,
       after: { kpiAssignmentId: args.kpiAssignmentId },
     });
+
+    // Submitting for review notifies every System Admin (email + in-app).
+    const employee = await ctx.db.get(assignment.employeeId);
+    const uploaderName = await resolveDisplayName(ctx, user);
+    const notices = [];
+    for (const admin of await adminUsers(ctx)) {
+      if (admin._id === user._id) continue;
+      notices.push({
+        userId: admin._id,
+        email: admin.email!,
+        recipientName: await resolveDisplayName(ctx, admin),
+        subject: `Evidence awaiting review — ${employee?.displayName ?? "employee"}: ${args.title.slice(0, 80)}`,
+        intro: `*${uploaderName}* submitted evidence for *${employee?.displayName ?? "an employee"}*'s KPI. It is now awaiting verification and approval.`,
+        panelTitle: "Evidence details",
+        rows: [
+          { label: "Evidence", value: args.title.slice(0, 200), strong: true },
+          { label: "KPI objective", value: assignment.objective },
+          {
+            label: "Employee",
+            value: `${employee?.displayName ?? "—"} (${employee?.employeeId ?? "—"})`,
+          },
+          { label: "Category", value: args.category.slice(0, 80) },
+          {
+            label: "File",
+            value: args.storageId
+              ? args.originalFilename.slice(0, 120)
+              : (args.externalUrl ?? "link"),
+          },
+        ],
+        ctaLabel: "Review in the dashboard",
+        ctaPath: `/kpi/${args.kpiAssignmentId}`,
+        inAppTitle: `Evidence awaiting review — ${employee?.displayName ?? "employee"}`,
+        inAppBody: args.title.slice(0, 200),
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "evidenceFile",
+        entityId: evidenceId,
+        auditAction: "evidence_submitted",
+        notices,
+      });
+    }
     return evidenceId;
   },
 });
@@ -226,6 +271,62 @@ export const reviewEvidence = mutation({
       before: { reviewStatus: evidence.reviewStatus },
       after: { reviewStatus },
     });
+
+    // The decision notifies the employee's account(s) and the uploader.
+    const reviewerName = await resolveDisplayName(ctx, user);
+    const assignment = evidence.kpiAssignmentId
+      ? await ctx.db.get(evidence.kpiAssignmentId)
+      : null;
+    const targets = new Map<string, (typeof user & { email?: string }) | null>();
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", evidence.employeeId))
+      .take(10);
+    for (const u of linked) targets.set(u._id, u);
+    const uploader = await ctx.db.get(evidence.uploadedByUserId);
+    if (uploader) targets.set(uploader._id, uploader);
+    targets.delete(user._id); // don't notify the reviewer about their own decision
+
+    const outcomeText =
+      reviewStatus === "approved"
+        ? "It now counts toward the evidence gate for official scoring."
+        : reviewStatus === "verified"
+          ? "It has been verified and awaits final approval."
+          : "See the reviewer's comment below, then update and re-submit.";
+    const notices = [];
+    for (const target of targets.values()) {
+      if (!target?.email || target.isActive === false) continue;
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Your evidence was ${reviewStatus} — ${evidence.title.slice(0, 80)}`,
+        intro: `*${reviewerName}* has ${reviewStatus} the evidence “${evidence.title.slice(0, 120)}”. ${outcomeText}`,
+        panelTitle: "Review decision",
+        rows: [
+          { label: "Evidence", value: evidence.title.slice(0, 200) },
+          { label: "KPI objective", value: assignment?.objective ?? "—" },
+          { label: "Decision", value: reviewStatus.toUpperCase(), strong: true },
+          ...(comment
+            ? [{ label: "Reviewer comment", value: comment.slice(0, 500) }]
+            : []),
+        ],
+        ctaLabel: "Open in the dashboard",
+        ctaPath: evidence.kpiAssignmentId
+          ? `/kpi/${evidence.kpiAssignmentId}`
+          : "/evidence",
+        inAppTitle: `Evidence ${reviewStatus} — ${evidence.title.slice(0, 80)}`,
+        inAppBody: comment ? `${reviewStatus}: ${comment.slice(0, 180)}` : reviewStatus,
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "evidenceFile",
+        entityId: evidenceId,
+        auditAction: `evidence_decision_${reviewStatus}`,
+        notices,
+      });
+    }
     return null;
   },
 });

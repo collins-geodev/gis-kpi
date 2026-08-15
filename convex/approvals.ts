@@ -7,9 +7,12 @@
  * by an open data-quality issue cannot be approved — enforcing acceptance #7.
  */
 import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { assertEmployeeReadScope, readableEmployeeIds, requireRole } from "./authz";
 import { recordAudit } from "./audit";
+import { resolveDisplayName } from "./emails";
+import { formatPercent } from "./lib/format";
 import { CALC_VERSION, scoreScorecard, type ScorecardItem } from "./lib/scoring";
 import { BASELINE_PERFORMANCE_YEAR } from "./lib/types";
 
@@ -196,6 +199,54 @@ export const approveEmployeePeriod = mutation({
         configuredWeight: scorecard.configuredWeight,
       },
     });
+
+    // The approval decision notifies the employee's linked account(s).
+    const employee = await ctx.db.get(employeeId);
+    const approverName = await resolveDisplayName(ctx, user);
+    const score = `${Math.round(scorecard.assignedWeightScore * 100) / 100} / ${scorecard.configuredWeight}`;
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", employeeId))
+      .take(10);
+    const notices = [];
+    for (const target of linked) {
+      if (!target.email || target.isActive === false || target._id === user._id) {
+        continue;
+      }
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Your ${periodKey} scorecard was approved — ${score}`,
+        intro: `*${approverName}* approved your ${periodKey} performance${reason ? ` (“${reason.slice(0, 140)}”)` : ""}. Your official score is frozen in a reproducible, auditable snapshot.`,
+        panelTitle: "Approved scorecard",
+        rows: [
+          { label: "Period", value: periodKey },
+          { label: "Official score", value: score, strong: true },
+          {
+            label: "Normalized score",
+            value: formatPercent(scorecard.normalizedScore),
+          },
+          {
+            label: "Evidence completion",
+            value: formatPercent(scorecard.evidenceCompletionPct),
+          },
+          { label: "Approved by", value: approverName },
+        ],
+        ctaLabel: "View your scorecard",
+        ctaPath: `/employees/${employeeId}`,
+        inAppTitle: `${periodKey} scorecard approved — ${score}`,
+        inAppBody: `Approved by ${approverName}${reason ? `: ${reason.slice(0, 160)}` : ""}`,
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "scoreSnapshot",
+        entityId: snapshotId,
+        auditAction: "period_approved",
+        notices,
+      });
+    }
 
     return {
       snapshotId,
