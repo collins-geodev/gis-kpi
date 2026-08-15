@@ -51,6 +51,32 @@ const BY_KEY: Record<string, EvidenceSuggestion> = {
   },
 };
 
+const ACTIVITY_TITLES: Record<string, string> = {
+  asset_integration: "Asset integration batch",
+  deliverable_accuracy: "Deliverable accuracy QA",
+  tech_innovation: "New technology implementation",
+  mentorship_training: "Training session delivered",
+  on_time_projects: "Projects delivered on time",
+  gdb_integrity: "Geodatabase integrity check",
+  commercial_maintenance_quality: "Commercial maintenance QA",
+  capture_integrate: "Data capture & integration",
+  qa_data_quality: "Data quality audit",
+  issue_resolution_24h: "Issue resolution log",
+};
+
+/** Auto title for an activity capture, e.g. "Asset integration batch — August 2026". */
+export function suggestActivityTitle(
+  canonicalKey: string | undefined,
+  objective: string | undefined,
+  periodLabel: string,
+): string {
+  const stem =
+    (canonicalKey && ACTIVITY_TITLES[canonicalKey]) ||
+    (objective ?? "").split(/[.;]/)[0]?.trim().slice(0, 60) ||
+    "KPI activity";
+  return `${stem} — ${periodLabel}`;
+}
+
 export function suggestEvidence(
   canonicalKey?: string,
   objective?: string,

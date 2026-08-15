@@ -24,6 +24,7 @@ import { computeAttainment } from "@convex/lib/scoring";
 import { formatPercent } from "@convex/lib/format";
 import type { Direction, Frequency, MeasurementMode } from "@convex/lib/types";
 import { captureGrainForFrequency } from "@convex/lib/periods";
+import { suggestActivityTitle } from "@/lib/evidence-suggestions";
 
 type Assignment = {
   id: string;
@@ -140,6 +141,23 @@ export default function ActivitiesPage() {
     [assignments, assignmentId],
   );
   const fields = selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : [];
+
+  // Auto-capture the title from the KPI + period. Overwrites only untouched or
+  // previously auto-filled titles, never something the user typed themselves.
+  const [autoTitle, setAutoTitle] = useState("");
+  useEffect(() => {
+    if (editingId || !selected) return;
+    const label =
+      (periods ?? []).find((p) => p.periodKey === periodKey)?.label ?? periodKey;
+    const suggestion = suggestActivityTitle(
+      selected.canonicalKey,
+      selected.objective,
+      label,
+    );
+    setTitle((prev) => (prev.trim() === "" || prev === autoTitle ? suggestion : prev));
+    setAutoTitle(suggestion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, periodKey, editingId]);
 
   // What's already captured for this (KPI, period) — the duplicate guard.
   const existing = useQuery(
