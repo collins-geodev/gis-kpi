@@ -7,13 +7,38 @@
  * whether a measurement can later become an approved official score.
  */
 import { mutation, query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { AuthError, getAuthContext, requireRole, requireUser } from "./authz";
 import { recordAudit } from "./audit";
 import { recomputeMeasurement } from "./measurementsModel";
-import { BASELINE_PERFORMANCE_YEAR } from "./lib/types";
+import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
+import { captureGrainForFrequency } from "./lib/periods";
+
+/**
+ * Activities must land in the KPI's native cadence bucket (Quarterly → Qn,
+ * Annually → year, Monthly/Daily/Weekly → month) so entries accumulate
+ * against the full-cadence target instead of distorting a smaller bucket.
+ */
+async function assertPeriodMatchesCadence(
+  ctx: QueryCtx,
+  frequency: string,
+  periodKey: string,
+): Promise<void> {
+  const period = await ctx.db
+    .query("trackingPeriods")
+    .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
+    .first();
+  if (!period) return; // unknown keys simply produce no measurement period
+  const expected = captureGrainForFrequency(frequency as Frequency);
+  if (period.grain !== expected) {
+    throw new Error(
+      `This KPI is tracked ${frequency.toLowerCase()} — choose the ${expected} period so entries add up against the full target.`,
+    );
+  }
+}
 
 /** Inputs each measurement mode must supply — capture is all-fields-required. */
 const REQUIRED_INPUTS: Record<string, string[]> = {
@@ -97,6 +122,7 @@ export const create = mutation({
     }
 
     assertCompleteCapture(assignment.measurementMode, args);
+    await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey);
 
     const activityId = await ctx.db.insert("activities", {
       employeeId: assignment.employeeId,
@@ -325,6 +351,7 @@ export const update = mutation({
     }
 
     assertCompleteCapture(assignment.measurementMode, args);
+    await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey);
 
     const before = { ...activity };
     const oldPeriodKey = activity.periodKey;

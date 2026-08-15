@@ -112,6 +112,47 @@ export function grainForFrequency(freq: Frequency): PeriodGrain {
   }
 }
 
+/**
+ * The grain activities are CAPTURED and MEASURED at. Daily/weekly work rolls
+ * up into months (ratio-style modes are scale-free, and day-level buckets are
+ * impractical to review); quarterly and annual KPIs accumulate in their native
+ * buckets so entries add up across the quarter/year against the full target.
+ */
+export function captureGrainForFrequency(freq: Frequency): PeriodGrain {
+  switch (freq) {
+    case "Daily":
+    case "Weekly":
+    case "Monthly":
+      return "month";
+    case "Quarterly":
+      return "quarter";
+    case "Annually":
+      return "year";
+  }
+}
+
+/**
+ * Map a month/quarter/year periodKey to the key of the KPI-cadence bucket that
+ * CONTAINS it (e.g. Quarterly + "2026-M08" → "2026-Q3"; Annually → "2026").
+ * Keys that cannot be narrowed (e.g. month grain asked of a quarter key) are
+ * returned unchanged.
+ */
+export function cadencePeriodKey(freq: Frequency, periodKey: string): string {
+  const grain = captureGrainForFrequency(freq);
+  const m = /^(\d{4})-M(\d{2})$/.exec(periodKey);
+  const q = /^(\d{4})-Q([1-4])$/.exec(periodKey);
+  const y = /^(\d{4})$/.exec(periodKey);
+  const year = Number((m ?? q ?? y)?.[1] ?? NaN);
+  if (!Number.isFinite(year)) return periodKey;
+  if (grain === "year") return yearKey(year);
+  if (grain === "quarter") {
+    if (q) return periodKey;
+    if (m) return quarterKey(year, Math.floor((Number(m[2]) - 1) / 3) + 1);
+    return periodKey;
+  }
+  return periodKey;
+}
+
 /** Whether an epoch-ms timestamp is a Lagos business day (Mon–Fri). */
 export function isLagosBusinessDay(epochMs: number): boolean {
   const local = new Date(epochMs + LAGOS_OFFSET_MS);

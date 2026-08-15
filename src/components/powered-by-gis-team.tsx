@@ -16,7 +16,12 @@ export function PoweredByGisTeam({
 }) {
   const chips = Array.from({ length: repeat });
   return (
-    <div className={cn("gis-marquee flex items-center bg-brand/95 py-1.5", className)}>
+    <div
+      className={cn(
+        "gis-marquee flex items-center border-t border-border/40 bg-background/60 py-1.5 backdrop-blur",
+        className,
+      )}
+    >
       <span className="sr-only">Powered by the GIS Team</span>
       <div className="gis-marquee__track" aria-hidden="true">
         {[0, 1].map((copy) => (

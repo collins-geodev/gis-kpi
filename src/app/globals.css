@@ -336,12 +336,22 @@
   }
   .gis-marquee__chip {
     @apply inline-flex items-center gap-2 px-6 text-sm font-semibold tracking-wide;
-    color: hsl(var(--brand-foreground));
-    /* Zoom in/out while scrolling — medium pulse, clearly visible. */
-    animation: marquee-breathe 3s ease-in-out infinite;
-    text-shadow: 0 0 12px hsl(var(--brand) / 0.65);
+    /* Brand-red text on the dashboard's own background — the band blends in. */
+    color: hsl(var(--brand));
+    /* Zoom in/out while scrolling — staggered so chips pulse as a wave. */
+    animation: marquee-breathe 2.6s ease-in-out infinite;
+    text-shadow: 0 0 14px hsl(var(--brand) / 0.55);
     transform-origin: center;
     will-change: transform;
+  }
+  .gis-marquee__chip:nth-child(2n) {
+    animation-delay: -0.65s;
+  }
+  .gis-marquee__chip:nth-child(3n) {
+    animation-delay: -1.3s;
+  }
+  .gis-marquee__chip:nth-child(4n) {
+    animation-delay: -1.95s;
   }
   .gis-marquee:hover .gis-marquee__track,
   .gis-marquee:focus-within .gis-marquee__track {
@@ -538,10 +548,12 @@
 @keyframes marquee-breathe {
   0%,
   100% {
-    transform: scale(0.9);
+    transform: scale(0.85);
+    opacity: 0.75;
   }
   50% {
-    transform: scale(1.08);
+    transform: scale(1.15);
+    opacity: 1;
   }
 }
 @keyframes shimmer {

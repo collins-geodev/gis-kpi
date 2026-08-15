@@ -724,3 +724,62 @@ describe("score overrides", () => {
     expect((await measurement())?.cappedAttainment).toBeCloseTo(10 / 15, 5);
   });
 });
+
+describe("cadence-aware periods", () => {
+  test("quarterly KPIs accumulate per quarter and reject month buckets", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    // Find any employee who owns a quarterly mentorship KPI (role-dependent).
+    const { assignmentId, target, employeeBiz } = await t.run(async (ctx) => {
+      const all = await ctx.db.query("kpiAssignments").take(200);
+      const a = all.find((x) => x.canonicalKey === "mentorship_training")!;
+      const e = (await ctx.db.get(a.employeeId))!;
+      return { assignmentId: a._id, target: a.target, employeeBiz: e.employeeId };
+    });
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: employeeBiz,
+    });
+
+    const base = {
+      kpiAssignmentId: assignmentId,
+      activityAt: 1,
+      title: "Training session",
+      description: "geospatial onboarding",
+      quantity: 1,
+    };
+
+    // A month bucket is refused for a quarterly KPI.
+    await expect(
+      emp.mutation(api.activities.create, { ...base, periodKey: "2026-M08" }),
+    ).rejects.toThrow(/quarterly/i);
+
+    // Two sessions logged in Q3 add up against the full quarterly target.
+    await emp.mutation(api.activities.create, { ...base, periodKey: "2026-Q3" });
+    await emp.mutation(api.activities.create, {
+      ...base,
+      periodKey: "2026-Q3",
+      title: "Second session",
+    });
+    const m = await t.run(async (ctx) =>
+      ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-Q3"),
+        )
+        .first(),
+    );
+    expect(m?.rawActual).toBe(2);
+    expect(m?.cappedAttainment).toBeCloseTo(Math.min(2 / target, 1), 5);
+  });
+
+  test("cadencePeriodKey maps months into their quarter/year buckets", async () => {
+    const { cadencePeriodKey } = await import("./lib/periods");
+    expect(cadencePeriodKey("Quarterly", "2026-M08")).toBe("2026-Q3");
+    expect(cadencePeriodKey("Annually", "2026-M08")).toBe("2026");
+    expect(cadencePeriodKey("Monthly", "2026-M08")).toBe("2026-M08");
+    expect(cadencePeriodKey("Daily", "2026-M01")).toBe("2026-M01");
+    expect(cadencePeriodKey("Quarterly", "2026-Q2")).toBe("2026-Q2");
+  });
+});

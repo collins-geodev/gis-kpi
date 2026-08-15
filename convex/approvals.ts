@@ -14,7 +14,8 @@ import { recordAudit } from "./audit";
 import { resolveDisplayName } from "./emails";
 import { formatPercent } from "./lib/format";
 import { CALC_VERSION, scoreScorecard, type ScorecardItem } from "./lib/scoring";
-import { BASELINE_PERFORMANCE_YEAR } from "./lib/types";
+import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
+import { cadencePeriodKey } from "./lib/periods";
 
 /** Provisional measurements awaiting review, within the caller's scope. */
 export const reviewQueue = query({
@@ -200,10 +201,13 @@ export const approveEmployeePeriod = mutation({
     }[] = [];
 
     for (const assignment of assignments) {
+      // Each KPI is read at its own cadence bucket: a monthly approval blends
+      // quarter-to-date / year-to-date values for quarterly & annual KPIs.
+      const lookupKey = cadencePeriodKey(assignment.frequency as Frequency, periodKey);
       const m = await ctx.db
         .query("kpiMeasurements")
         .withIndex("by_assignment_period", (q) =>
-          q.eq("kpiAssignmentId", assignment._id).eq("periodKey", periodKey),
+          q.eq("kpiAssignmentId", assignment._id).eq("periodKey", lookupKey),
         )
         .first();
       if (m && m.hasData) {

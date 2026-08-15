@@ -22,7 +22,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { aggregateActivityInputs } from "@convex/lib/measure";
 import { computeAttainment } from "@convex/lib/scoring";
 import { formatPercent } from "@convex/lib/format";
-import type { Direction, MeasurementMode } from "@convex/lib/types";
+import type { Direction, Frequency, MeasurementMode } from "@convex/lib/types";
+import { captureGrainForFrequency } from "@convex/lib/periods";
 
 type Assignment = {
   id: string;
@@ -139,6 +140,29 @@ export default function ActivitiesPage() {
     [assignments, assignmentId],
   );
   const fields = selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : [];
+
+  /**
+   * A KPI accumulates in its native cadence bucket: quarterly KPIs offer
+   * Q1–Q4 (entries add up across the quarter against the full target),
+   * annual KPIs the year, monthly/daily KPIs the months.
+   */
+  const availablePeriods = useMemo(() => {
+    if (!selected) return periods ?? [];
+    const grain = captureGrainForFrequency(selected.frequency as Frequency);
+    return (periods ?? []).filter((p) => p.grain === grain);
+  }, [periods, selected]);
+
+  // When the KPI changes, snap the period to the current bucket of its cadence.
+  useEffect(() => {
+    if (!selected || availablePeriods.length === 0) return;
+    if (availablePeriods.some((p) => p.periodKey === periodKey)) return;
+    const now = Date.now();
+    const current =
+      [...availablePeriods].reverse().find((p) => p.startAt <= now) ??
+      availablePeriods[0]!;
+    setPeriodKey(current.periodKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, availablePeriods]);
 
   /**
    * Live preview through the REAL scoring engine — what this entry alone
@@ -321,7 +345,7 @@ export default function ActivitiesPage() {
                   onChange={(e) => setPeriodKey(e.target.value)}
                   className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                 >
-                  {(periods ?? []).map((p) => (
+                  {availablePeriods.map((p) => (
                     <option key={p.periodKey} value={p.periodKey}>
                       {p.label} ({p.grain})
                     </option>
