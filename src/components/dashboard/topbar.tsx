@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
@@ -17,7 +16,6 @@ import { initials } from "@convex/lib/format";
 export function Topbar() {
   const me = useQuery(api.access.currentUser);
   const { signOut } = useAuthActions();
-  const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
   const display = me?.name ?? me?.email ?? "";
 
@@ -26,10 +24,12 @@ export function Topbar() {
     setSigningOut(true); // instant feedback — spinner appears on click
     try {
       await signOut();
-    } finally {
-      // Navigate immediately instead of waiting for the reactive teardown.
-      router.push("/signin");
+    } catch {
+      // Session is being torn down regardless — fall through to the redirect.
     }
+    // HARD navigation: discards the React tree before any still-mounted
+    // authenticated query can throw into an error boundary.
+    window.location.replace("/signin");
   }
 
   return (
