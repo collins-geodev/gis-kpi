@@ -28,7 +28,10 @@ export async function resolveDisplayName(
   ctx: QueryCtx,
   user: Doc<"users">,
 ): Promise<string> {
-  if (user.name?.trim()) return user.name.trim();
+  // Some accounts have their email stored as the profile name — a "name"
+  // containing @ is not a greeting-worthy name, so fall through.
+  const name = user.name?.trim();
+  if (name && !name.includes("@")) return name;
   if (user.employeeId) {
     const emp = await ctx.db.get(user.employeeId);
     if (emp) return emp.displayName;
