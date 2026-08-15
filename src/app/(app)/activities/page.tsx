@@ -412,12 +412,9 @@ export default function ActivitiesPage() {
                 </div>
               )}
 
-              {selected?.measurementMode === "ratio" && (
+              {selected && (
                 <p className="rounded-md bg-info/10 px-3 py-2 text-xs text-info">
-                  The denominator is the number of eligible items that{" "}
-                  <strong>actually existed</strong> this period (e.g. projects that came
-                  in) — not an aspirational quota. If 10 came and you handled all 10,
-                  enter 10 / 10.
+                  {modeHint(selected)}
                 </p>
               )}
 
@@ -555,6 +552,80 @@ export default function ActivitiesPage() {
 
 function num(v: number | boolean | undefined): number | undefined {
   return typeof v === "number" && !Number.isNaN(v) ? v : undefined;
+}
+
+/** Plain-language guidance for each measurement mode's inputs. */
+function modeHint(a: Assignment): React.ReactNode {
+  switch (a.measurementMode) {
+    case "ratio":
+      return (
+        <>
+          The denominator is the number of eligible items that{" "}
+          <strong>actually existed</strong> this period (e.g. projects that came in) — not
+          an aspirational quota. If 10 came and you handled all 10, enter 10 / 10. Entries
+          in the same period add up.
+        </>
+      );
+    case "count":
+      return (
+        <>
+          Enter the number <strong>actually achieved</strong> this period — it is scored
+          against the target of <strong>{a.target}</strong>. Multiple entries in the same
+          period add up (log each one as it happens).
+        </>
+      );
+    case "durationSla":
+      return (
+        <>
+          <strong>Resolved within threshold</strong> = items closed inside the agreed time
+          window; <strong>total eligible</strong> = everything that came in this period.
+          If 8 of 9 issues were resolved within 24 hours, enter 8 / 9. Entries add up
+          across the period.
+        </>
+      );
+    case "reduction":
+      return (
+        <>
+          <strong>Baseline</strong> = the reference value (e.g. prior year);{" "}
+          <strong>current</strong> = this period&apos;s value. The achieved reduction is
+          scored against the target reduction of{" "}
+          <strong>{formatPercent(a.target)}</strong>. The most recent entry in the period
+          is used.
+        </>
+      );
+    case "milestone":
+      return (
+        <>
+          Milestones <strong>completed vs planned</strong> for this period — if 3 of 4
+          planned milestones were approved, enter 3 / 4. Entries add up across the period.
+        </>
+      );
+    case "binary":
+      return (
+        <>
+          Tick the box when the condition was <strong>met</strong> this period; leaving it
+          unticked records an explicit &ldquo;not met&rdquo;. The most recent entry
+          counts.
+        </>
+      );
+    case "rubric":
+      return (
+        <>
+          <strong>Rubric score</strong> = points earned against the rubric agreed with
+          your reviewer; <strong>rubric max</strong> = its total points (e.g. 3 / 4). The
+          most recent entry counts — attach evidence of what was delivered.
+        </>
+      );
+    case "composite":
+      return (
+        <>
+          Health checks <strong>completed vs scheduled</strong>, plus unscheduled downtime
+          incidents. Zero downtime is a gate — any incident caps the period score at 50%.
+        </>
+      );
+    default:
+      return <>Enter this period&apos;s measurement inputs; all fields are required.</>;
+  }
 }
 
 function Row({
