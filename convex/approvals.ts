@@ -52,6 +52,113 @@ export const reviewQueue = query({
   },
 });
 
+/**
+ * Reject a KPI submission after review: every submitted/verified activity for
+ * that (KPI, period) returns to `needs_changes`, a review record captures the
+ * required reason, and the employee is emailed the reason. Editing the entry
+ * re-submits it for review.
+ */
+export const rejectSubmission = mutation({
+  args: {
+    kpiAssignmentId: v.id("kpiAssignments"),
+    periodKey: v.string(),
+    reason: v.string(),
+  },
+  returns: v.object({ returned: v.number() }),
+  handler: async (ctx, { kpiAssignmentId, periodKey, reason }) => {
+    const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
+    const assignment = await ctx.db.get(kpiAssignmentId);
+    if (!assignment) throw new Error("KPI assignment not found");
+    await assertEmployeeReadScope(ctx, assignment.employeeId);
+    const cleanReason = reason.trim();
+    if (!cleanReason) throw new Error("A reason is required to reject a submission.");
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", kpiAssignmentId).eq("periodKey", periodKey),
+      )
+      .take(200);
+    let returned = 0;
+    for (const a of activities) {
+      if (!["submitted", "verified"].includes(a.status)) continue;
+      await ctx.db.patch(a._id, {
+        status: "needs_changes",
+        updatedByUserId: user._id,
+        updatedAt: Date.now(),
+      });
+      returned++;
+    }
+    if (returned === 0) {
+      throw new Error("No submitted activities to reject for this KPI and period.");
+    }
+
+    await ctx.db.insert("reviews", {
+      subjectType: "measurement",
+      subjectId: `${kpiAssignmentId}:${periodKey}`,
+      kpiAssignmentId,
+      employeeId: assignment.employeeId,
+      periodKey,
+      reviewerUserId: user._id,
+      decision: "request_changes",
+      comment: cleanReason.slice(0, 1000),
+      createdAt: Date.now(),
+    });
+
+    await recordAudit(ctx, {
+      entityType: "kpiAssignment",
+      entityId: kpiAssignmentId,
+      action: "reject_submission",
+      actorUserId: user._id,
+      reason: cleanReason,
+      after: { periodKey, activitiesReturned: returned },
+    });
+
+    // Email + in-app: tell the employee why, and how to fix it.
+    const employee = await ctx.db.get(assignment.employeeId);
+    const reviewerName = await resolveDisplayName(ctx, user);
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", assignment.employeeId))
+      .take(10);
+    const notices = [];
+    for (const target of linked) {
+      if (!target.email || target.isActive === false || target._id === user._id) {
+        continue;
+      }
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Your KPI submission was rejected — action needed (${periodKey})`,
+        intro: `*${reviewerName}* reviewed your ${periodKey} submission for the KPI below and returned it for changes. Please read the reason, update your entry from Activity Capture (edit the returned activity), and it will re-submit automatically.`,
+        panelTitle: "Rejection details",
+        rows: [
+          { label: "KPI objective", value: assignment.objective },
+          { label: "Period", value: periodKey },
+          { label: "Decision", value: "REJECTED — CHANGES REQUESTED", strong: true },
+          { label: "Reason", value: cleanReason.slice(0, 500) },
+          { label: "Reviewed by", value: reviewerName },
+        ],
+        ctaLabel: "Open the KPI",
+        ctaPath: `/kpi/${kpiAssignmentId}`,
+        inAppTitle: `Submission rejected — ${periodKey}`,
+        inAppBody: cleanReason.slice(0, 180),
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "kpiAssignment",
+        entityId: kpiAssignmentId,
+        auditAction: "submission_rejected",
+        notices,
+      });
+    }
+
+    return { returned };
+  },
+});
+
 export const approveEmployeePeriod = mutation({
   args: {
     employeeId: v.id("employees"),

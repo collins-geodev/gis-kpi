@@ -213,9 +213,7 @@ export async function buildReportPdf(
     <Document title={ds.meta.title} author="GIS KPI Dashboard">
       {/* Cover */}
       <Page size="A4" style={s.coverPage}>
-        <Text style={s.poweredBy}>
-          IKEJA ELECTRIC · GIS UNIT · TECHNICAL SERVICES
-        </Text>
+        <Text style={s.poweredBy}>IKEJA ELECTRIC · GIS UNIT · TECHNICAL SERVICES</Text>
         <View>
           <Text style={s.coverTitle}>{ds.meta.title}</Text>
           <Text style={s.coverSub}>{ds.meta.scopeLabel}</Text>

@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AccessDenied } from "@/components/access-denied";
 import { formatPercent } from "@convex/lib/format";
-import { CheckCircle2, Inbox, Lock } from "lucide-react";
+import { CheckCircle2, Inbox, Lock, XCircle } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 
 export default function ReviewPage() {
@@ -29,8 +29,29 @@ export default function ReviewPage() {
 
   const queue = useQuery(api.approvals.reviewQueue, canView ? {} : "skip");
   const approve = useMutation(api.approvals.approveEmployeePeriod);
+  const reject = useMutation(api.approvals.rejectSubmission);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+
+  async function doReject(assignmentId: string, periodKey: string) {
+    const reason = window.prompt(
+      "Reason for rejecting this submission (required — it is emailed to the employee):",
+    );
+    if (!reason?.trim()) return;
+    setBusy(assignmentId);
+    setError(null);
+    try {
+      await reject({
+        kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
+        periodKey,
+        reason: reason.trim(),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Rejection failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const groups = useMemo(() => {
     const map = new Map<
@@ -156,6 +177,18 @@ export default function ReviewPage() {
                           <Badge variant="critical">
                             <Lock className="h-3 w-3" /> DQ blocked
                           </Badge>
+                        )}
+                        {canApprove && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground hover:text-critical"
+                            disabled={busy === i.assignmentId}
+                            title="Reject this submission — the reason is emailed to the employee"
+                            onClick={() => doReject(i.assignmentId, i.periodKey)}
+                          >
+                            <XCircle className="h-4 w-4" /> Reject
+                          </Button>
                         )}
                       </div>
                     </div>

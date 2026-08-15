@@ -560,3 +560,72 @@ describe("evidence deletion rules", () => {
     expect((await admin.query(api.evidence.listCentre, {})).length).toBe(0);
   });
 });
+
+describe("submission rejection", () => {
+  test("rejecting returns activities to needs_changes; editing re-submits", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    const activityId = await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+
+    // Reason is mandatory.
+    await expect(
+      admin.mutation(api.approvals.rejectSubmission, {
+        kpiAssignmentId: assignmentId,
+        periodKey: "2026-M08",
+        reason: "  ",
+      }),
+    ).rejects.toThrow(/reason/i);
+
+    const res = await admin.mutation(api.approvals.rejectSubmission, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      reason: "Numbers don't match the batch report",
+    });
+    expect(res.returned).toBe(1);
+    const status = await t.run(async (ctx) => (await ctx.db.get(activityId))!.status);
+    expect(status).toBe("needs_changes");
+    const review = await t.run(async (ctx) =>
+      (await ctx.db.query("reviews").collect()).find(
+        (r) => r.decision === "request_changes",
+      ),
+    );
+    expect(review?.comment).toMatch(/batch report/);
+
+    // Editing the returned entry re-submits it for review.
+    await emp.mutation(api.activities.update, {
+      activityId,
+      periodKey: "2026-M08",
+      title: "Integrated assets (corrected)",
+      description: "batch — matched to report",
+      numerator: 8,
+      denominator: 10,
+    });
+    const after = await t.run(async (ctx) => (await ctx.db.get(activityId))!.status);
+    expect(after).toBe("submitted");
+  });
+});
