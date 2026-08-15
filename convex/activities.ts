@@ -15,6 +15,52 @@ import { recordAudit } from "./audit";
 import { recomputeMeasurement } from "./measurementsModel";
 import { BASELINE_PERFORMANCE_YEAR } from "./lib/types";
 
+/** Inputs each measurement mode must supply — capture is all-fields-required. */
+const REQUIRED_INPUTS: Record<string, string[]> = {
+  ratio: ["numerator", "denominator"],
+  durationSla: ["withinThreshold", "eligible"],
+  count: ["quantity"],
+  reduction: ["baseline", "currentValue"],
+  milestone: ["completed", "planned"],
+  binary: ["pass"],
+  rubric: ["score", "maxScore"],
+  composite: ["numerator", "denominator", "quantity"],
+};
+
+const INPUT_LABELS: Record<string, string> = {
+  numerator: "Numerator",
+  denominator: "Denominator",
+  withinThreshold: "Resolved within threshold",
+  eligible: "Total eligible items",
+  quantity: "Count",
+  baseline: "Baseline",
+  currentValue: "Current value",
+  completed: "Milestones completed",
+  planned: "Milestones planned",
+  pass: "Pass/fail",
+  score: "Rubric score",
+  maxScore: "Rubric max",
+};
+
+function assertCompleteCapture(
+  measurementMode: string,
+  fields: {
+    title: string;
+    description: string;
+    [key: string]: string | number | boolean | undefined;
+  },
+): void {
+  if (!fields.title.trim()) throw new Error("Title is required.");
+  if (!fields.description.trim()) throw new Error("Notes are required.");
+  for (const key of REQUIRED_INPUTS[measurementMode] ?? []) {
+    if (fields[key] === undefined || fields[key] === null) {
+      throw new Error(
+        `${INPUT_LABELS[key] ?? key} is required for this KPI (${measurementMode} measurement).`,
+      );
+    }
+  }
+}
+
 export const create = mutation({
   args: {
     kpiAssignmentId: v.id("kpiAssignments"),
@@ -49,6 +95,8 @@ export const create = mutation({
     if (!isOwner && !isAdmin) {
       throw new AuthError("You can only log activities for your own KPIs");
     }
+
+    assertCompleteCapture(assignment.measurementMode, args);
 
     const activityId = await ctx.db.insert("activities", {
       employeeId: assignment.employeeId,
@@ -187,6 +235,132 @@ export const remove = mutation({
       action: "delete_activity",
       actorUserId: user._id,
       before: activity,
+    });
+    return null;
+  },
+});
+
+/** Full editable payload of one activity (owner or KPI/System Admin). */
+export const getForEdit = query({
+  args: { activityId: v.id("activities") },
+  handler: async (ctx, { activityId }) => {
+    const { user, roles } = await getAuthContext(ctx);
+    const activity = await ctx.db.get(activityId);
+    if (!activity) return null;
+    const isOwner = user.employeeId && user.employeeId === activity.employeeId;
+    const isAdmin = roles.some((r) => ["system_admin", "kpi_admin"].includes(r));
+    if (!isOwner && !isAdmin) throw new AuthError("Not your activity");
+    return {
+      id: activity._id,
+      kpiAssignmentId: activity.kpiAssignmentId,
+      periodKey: activity.periodKey,
+      activityAt: activity.activityAt,
+      title: activity.title,
+      description: activity.description,
+      status: activity.status,
+      quantity: activity.quantity,
+      numerator: activity.numerator,
+      denominator: activity.denominator,
+      baseline: activity.baseline,
+      currentValue: activity.currentValue,
+      withinThreshold: activity.withinThreshold,
+      eligible: activity.eligible,
+      completed: activity.completed,
+      planned: activity.planned,
+      pass: activity.pass,
+      score: activity.score,
+      maxScore: activity.maxScore,
+    };
+  },
+});
+
+/**
+ * Edit an activity's capture fields. Same permission rules as `remove`;
+ * an edited "needs_changes" entry returns to "submitted" for re-review.
+ * Measurements recompute for the original period and, when the period was
+ * moved, the new one too.
+ */
+export const update = mutation({
+  args: {
+    activityId: v.id("activities"),
+    periodKey: v.string(),
+    title: v.string(),
+    description: v.string(),
+    quantity: v.optional(v.number()),
+    numerator: v.optional(v.number()),
+    denominator: v.optional(v.number()),
+    baseline: v.optional(v.number()),
+    currentValue: v.optional(v.number()),
+    withinThreshold: v.optional(v.number()),
+    eligible: v.optional(v.number()),
+    completed: v.optional(v.number()),
+    planned: v.optional(v.number()),
+    pass: v.optional(v.boolean()),
+    score: v.optional(v.number()),
+    maxScore: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user, roles } = await getAuthContext(ctx);
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity) throw new Error("Activity not found");
+    const assignment = await ctx.db.get(activity.kpiAssignmentId);
+    if (!assignment) throw new Error("KPI assignment not found");
+
+    const isOwner = user.employeeId && user.employeeId === activity.employeeId;
+    const isAdmin = roles.some((r) => ["system_admin", "kpi_admin"].includes(r));
+    const OWNER_EDITABLE = ["draft", "submitted", "needs_changes"];
+    if (isAdmin) {
+      if (activity.status === "locked") {
+        throw new AuthError("Locked activities cannot be edited.");
+      }
+    } else if (isOwner) {
+      if (!OWNER_EDITABLE.includes(activity.status)) {
+        throw new AuthError(
+          "This activity has already been reviewed — ask an admin to change it.",
+        );
+      }
+    } else {
+      throw new AuthError("You can only edit your own activities");
+    }
+
+    assertCompleteCapture(assignment.measurementMode, args);
+
+    const before = { ...activity };
+    const oldPeriodKey = activity.periodKey;
+    await ctx.db.patch(args.activityId, {
+      periodKey: args.periodKey,
+      title: args.title.slice(0, 300),
+      description: args.description.slice(0, 4000),
+      quantity: args.quantity,
+      numerator: args.numerator,
+      denominator: args.denominator,
+      baseline: args.baseline,
+      currentValue: args.currentValue,
+      withinThreshold: args.withinThreshold,
+      eligible: args.eligible,
+      completed: args.completed,
+      planned: args.planned,
+      pass: args.pass,
+      score: args.score,
+      maxScore: args.maxScore,
+      status: activity.status === "needs_changes" ? "submitted" : activity.status,
+      updatedByUserId: user._id,
+      updatedAt: Date.now(),
+    });
+
+    await recomputeMeasurement(ctx, assignment, oldPeriodKey);
+    if (args.periodKey !== oldPeriodKey) {
+      await recomputeMeasurement(ctx, assignment, args.periodKey);
+    }
+
+    await recordAudit(ctx, {
+      entityType: "activity",
+      entityId: args.activityId,
+      action: "update_activity",
+      actorUserId: user._id,
+      before,
+      after: { periodKey: args.periodKey, title: args.title },
     });
     return null;
   },

@@ -392,3 +392,75 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
     expect(audit.length).toBe(1);
   });
 });
+
+describe("activity capture: required fields + edit", () => {
+  test("incomplete captures are rejected; edits recompute the measurement", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const year = await ctx.db
+        .query("performanceYears")
+        .withIndex("by_year", (q) => q.eq("year", 2026))
+        .first();
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", empId).eq("performanceYearId", year!._id),
+        )
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+
+    const base = {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+    };
+
+    // Ratio mode requires both numerator and denominator, and non-empty notes.
+    await expect(
+      emp.mutation(api.activities.create, { ...base, numerator: 9 }),
+    ).rejects.toThrow(/Denominator is required/i);
+    await expect(
+      emp.mutation(api.activities.create, {
+        ...base,
+        description: "  ",
+        numerator: 9,
+        denominator: 10,
+      }),
+    ).rejects.toThrow(/Notes are required/i);
+
+    const activityId = await emp.mutation(api.activities.create, {
+      ...base,
+      numerator: 9,
+      denominator: 10,
+    });
+
+    // Edit 9/10 → 8/10 and confirm the measurement follows.
+    await emp.mutation(api.activities.update, {
+      activityId,
+      periodKey: "2026-M08",
+      title: "Integrated assets (corrected)",
+      description: "batch — corrected count",
+      numerator: 8,
+      denominator: 10,
+    });
+    const measurement = await t.run(async (ctx) =>
+      ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+        )
+        .first(),
+    );
+    expect(measurement?.cappedAttainment).toBe(0.8);
+  });
+});

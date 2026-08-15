@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, ClipboardList, Loader2, Trash2 } from "lucide-react";
+import { CheckCircle2, ClipboardList, Loader2, Pencil, Trash2, X } from "lucide-react";
 
 type Assignment = {
   id: string;
@@ -72,6 +72,7 @@ export default function ActivitiesPage() {
   const periods = useQuery(api.activities.periods);
   const recent = useQuery(api.activities.listMine, { limit: 15 });
   const create = useMutation(api.activities.create);
+  const updateActivity = useMutation(api.activities.update);
   const removeActivity = useMutation(api.activities.remove);
 
   const [assignmentId, setAssignmentId] = useState<string>("");
@@ -82,6 +83,51 @@ export default function ActivitiesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<Id<"activities"> | null>(null);
+  const editing = useQuery(
+    api.activities.getForEdit,
+    editingId ? { activityId: editingId } : "skip",
+  );
+
+  // When an activity is opened for editing, load its payload into the form.
+  useEffect(() => {
+    if (!editing) return;
+    setAssignmentId(editing.kpiAssignmentId);
+    setPeriodKey(editing.periodKey);
+    setTitle(editing.title);
+    setDescription(editing.description);
+    const inputs: Record<string, number | boolean> = {};
+    for (const key of [
+      "quantity",
+      "numerator",
+      "denominator",
+      "baseline",
+      "currentValue",
+      "withinThreshold",
+      "eligible",
+      "completed",
+      "planned",
+      "pass",
+      "score",
+      "maxScore",
+    ] as const) {
+      const v = editing[key];
+      if (v !== undefined) inputs[key] = v;
+    }
+    setValues(inputs);
+    setDone(false);
+    setError(null);
+  }, [editing]);
+
+  function resetForm() {
+    setEditingId(null);
+    setAssignmentId("");
+    setPeriodKey("2026-M08");
+    setTitle("");
+    setDescription("");
+    setValues({});
+    setError(null);
+  }
 
   const selected: Assignment | undefined = useMemo(
     () => (assignments ?? []).find((a) => a.id === assignmentId),
@@ -113,30 +159,44 @@ export default function ActivitiesPage() {
     setSubmitting(true);
     setError(null);
     setDone(false);
+    const payload = {
+      periodKey,
+      title,
+      description,
+      numerator: num(values.numerator),
+      denominator: num(values.denominator),
+      withinThreshold: num(values.withinThreshold),
+      eligible: num(values.eligible),
+      quantity: num(values.quantity),
+      baseline: num(values.baseline),
+      currentValue: num(values.currentValue),
+      completed: num(values.completed),
+      planned: num(values.planned),
+      score: num(values.score),
+      maxScore: num(values.maxScore),
+      // Binary KPIs: an untouched checkbox is an explicit "not met".
+      pass:
+        selected.measurementMode === "binary"
+          ? Boolean(values.pass)
+          : typeof values.pass === "boolean"
+            ? values.pass
+            : undefined,
+    };
     try {
-      await create({
-        kpiAssignmentId: selected.id as Id<"kpiAssignments">,
-        periodKey,
-        activityAt: Date.now(),
-        title,
-        description,
-        numerator: num(values.numerator),
-        denominator: num(values.denominator),
-        withinThreshold: num(values.withinThreshold),
-        eligible: num(values.eligible),
-        quantity: num(values.quantity),
-        baseline: num(values.baseline),
-        currentValue: num(values.currentValue),
-        completed: num(values.completed),
-        planned: num(values.planned),
-        score: num(values.score),
-        maxScore: num(values.maxScore),
-        pass: typeof values.pass === "boolean" ? values.pass : undefined,
-      });
+      if (editingId) {
+        await updateActivity({ activityId: editingId, ...payload });
+        resetForm();
+      } else {
+        await create({
+          kpiAssignmentId: selected.id as Id<"kpiAssignments">,
+          activityAt: Date.now(),
+          ...payload,
+        });
+        setTitle("");
+        setDescription("");
+        setValues({});
+      }
       setDone(true);
-      setTitle("");
-      setDescription("");
-      setValues({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save activity.");
     } finally {
@@ -153,23 +213,35 @@ export default function ActivitiesPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">New activity</CardTitle>
-            <CardDescription>
-              Choose a KPI, then enter its measurement inputs.
-            </CardDescription>
+          <CardHeader className="flex-row items-start justify-between space-y-0">
+            <div className="space-y-1.5">
+              <CardTitle className="text-base">
+                {editingId ? "Edit activity" : "New activity"}
+              </CardTitle>
+              <CardDescription>
+                {editingId
+                  ? "Correct the entry — its measurement recomputes on save."
+                  : "Choose a KPI, then enter its measurement inputs. All fields are required."}
+              </CardDescription>
+            </div>
+            {editingId && (
+              <Button variant="ghost" size="sm" onClick={resetForm}>
+                <X className="h-4 w-4" /> Cancel edit
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             <form onSubmit={submit} className="space-y-4">
               <Row label="KPI">
                 <select
                   required
+                  disabled={editingId !== null}
                   value={assignmentId}
                   onChange={(e) => {
                     setAssignmentId(e.target.value);
                     setValues({});
                   }}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-70"
                 >
                   <option value="">Select a KPI…</option>
                   {assignments.map((a) => (
@@ -196,6 +268,7 @@ export default function ActivitiesPage() {
 
               <Row label="Period">
                 <select
+                  required
                   value={periodKey}
                   onChange={(e) => setPeriodKey(e.target.value)}
                   className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
@@ -242,6 +315,7 @@ export default function ActivitiesPage() {
                         <input
                           type="number"
                           step="any"
+                          required
                           value={
                             values[f.name] === undefined ? "" : String(values[f.name])
                           }
@@ -264,6 +338,7 @@ export default function ActivitiesPage() {
 
               <Row label="Notes">
                 <textarea
+                  required
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
@@ -285,7 +360,8 @@ export default function ActivitiesPage() {
               )}
 
               <Button type="submit" disabled={submitting || !selected}>
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />} Save activity
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editingId ? "Save changes" : "Save activity"}
               </Button>
             </form>
           </CardContent>
@@ -328,6 +404,20 @@ export default function ActivitiesPage() {
                     {deletable && (
                       <button
                         type="button"
+                        aria-label={`Edit activity “${a.title}”`}
+                        title="Edit this activity"
+                        className="flex items-center px-2 text-muted-foreground hover:bg-accent/10 hover:text-accent"
+                        onClick={() => {
+                          setEditingId(a.id as Id<"activities">);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+                    {deletable && (
+                      <button
+                        type="button"
                         aria-label={`Delete activity “${a.title}”`}
                         title="Delete this activity (its measurement is recomputed)"
                         className="flex items-center rounded-r-md px-2 text-muted-foreground hover:bg-critical/10 hover:text-critical"
@@ -338,6 +428,7 @@ export default function ActivitiesPage() {
                             )
                           )
                             return;
+                          if (editingId === (a.id as Id<"activities">)) resetForm();
                           void removeActivity({ activityId: a.id as Id<"activities"> });
                         }}
                       >
