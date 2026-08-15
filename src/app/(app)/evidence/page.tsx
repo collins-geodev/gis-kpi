@@ -212,7 +212,7 @@ export default function EvidenceCentrePage() {
               <option value="">Select a KPI…</option>
               {(myAssignments ?? []).map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.objective.slice(0, 90)}
+                  {a.objective}
                 </option>
               ))}
             </select>

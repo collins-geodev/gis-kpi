@@ -145,6 +145,14 @@ export const getKpiUpdatePayload = internalQuery({
   },
 });
 
+/** Per-recipient delivery outcome, kept in the audit log for diagnosis. */
+const vDeliveryResult = v.object({
+  email: v.string(),
+  ok: v.boolean(),
+  status: v.number(), // HTTP status from Resend; 0 = not attempted (no API key)
+  detail: v.optional(v.string()),
+});
+
 /** Record in-app notifications + an audit entry for the send. */
 export const recordNotifications = internalMutation({
   args: {
@@ -154,6 +162,7 @@ export const recordNotifications = internalMutation({
     activityTitle: v.string(),
     employeeName: v.string(),
     emailed: v.boolean(),
+    results: v.optional(v.array(vDeliveryResult)),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -178,6 +187,7 @@ export const recordNotifications = internalMutation({
       after: {
         recipients: args.recipients.map((r) => r.variant),
         reason: args.emailed ? undefined : "RESEND_API_KEY not configured",
+        deliveries: args.results,
       },
       at: now,
     });
@@ -216,6 +226,7 @@ export const recordNoticeResults = internalMutation({
         href: v.string(),
       }),
     ),
+    results: v.optional(v.array(vDeliveryResult)),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -236,7 +247,7 @@ export const recordNoticeResults = internalMutation({
       action: args.emailed
         ? `${args.auditAction}_email_sent`
         : `${args.auditAction}_email_skipped`,
-      after: { recipients: args.recipients.length },
+      after: { recipients: args.recipients.length, deliveries: args.results },
       at: now,
     });
     return null;
@@ -263,6 +274,7 @@ export const sendNotices = internalAction({
     const dashboardUrl = process.env.DASHBOARD_URL ?? "https://gis-kpi.vercel.app";
     let emailed = false;
 
+    const results: { email: string; ok: boolean; status: number; detail?: string }[] = [];
     if (apiKey) {
       for (const n of args.notices) {
         const { subject, html, text } = buildNoticeEmail({
@@ -284,11 +296,32 @@ export const sendNotices = internalAction({
             },
             body: JSON.stringify({ from, to: [n.email], subject, html, text }),
           });
-          if (res.ok) emailed = true;
-          else console.error("Resend send failed", res.status, await res.text());
+          if (res.ok) {
+            emailed = true;
+            results.push({ email: n.email, ok: true, status: res.status });
+          } else {
+            const detail = (await res.text()).slice(0, 300);
+            console.error("Resend send failed", res.status, detail);
+            results.push({ email: n.email, ok: false, status: res.status, detail });
+          }
         } catch (err) {
           console.error("Resend send error", err);
+          results.push({
+            email: n.email,
+            ok: false,
+            status: -1,
+            detail: err instanceof Error ? err.message.slice(0, 300) : "network error",
+          });
         }
+      }
+    } else {
+      for (const n of args.notices) {
+        results.push({
+          email: n.email,
+          ok: false,
+          status: 0,
+          detail: "RESEND_API_KEY not configured",
+        });
       }
     }
 
@@ -297,6 +330,7 @@ export const sendNotices = internalAction({
       entityId: args.entityId,
       auditAction: args.auditAction,
       emailed,
+      results,
       recipients: args.notices.map((n) => ({
         userId: n.userId,
         title: n.inAppTitle,
@@ -322,6 +356,7 @@ export const notifyKpiUpdate = internalAction({
     const from = process.env.EMAIL_FROM ?? "GIS KPI Dashboard <onboarding@resend.dev>";
     const dashboardUrl = process.env.DASHBOARD_URL ?? "https://gis-kpi.vercel.app";
     let emailed = false;
+    const results: { email: string; ok: boolean; status: number; detail?: string }[] = [];
 
     if (apiKey) {
       for (const r of payload.recipients) {
@@ -348,11 +383,32 @@ export const notifyKpiUpdate = internalAction({
             },
             body: JSON.stringify({ from, to: [r.email], subject, html, text }),
           });
-          if (res.ok) emailed = true;
-          else console.error("Resend send failed", res.status, await res.text());
+          if (res.ok) {
+            emailed = true;
+            results.push({ email: r.email, ok: true, status: res.status });
+          } else {
+            const detail = (await res.text()).slice(0, 300);
+            console.error("Resend send failed", res.status, detail);
+            results.push({ email: r.email, ok: false, status: res.status, detail });
+          }
         } catch (err) {
           console.error("Resend send error", err);
+          results.push({
+            email: r.email,
+            ok: false,
+            status: -1,
+            detail: err instanceof Error ? err.message.slice(0, 300) : "network error",
+          });
         }
+      }
+    } else {
+      for (const r of payload.recipients) {
+        results.push({
+          email: r.email,
+          ok: false,
+          status: 0,
+          detail: "RESEND_API_KEY not configured",
+        });
       }
     }
 
@@ -363,6 +419,7 @@ export const notifyKpiUpdate = internalAction({
       activityTitle: payload.activityTitle,
       employeeName: payload.employeeName,
       emailed,
+      results,
     });
     return null;
   },

@@ -312,7 +312,7 @@ export default function ActivitiesPage() {
                   <option value="">Select a KPI…</option>
                   {assignments.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.objective.slice(0, 70)}
+                      {a.objective}
                     </option>
                   ))}
                 </select>

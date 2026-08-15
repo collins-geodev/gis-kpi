@@ -336,8 +336,8 @@
   }
   .gis-marquee__chip {
     @apply inline-flex items-center gap-2 px-6 text-sm font-semibold tracking-wide;
-    /* Brand-red text on the dashboard's own background — the band blends in. */
-    color: hsl(var(--brand));
+    /* White in dark mode (deep-navy in light) with a red brand glow. */
+    color: hsl(var(--foreground));
     /* Zoom in/out while scrolling — staggered so chips pulse as a wave. */
     animation: marquee-breathe 2.6s ease-in-out infinite;
     text-shadow: 0 0 14px hsl(var(--brand) / 0.55);
