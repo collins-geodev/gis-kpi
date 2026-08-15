@@ -26,6 +26,7 @@ async function assertPeriodMatchesCadence(
   ctx: QueryCtx,
   frequency: string,
   periodKey: string,
+  opts: { isAdmin: boolean },
 ): Promise<void> {
   const period = await ctx.db
     .query("trackingPeriods")
@@ -36,6 +37,13 @@ async function assertPeriodMatchesCadence(
   if (period.grain !== expected) {
     throw new Error(
       `This KPI is tracked ${frequency.toLowerCase()} — choose the ${expected} period so entries add up against the full target.`,
+    );
+  }
+  // Gate: once a period's grace window has elapsed it is closed for
+  // self-service capture. KPI/System Admins bypass (they own reopening).
+  if (!opts.isAdmin && ["closed", "locked"].includes(period.status)) {
+    throw new Error(
+      `${period.label} is closed for capture — ask an admin to reopen it from the Compliance page.`,
     );
   }
 }
@@ -122,7 +130,9 @@ export const create = mutation({
     }
 
     assertCompleteCapture(assignment.measurementMode, args);
-    await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey);
+    await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey, {
+      isAdmin,
+    });
 
     const activityId = await ctx.db.insert("activities", {
       employeeId: assignment.employeeId,
@@ -351,7 +361,9 @@ export const update = mutation({
     }
 
     assertCompleteCapture(assignment.measurementMode, args);
-    await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey);
+    await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey, {
+      isAdmin,
+    });
 
     const before = { ...activity };
     const oldPeriodKey = activity.periodKey;

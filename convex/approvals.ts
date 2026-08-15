@@ -43,6 +43,7 @@ export const reviewQueue = query({
         status: m.status,
         evidenceRequired: assignment.evidenceRequired,
         evidenceComplete: m.evidenceComplete,
+        cadenceCompliant: m.cadenceCompliant,
         scoringBlocked: assignment.scoringBlocked,
         ready:
           (!assignment.evidenceRequired || m.evidenceComplete) &&

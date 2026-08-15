@@ -783,3 +783,131 @@ describe("cadence-aware periods", () => {
     expect(cadencePeriodKey("Quarterly", "2026-Q2")).toBe("2026-Q2");
   });
 });
+
+describe("submission compliance & gating", () => {
+  test("compliance board classifies on-time, late and missing", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+
+    const boardData = await admin.query(api.compliance.board, {
+      periodKey: "2026-M08",
+    });
+    const row = boardData.rows.find((r) => r.employeeId === empId)!;
+    expect(row.expected).toBe(5);
+    expect(row.onTime + row.late).toBe(1);
+    expect(row.missing.length).toBe(4);
+    // Employees cannot read the board.
+    await expect(
+      emp.query(api.compliance.board, { periodKey: "2026-M08" }),
+    ).rejects.toThrow();
+  });
+
+  test("closed periods block employees, admins bypass, reopen restores", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    const base = {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 1,
+      denominator: 10,
+    };
+
+    await admin.mutation(api.compliance.closePeriod, { periodKey: "2026-M08" });
+    await expect(emp.mutation(api.activities.create, base)).rejects.toThrow(/closed/i);
+    // Admins bypass the gate (they own reopening).
+    await admin.mutation(api.activities.create, base);
+
+    await expect(
+      admin.mutation(api.compliance.reopenPeriod, {
+        periodKey: "2026-M08",
+        reason: " ",
+      }),
+    ).rejects.toThrow(/reason/i);
+    await admin.mutation(api.compliance.reopenPeriod, {
+      periodKey: "2026-M08",
+      reason: "Employee was on approved leave",
+    });
+    await emp.mutation(api.activities.create, base);
+  });
+
+  test("reminder ladder fires once per stage and escalates overdue periods", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    await makeUser(t, { email: "a@x.com", roles: ["system_admin"] });
+
+    // Sep 3 2026: two days before the M08 due date (Sep 5) → due_soon stage.
+    const sep3 = Date.UTC(2026, 8, 3, 12);
+    const first = await t.mutation(internal.reminders.scanSubmissionReminders, {
+      now: sep3,
+    });
+    expect(first.notified).toBeGreaterThan(0);
+    const again = await t.mutation(internal.reminders.scanSubmissionReminders, {
+      now: sep3,
+    });
+    expect(again.notified).toBe(0); // deduped
+
+    // Sep 6 2026: past due → overdue notices + one-time admin escalation.
+    const sep6 = Date.UTC(2026, 8, 6, 12);
+    const overdue = await t.mutation(internal.reminders.scanSubmissionReminders, {
+      now: sep6,
+    });
+    expect(overdue.notified).toBeGreaterThan(0);
+    expect(overdue.escalations).toBeGreaterThan(0);
+    const overdueAgain = await t.mutation(internal.reminders.scanSubmissionReminders, {
+      now: sep6,
+    });
+    expect(overdueAgain.notified).toBe(0);
+    expect(overdueAgain.escalations).toBe(0);
+  });
+});

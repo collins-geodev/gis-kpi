@@ -173,6 +173,9 @@ export default function ReviewPage() {
                           ) : (
                             <Badge variant="warning">evidence needed</Badge>
                           ))}
+                        {!i.cadenceCompliant && (
+                          <Badge variant="warning">submitted late</Badge>
+                        )}
                         {i.scoringBlocked && (
                           <Badge variant="critical">
                             <Lock className="h-3 w-3" /> DQ blocked

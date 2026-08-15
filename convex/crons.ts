@@ -17,4 +17,19 @@ crons.daily(
   internal.reminders.notifyReviewBacklog,
 );
 
+// Close periods whose grace window has fully elapsed (7 days past due).
+crons.daily(
+  "close expired grace periods",
+  { hourUTC: 6, minuteUTC: 15 },
+  internal.reminders.closeExpiredGracePeriods,
+);
+
+// Submission reminder ladder: due-soon nudges, overdue notices, admin escalation.
+crons.daily(
+  "submission reminders",
+  { hourUTC: 7, minuteUTC: 0 },
+  internal.reminders.scanSubmissionReminders,
+  {},
+);
+
 export default crons;

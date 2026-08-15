@@ -15,6 +15,7 @@ import type * as approvals from "../approvals.js";
 import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
 import type * as authz from "../authz.js";
+import type * as compliance from "../compliance.js";
 import type * as crons from "../crons.js";
 import type * as dataQuality from "../dataQuality.js";
 import type * as emails from "../emails.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   audit: typeof audit;
   auth: typeof auth;
   authz: typeof authz;
+  compliance: typeof compliance;
   crons: typeof crons;
   dataQuality: typeof dataQuality;
   emails: typeof emails;

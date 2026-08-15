@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  CalendarClock,
   CheckSquare,
   ClipboardList,
   FileText,
@@ -61,6 +62,12 @@ export const NAV: NavGroup[] = [
         label: "Activity Feed",
         icon: Activity,
         roles: ["manager", "reviewer", "kpi_admin", "system_admin", "auditor"],
+      },
+      {
+        href: "/compliance",
+        label: "Submission Compliance",
+        icon: CalendarClock,
+        roles: ["manager", "kpi_admin", "system_admin", "auditor"],
       },
       {
         href: "/data-quality",
