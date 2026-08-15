@@ -232,7 +232,7 @@ export default function ActivitiesPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={submit} className="space-y-4">
-              <Row label="KPI">
+              <Row label="KPI" required>
                 <select
                   required
                   disabled={editingId !== null}
@@ -266,7 +266,7 @@ export default function ActivitiesPage() {
                 </div>
               )}
 
-              <Row label="Period">
+              <Row label="Period" required>
                 <select
                   required
                   value={periodKey}
@@ -281,7 +281,7 @@ export default function ActivitiesPage() {
                 </select>
               </Row>
 
-              <Row label="Title">
+              <Row label="Title" required>
                 <input
                   required
                   value={title}
@@ -308,10 +308,14 @@ export default function ActivitiesPage() {
                           className="h-4 w-4"
                         />
                         {f.label}
+                        <RequiredMark />
                       </label>
                     ) : (
                       <label key={f.name} className="text-sm">
-                        <span className="text-muted-foreground">{f.label}</span>
+                        <span className="text-muted-foreground">
+                          {f.label}
+                          <RequiredMark />
+                        </span>
                         <input
                           type="number"
                           step="any"
@@ -336,7 +340,7 @@ export default function ActivitiesPage() {
                 </div>
               )}
 
-              <Row label="Notes">
+              <Row label="Notes" required>
                 <textarea
                   required
                   value={description}
@@ -450,11 +454,31 @@ function num(v: number | boolean | undefined): number | undefined {
   return typeof v === "number" && !Number.isNaN(v) ? v : undefined;
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  required = false,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block font-medium">{label}</span>
+      <span className="mb-1 block font-medium">
+        {label}
+        {required && <RequiredMark />}
+      </span>
       {children}
     </label>
+  );
+}
+
+/** Visible required indicator; screen readers rely on the input's `required`. */
+function RequiredMark() {
+  return (
+    <span className="ml-0.5 text-critical" aria-hidden>
+      *
+    </span>
   );
 }
