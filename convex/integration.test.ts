@@ -861,7 +861,7 @@ describe("submission compliance & gating", () => {
     await admin.mutation(api.compliance.closePeriod, { periodKey: "2026-M08" });
     await expect(emp.mutation(api.activities.create, base)).rejects.toThrow(/closed/i);
     // Admins bypass the gate (they own reopening).
-    await admin.mutation(api.activities.create, base);
+    const adminActivity = await admin.mutation(api.activities.create, base);
 
     await expect(
       admin.mutation(api.compliance.reopenPeriod, {
@@ -873,6 +873,9 @@ describe("submission compliance & gating", () => {
       periodKey: "2026-M08",
       reason: "Employee was on approved leave",
     });
+    // Clear the admin's ratio entry (the duplicate guard rightly blocks a
+    // second period-summary), then the employee can capture again.
+    await admin.mutation(api.activities.remove, { activityId: adminActivity });
     await emp.mutation(api.activities.create, base);
   });
 
@@ -909,5 +912,85 @@ describe("submission compliance & gating", () => {
     });
     expect(overdueAgain.notified).toBe(0);
     expect(overdueAgain.escalations).toBe(0);
+  });
+});
+
+describe("duplicate capture guard", () => {
+  test("period-total modes block a second capture; incremental modes accumulate", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const ratioAssignment = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    const base = {
+      kpiAssignmentId: ratioAssignment,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    };
+
+    const first = await emp.mutation(api.activities.create, base);
+    // A second ratio capture for the same month is a duplicate → blocked.
+    await expect(
+      emp.mutation(api.activities.create, { ...base, title: "Again" }),
+    ).rejects.toThrow(/already been captured/i);
+    // The guard is visible to the form.
+    const info = await emp.query(api.activities.existingForPeriod, {
+      kpiAssignmentId: ratioAssignment,
+      periodKey: "2026-M08",
+    });
+    expect(info?.singleEntry).toBe(true);
+    expect(info?.count).toBe(1);
+    // Editing the existing entry still works.
+    await emp.mutation(api.activities.update, {
+      activityId: first,
+      periodKey: "2026-M08",
+      title: "Integrated assets (corrected)",
+      description: "batch",
+      numerator: 10,
+      denominator: 10,
+    });
+
+    // Incremental (count/quarterly) mode still accumulates freely.
+    const { countAssignment, countBiz } = await t.run(async (ctx) => {
+      const all = await ctx.db.query("kpiAssignments").take(200);
+      const a = all.find((x) => x.canonicalKey === "mentorship_training")!;
+      const e = (await ctx.db.get(a.employeeId))!;
+      return { countAssignment: a._id, countBiz: e.employeeId };
+    });
+    const { as: lead } = await makeUser(t, {
+      email: "lead@x.com",
+      roles: ["employee"],
+      employeeBusinessId: countBiz,
+    });
+    const cBase = {
+      kpiAssignmentId: countAssignment,
+      periodKey: "2026-Q3",
+      activityAt: 1,
+      title: "Training session",
+      description: "onboarding",
+      quantity: 1,
+    };
+    await lead.mutation(api.activities.create, cBase);
+    await lead.mutation(api.activities.create, { ...cBase, title: "Second session" });
+    const cInfo = await lead.query(api.activities.existingForPeriod, {
+      kpiAssignmentId: countAssignment,
+      periodKey: "2026-Q3",
+    });
+    expect(cInfo?.singleEntry).toBe(false);
+    expect(cInfo?.count).toBe(2);
   });
 });

@@ -134,6 +134,23 @@ export const create = mutation({
       isAdmin,
     });
 
+    // Period-total modes: one entry IS the period's summary — block duplicates.
+    if (PERIOD_TOTAL_MODES.includes(assignment.measurementMode)) {
+      const existing = (
+        await ctx.db
+          .query("activities")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", args.kpiAssignmentId).eq("periodKey", args.periodKey),
+          )
+          .take(20)
+      ).filter((a) => DUPLICATE_BLOCKING_STATES.includes(a.status));
+      if (existing.length > 0) {
+        throw new Error(
+          `This KPI has already been captured for ${args.periodKey} (“${existing[0]!.title.slice(0, 80)}”). A ${assignment.measurementMode} entry is the period's single summary — edit the existing entry (pencil icon under Recent activities) instead of logging it again.`,
+        );
+      }
+    }
+
     const activityId = await ctx.db.insert("activities", {
       employeeId: assignment.employeeId,
       kpiAssignmentId: args.kpiAssignmentId,
@@ -226,6 +243,55 @@ export const listRecentAll = query({
       });
     }
     return out;
+  },
+});
+
+/**
+ * Modes where ONE entry is the period's summary (a second capture is a
+ * duplicate by definition): ratio, reduction, binary and rubric. Incremental
+ * modes (count/durationSla/milestone/composite) legitimately accumulate.
+ */
+const PERIOD_TOTAL_MODES = ["ratio", "reduction", "binary", "rubric"];
+const DUPLICATE_BLOCKING_STATES = [
+  "draft",
+  "submitted",
+  "needs_changes",
+  "verified",
+  "approved",
+  "locked",
+];
+
+/**
+ * What is already captured for one (KPI, period) — powers the duplicate
+ * warning/blocker in the capture form.
+ */
+export const existingForPeriod = query({
+  args: { kpiAssignmentId: v.id("kpiAssignments"), periodKey: v.string() },
+  handler: async (ctx, { kpiAssignmentId, periodKey }) => {
+    const { user, roles } = await getAuthContext(ctx);
+    const assignment = await ctx.db.get(kpiAssignmentId);
+    if (!assignment) return null;
+    const isOwner = user.employeeId && user.employeeId === assignment.employeeId;
+    const isAdmin = roles.some((r) => ["system_admin", "kpi_admin"].includes(r));
+    if (!isOwner && !isAdmin) return null;
+
+    const rows = (
+      await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", kpiAssignmentId).eq("periodKey", periodKey),
+        )
+        .take(50)
+    ).filter((a) => DUPLICATE_BLOCKING_STATES.includes(a.status));
+
+    return {
+      count: rows.length,
+      singleEntry: PERIOD_TOTAL_MODES.includes(assignment.measurementMode),
+      entries: rows
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 5)
+        .map((a) => ({ id: a._id, title: a.title, status: a.status })),
+    };
   },
 });
 

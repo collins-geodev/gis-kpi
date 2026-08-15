@@ -139,10 +139,38 @@ export const getDetail = query({
     }
     const scorecard = scoreScorecard(scorecardItems);
 
+    // Official score history — frozen, approved snapshots for this employee.
+    const snapshots = await ctx.db
+      .query("scoreSnapshots")
+      .withIndex("by_scope_period", (q) =>
+        q.eq("scope", "individual").eq("scopeRef", employeeId),
+      )
+      .take(100);
+    const history = [];
+    for (const s of snapshots.sort((a, b) => b.createdAt - a.createdAt)) {
+      let approvedBy: string | null = null;
+      if (s.createdByUserId) {
+        const u = await ctx.db.get(s.createdByUserId);
+        approvedBy = u?.name ?? u?.email ?? null;
+      }
+      history.push({
+        id: s._id,
+        periodKey: s.periodKey,
+        assignedWeightScore: s.assignedWeightScore,
+        configuredWeight: s.configuredWeight,
+        normalizedScore: s.normalizedScore,
+        evidenceCompletionPct: s.evidenceCompletionPct,
+        approvalState: s.approvalState,
+        approvedBy,
+        createdAt: s.createdAt,
+      });
+    }
+
     return {
       employee: employeeDTO(employee),
       kpis: kpiRows,
       scorecard,
+      history,
       year: BASELINE_PERFORMANCE_YEAR,
     };
   },

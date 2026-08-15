@@ -141,6 +141,17 @@ export default function ActivitiesPage() {
   );
   const fields = selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : [];
 
+  // What's already captured for this (KPI, period) — the duplicate guard.
+  const existing = useQuery(
+    api.activities.existingForPeriod,
+    selected && !editingId
+      ? { kpiAssignmentId: selected.id as Id<"kpiAssignments">, periodKey }
+      : "skip",
+  );
+  const duplicateBlocked = Boolean(
+    !editingId && existing && existing.singleEntry && existing.count > 0,
+  );
+
   /**
    * A KPI accumulates in its native cadence bucket: quarterly KPIs offer
    * Q1–Q4 (entries add up across the quarter against the full target),
@@ -418,6 +429,49 @@ export default function ActivitiesPage() {
                 </p>
               )}
 
+              {!editingId && existing && existing.count > 0 && (
+                <div
+                  role="alert"
+                  className={`space-y-2 rounded-md border px-3 py-2.5 text-sm ${
+                    duplicateBlocked
+                      ? "border-critical/40 bg-critical/10 text-critical"
+                      : "border-warning/40 bg-warning/10 text-warning"
+                  }`}
+                >
+                  {duplicateBlocked ? (
+                    <p>
+                      This KPI has <strong>already been captured</strong> for this{" "}
+                      {selected?.frequency.toLowerCase()} period (&ldquo;
+                      {existing.entries[0]?.title}&rdquo;). One entry is the period&apos;s
+                      summary — edit it instead of logging it again.
+                    </p>
+                  ) : (
+                    <p>
+                      Already logged <strong>{existing.count}</strong>{" "}
+                      {existing.count === 1 ? "entry" : "entries"} for this period (
+                      {existing.entries
+                        .map((e) => `“${e.title.slice(0, 40)}”`)
+                        .join(", ")}
+                      ) — entries add up, so only add this if it is{" "}
+                      <strong>new work</strong>, not a re-log.
+                    </p>
+                  )}
+                  {duplicateBlocked && existing.entries[0] && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingId(existing.entries[0]!.id as Id<"activities">);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit the existing entry
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {preview && (
                 <div
                   className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
@@ -463,9 +517,16 @@ export default function ActivitiesPage() {
                 </p>
               )}
 
-              <Button type="submit" disabled={submitting || !selected}>
+              <Button
+                type="submit"
+                disabled={submitting || !selected || duplicateBlocked}
+              >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {editingId ? "Save changes" : "Save activity"}
+                {duplicateBlocked
+                  ? "Already captured — edit it instead"
+                  : editingId
+                    ? "Save changes"
+                    : "Save activity"}
               </Button>
             </form>
           </CardContent>

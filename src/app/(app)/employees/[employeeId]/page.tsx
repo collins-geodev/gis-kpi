@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatNumber, formatPercent, formatTargetValue } from "@convex/lib/format";
-import { ArrowLeft, Lock } from "lucide-react";
+import { ArrowLeft, History, Lock } from "lucide-react";
 
 export default function IndividualPage() {
   const params = useParams<{ employeeId: string }>();
@@ -130,6 +130,73 @@ export default function IndividualPage() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      {/* Official score history — frozen approved snapshots, newest first. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <History className="h-4 w-4 text-accent" /> Score history (
+            {data.history.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className={data.history.length === 0 ? undefined : "p-0"}>
+          {data.history.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No approved periods yet. When a manager approves a period from Review &amp;
+              Approval, the official score is frozen here as an auditable snapshot.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Period</TableHead>
+                  <TableHead>Official score</TableHead>
+                  <TableHead>Normalized</TableHead>
+                  <TableHead className="hidden md:table-cell">Trend</TableHead>
+                  <TableHead>Evidence</TableHead>
+                  <TableHead>Approved</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.history.map((h) => (
+                  <TableRow key={h.id}>
+                    <TableCell>
+                      <Badge variant="muted">{h.periodKey}</Badge>
+                    </TableCell>
+                    <TableCell className="tabular font-semibold">
+                      {formatNumber(h.assignedWeightScore)} / {h.configuredWeight}
+                    </TableCell>
+                    <TableCell className="tabular">
+                      {formatPercent(h.normalizedScore / 100, 1)}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="grad-signature h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, h.normalizedScore))}%`,
+                          }}
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell className="tabular text-sm">
+                      {formatPercent(h.evidenceCompletionPct / 100)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {h.approvedBy ?? "—"}
+                      <span className="block">
+                        {new Date(h.createdAt).toLocaleDateString("en-GB", {
+                          timeZone: "Africa/Lagos",
+                        })}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
