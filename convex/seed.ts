@@ -94,7 +94,7 @@ export const seedBaseline = internalMutation({
       .collect();
     const teamId =
       teams.find((t) => t.slug === "gis-unit")?._id ??
-      (await ctx.db.insert("teams", { unitId, name: "GIS Unit", slug: "gis-unit" }));
+      (await ctx.db.insert("teams", { unitId, name: "GIS Team", slug: "gis-unit" }));
 
     // --- Locations (canonical + observed source variants) ---------------
     const variantsByCanonical = new Map<string, Set<string>>();

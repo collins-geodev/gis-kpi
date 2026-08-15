@@ -12,7 +12,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PoweredByGisTeam } from "@/components/powered-by-gis-team";
-import { Loader2, MapPinned } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { GeoMark } from "@/components/geo-mark";
 
 export default function SignInPage() {
   const { signIn } = useAuthActions();
@@ -48,12 +49,12 @@ export default function SignInPage() {
       <Card className="relative z-10 w-full max-w-md border-border/60 shadow-lg">
         <CardHeader className="space-y-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-accent/15 text-accent">
-              <MapPinned className="h-6 w-6" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-accent/25 bg-accent/10">
+              <GeoMark className="h-8 w-8" />
             </div>
             <div>
               <CardTitle className="text-lg">GIS KPI Performance Dashboard</CardTitle>
-              <CardDescription>Technical Services · GIS Unit</CardDescription>
+              <CardDescription>Technical Services · GIS Team</CardDescription>
             </div>
           </div>
         </CardHeader>

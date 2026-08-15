@@ -1,5 +1,5 @@
 /**
- * Analytics aggregates for the whole GIS Unit (scope-aware). Charts answer
+ * Analytics aggregates for the whole GIS Team (scope-aware). Charts answer
  * management questions; each has a table alternative in the UI. Works off the
  * seeded configuration even before measurements exist.
  */

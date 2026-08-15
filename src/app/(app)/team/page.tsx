@@ -44,7 +44,7 @@ export default function TeamPage() {
     <div className="space-y-6">
       <PageHeader
         title="Team Performance"
-        description="Role-based scorecards for the GIS Unit. Scores read “No Data” until activities and approved evidence are captured — comparisons always show role and configured weight for fairness."
+        description="Role-based scorecards for the GIS Team. Scores read “No Data” until activities and approved evidence are captured — comparisons always show role and configured weight for fairness."
       />
 
       <div className="flex flex-wrap gap-3">

@@ -154,7 +154,7 @@ export async function buildWorkbook(ds: ReportDataset, stampMs: number): Promise
   const wb = new ExcelJS.Workbook();
   wb.creator = "GIS KPI Performance Dashboard";
   wb.created = new Date(stampMs);
-  wb.company = "Ikeja Electric — GIS Unit";
+  wb.company = "Ikeja Electric — GIS Team";
 
   const subtitle = `${ds.meta.scopeLabel} · ${ds.meta.periodLabel} · generated ${new Date(
     stampMs,

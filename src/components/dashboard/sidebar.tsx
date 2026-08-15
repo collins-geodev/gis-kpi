@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
-import { MapPinned } from "lucide-react";
+import { GeoMark } from "@/components/geo-mark";
 import { cn } from "@/lib/utils";
 import { NAV, visibleTo } from "./nav-config";
 import type { AppRole } from "@convex/lib/types";
@@ -17,11 +17,11 @@ export function Sidebar() {
   return (
     <aside className="bg-geo-grid sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-card/40 md:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent/15 text-accent">
-          <MapPinned className="h-5 w-5" />
+        <div className="glow-pulse flex h-10 w-10 items-center justify-center rounded-xl border border-accent/25 bg-accent/10">
+          <GeoMark className="h-7 w-7" />
         </div>
         <div className="leading-tight">
-          <p className="text-sm font-semibold">GIS KPI</p>
+          <p className="font-display text-sm font-bold">GIS Team KPI</p>
           <p className="text-xs text-muted-foreground">Performance Dashboard</p>
         </div>
       </div>

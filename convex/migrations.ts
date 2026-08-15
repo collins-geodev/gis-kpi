@@ -75,6 +75,26 @@ export const clearAuditLogs = internalMutation({
   },
 });
 
+/** Rename the team's display name in place (slug unchanged for idempotency). */
+export const renameTeamDisplayName = internalMutation({
+  args: { slug: v.string(), name: v.string() },
+  returns: v.union(v.object({ renamed: v.boolean() }), v.null()),
+  handler: async (ctx, { slug, name }) => {
+    const team = (await ctx.db.query("teams").take(50)).find((t) => t.slug === slug);
+    if (!team) return null;
+    if (team.name === name) return { renamed: false };
+    await ctx.db.patch(team._id, { name });
+    await recordAudit(ctx, {
+      entityType: "team",
+      entityId: team._id,
+      action: "rename_team",
+      before: { name: team.name },
+      after: { name },
+    });
+    return { renamed: true };
+  },
+});
+
 export const renameEmployeeBusinessId = internalMutation({
   args: { from: v.string(), to: v.string() },
   returns: v.union(v.object({ renamed: v.boolean(), employee: v.string() }), v.null()),

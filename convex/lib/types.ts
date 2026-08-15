@@ -56,7 +56,7 @@ export type AppRole = (typeof APP_ROLES)[number];
 
 export const APP_ROLE_LABELS: Record<AppRole, string> = {
   system_admin: "System Admin",
-  kpi_admin: "GIS Unit Admin / KPI Admin",
+  kpi_admin: "GIS Team Admin / KPI Admin",
   manager: "GIS Lead / Manager",
   reviewer: "Reviewer",
   employee: "Employee",

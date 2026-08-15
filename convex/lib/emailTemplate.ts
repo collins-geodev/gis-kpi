@@ -63,7 +63,7 @@ function renderShell(opts: {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
         <!-- Header -->
         <tr><td style="background:${NAVY};border-radius:12px 12px 0 0;padding:26px 32px 22px;">
-          <div style="font-size:11px;letter-spacing:2px;color:#94A3B8;text-transform:uppercase;">Ikeja Electric · GIS Unit · Technical Services</div>
+          <div style="font-size:11px;letter-spacing:2px;color:#94A3B8;text-transform:uppercase;">Ikeja Electric · GIS Team · Technical Services</div>
           <div style="font-size:22px;font-weight:700;color:#FFFFFF;margin-top:6px;">GIS KPI Performance Dashboard</div>
         </td></tr>
         <tr><td style="height:4px;background:${RED};font-size:0;line-height:0;">&nbsp;</td></tr>
@@ -199,7 +199,7 @@ export function buildKpiUpdateEmail(input: KpiUpdateEmailInput): {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
         <!-- Header -->
         <tr><td style="background:${NAVY};border-radius:12px 12px 0 0;padding:26px 32px 22px;">
-          <div style="font-size:11px;letter-spacing:2px;color:#94A3B8;text-transform:uppercase;">Ikeja Electric · GIS Unit · Technical Services</div>
+          <div style="font-size:11px;letter-spacing:2px;color:#94A3B8;text-transform:uppercase;">Ikeja Electric · GIS Team · Technical Services</div>
           <div style="font-size:22px;font-weight:700;color:#FFFFFF;margin-top:6px;">GIS KPI Performance Dashboard</div>
         </td></tr>
         <tr><td style="height:4px;background:${RED};font-size:0;line-height:0;">&nbsp;</td></tr>

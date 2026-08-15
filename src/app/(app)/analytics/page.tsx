@@ -20,7 +20,7 @@ export default function AnalyticsPage() {
       <div className="space-y-6">
         <PageHeader
           title="Analytics"
-          description="Configuration, data-quality and score posture for the GIS Unit."
+          description="Configuration, data-quality and score posture for the GIS Team."
         />
         <div className="grid gap-4 md:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (

@@ -78,7 +78,7 @@ export const dataset = query({
 
     // Resolve the readable employee set for the requested scope.
     let employees: Doc<"employees">[];
-    let scopeLabel = "GIS Unit — Team";
+    let scopeLabel = "GIS Team";
     if (scope === "individual" && scopeRef) {
       await assertEmployeeReadScope(ctx, scopeRef as Id<"employees">);
       const e = await ctx.db.get(scopeRef as Id<"employees">);

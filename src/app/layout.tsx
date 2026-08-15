@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s · GIS KPI Dashboard",
   },
   description:
-    "Auditable, role-based KPI performance management for the GIS Unit — Technical Services.",
+    "Auditable, role-based KPI performance management for the GIS Team — Technical Services.",
 };
 
 export const viewport: Viewport = {
