@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@convex/_generated/api";
-import { LogOut } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -15,7 +17,20 @@ import { initials } from "@convex/lib/format";
 export function Topbar() {
   const me = useQuery(api.access.currentUser);
   const { signOut } = useAuthActions();
+  const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
   const display = me?.name ?? me?.email ?? "";
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true); // instant feedback — spinner appears on click
+    try {
+      await signOut();
+    } finally {
+      // Navigate immediately instead of waiting for the reactive teardown.
+      router.push("/signin");
+    }
+  }
 
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
@@ -52,10 +67,17 @@ export function Topbar() {
           variant="outline"
           size="sm"
           className="hover-wiggle"
-          onClick={() => signOut()}
+          disabled={signingOut}
+          onClick={handleSignOut}
         >
-          <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline">Sign out</span>
+          {signingOut ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <LogOut className="h-4 w-4" />
+          )}
+          <span className="hidden sm:inline">
+            {signingOut ? "Signing out…" : "Sign out"}
+          </span>
         </Button>
       </div>
     </header>
