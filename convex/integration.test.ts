@@ -464,3 +464,46 @@ describe("activity capture: required fields + edit", () => {
     expect(measurement?.cappedAttainment).toBe(0.8);
   });
 });
+
+describe("evidence centre scope", () => {
+  test("employees see only their own evidence; admins see all", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: other } = await makeUser(t, {
+      email: "o@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD030835",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list[0]!._id;
+    });
+    await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/report",
+      originalFilename: "report",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "supporting_document",
+      title: "August batch report",
+    });
+
+    expect((await emp.query(api.evidence.listCentre, {})).length).toBe(1);
+    expect((await other.query(api.evidence.listCentre, {})).length).toBe(0);
+    expect((await admin.query(api.evidence.listCentre, {})).length).toBe(1);
+  });
+});

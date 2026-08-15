@@ -10,6 +10,7 @@ import {
   assertEvidenceAccess,
   AuthError,
   getAuthContext,
+  readableEmployeeIds,
   requireRole,
 } from "./authz";
 import { recordAudit } from "./audit";
@@ -226,6 +227,59 @@ export const reviewEvidence = mutation({
       after: { reviewStatus },
     });
     return null;
+  },
+});
+
+/**
+ * Every evidence item the caller may read, newest first — the Evidence Centre
+ * feed. Employees see their own; managers/reviewers their scope; org-wide
+ * roles everything. Joined with the KPI objective and employee for display.
+ */
+export const listCentre = query({
+  args: {},
+  handler: async (ctx) => {
+    const readable = await readableEmployeeIds(ctx);
+    let rows;
+    if (readable === "all") {
+      rows = await ctx.db.query("evidenceFiles").take(500);
+    } else {
+      rows = [];
+      for (const employeeId of readable) {
+        const chunk = await ctx.db
+          .query("evidenceFiles")
+          .withIndex("by_employee_period", (q) => q.eq("employeeId", employeeId))
+          .take(200);
+        rows.push(...chunk);
+      }
+    }
+    rows = rows
+      .filter((e) => e.retentionState !== "deleted")
+      .sort((a, b) => b.uploadedAt - a.uploadedAt)
+      .slice(0, 400);
+
+    const out = [];
+    for (const e of rows) {
+      const assignment = e.kpiAssignmentId ? await ctx.db.get(e.kpiAssignmentId) : null;
+      const employee = await ctx.db.get(e.employeeId);
+      out.push({
+        id: e._id,
+        title: e.title,
+        category: e.category,
+        reviewStatus: e.reviewStatus,
+        confidentiality: e.confidentiality,
+        originalFilename: e.originalFilename,
+        mimeType: e.mimeType,
+        fileSize: e.fileSize,
+        uploadedAt: e.uploadedAt,
+        periodKey: e.periodKey ?? null,
+        hasFile: e.storageId !== undefined,
+        externalUrl: e.externalUrl ?? null,
+        kpiAssignmentId: e.kpiAssignmentId ?? null,
+        objective: assignment?.objective ?? null,
+        employeeName: employee?.displayName ?? "—",
+      });
+    }
+    return out;
   },
 });
 
