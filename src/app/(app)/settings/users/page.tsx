@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AccessDenied } from "@/components/access-denied";
 import { APP_ROLES, APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
-import { Link2Off, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import { Link2Off, RotateCcw, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
 import { useState } from "react";
 
 export default function UsersPage() {
@@ -31,6 +31,8 @@ export default function UsersPage() {
   const unlinkEmployee = useMutation(api.access.unlinkUserFromEmployee);
   const revokeRole = useMutation(api.access.revokeRole);
   const setUserActive = useMutation(api.access.setUserActive);
+  const resetUserData = useMutation(api.access.resetUserData);
+  const deleteUser = useMutation(api.access.deleteUser);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -236,6 +238,48 @@ export default function UsersPage() {
                             <UserRoundCheck className="h-4 w-4" /> Reactivate
                           </>
                         )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-warning"
+                        title="Delete every KPI activity, evidence item, measurement and score this account's employee has captured — KPI configuration stays"
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Reset all captured data for ${u.name ?? u.email}? Their activities, evidence, measurements and scores are permanently deleted (KPI configuration is kept). This cannot be undone.`,
+                            )
+                          )
+                            return;
+                          void run(() => resetUserData({ userId: u.id as Id<"users"> }));
+                        }}
+                      >
+                        <RotateCcw className="h-4 w-4" /> Reset data
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-critical"
+                        disabled={u.id === me?.userId}
+                        title={
+                          u.id === me?.userId
+                            ? "You cannot delete your own account"
+                            : "Permanently delete this account"
+                        }
+                        onClick={() => {
+                          const typed = window.prompt(
+                            `Permanently delete the account ${u.email ?? u.name}?\n\nType DELETE to confirm. (Their captured KPI data will ALSO be wiped.)`,
+                          );
+                          if (typed !== "DELETE") return;
+                          void run(() =>
+                            deleteUser({
+                              userId: u.id as Id<"users">,
+                              alsoResetData: true,
+                            }),
+                          );
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" /> Delete
                       </Button>
                     </TableCell>
                   </TableRow>

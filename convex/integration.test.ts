@@ -1114,3 +1114,90 @@ describe("data-quality reopen", () => {
     expect(status).toBe("open");
   });
 });
+
+describe("account reset & delete", () => {
+  test("reset wipes captured data but keeps KPI config; admin-only", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp, userId: empUserId } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: 1,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+    await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/r",
+      originalFilename: "r",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "supporting_document",
+      title: "Report",
+    });
+
+    await expect(
+      emp.mutation(api.access.resetUserData, { userId: empUserId }),
+    ).rejects.toThrow();
+
+    const counts = await admin.mutation(api.access.resetUserData, {
+      userId: empUserId,
+    });
+    expect(counts.activities).toBe(1);
+    expect(counts.evidence).toBe(1);
+    const remaining = await t.run(async (ctx) => ({
+      activities: (await ctx.db.query("activities").collect()).length,
+      assignments: (await ctx.db.query("kpiAssignments").collect()).length,
+    }));
+    expect(remaining.activities).toBe(0);
+    expect(remaining.assignments).toBe(75); // config untouched
+  });
+
+  test("delete removes the account with guards", async () => {
+    const t = harness();
+    const { as: admin, userId: adminId } = await makeUser(t, {
+      email: "a@x.com",
+      roles: ["system_admin"],
+    });
+    const { userId: victimId } = await makeUser(t, {
+      email: "v@x.com",
+      roles: ["employee"],
+    });
+
+    await expect(
+      admin.mutation(api.access.deleteUser, { userId: adminId }),
+    ).rejects.toThrow(/own account/i);
+
+    await admin.mutation(api.access.deleteUser, { userId: victimId });
+    const gone = await t.run(async (ctx) => ({
+      user: await ctx.db.get(victimId),
+      roles: (
+        await ctx.db
+          .query("userRoleAssignments")
+          .withIndex("by_user", (q) => q.eq("userId", victimId))
+          .collect()
+      ).length,
+    }));
+    expect(gone.user).toBeNull();
+    expect(gone.roles).toBe(0);
+  });
+});

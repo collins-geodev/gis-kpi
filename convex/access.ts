@@ -8,6 +8,8 @@
  * admin grants roles.
  */
 import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { vAppRole } from "./validators";
 import { getCurrentUser, getUserRoles, requireRole, requireUser } from "./authz";
@@ -244,6 +246,187 @@ export const linkUserToEmployee = mutation({
       actorUserId: actor._id,
       before: { employeeId: before?.employeeId },
       after: { employeeId: args.employeeId },
+    });
+    return null;
+  },
+});
+
+/** Wipe every piece of captured KPI data belonging to a user's employee. */
+async function wipeUserData(
+  ctx: MutationCtx,
+  target: { _id: Id<"users">; employeeId?: Id<"employees"> },
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {
+    activities: 0,
+    evidence: 0,
+    evidenceSkippedLegalHold: 0,
+    measurements: 0,
+    overrides: 0,
+    reviews: 0,
+    approvals: 0,
+    snapshots: 0,
+    notifications: 0,
+  };
+  const emp = target.employeeId;
+  if (emp) {
+    for (const a of await ctx.db
+      .query("activities")
+      .withIndex("by_employee_period", (q) => q.eq("employeeId", emp))
+      .take(2000)) {
+      await ctx.db.delete(a._id);
+      counts.activities!++;
+    }
+    for (const e of await ctx.db
+      .query("evidenceFiles")
+      .withIndex("by_employee_period", (q) => q.eq("employeeId", emp))
+      .take(2000)) {
+      if (e.retentionState === "legal_hold") {
+        counts.evidenceSkippedLegalHold!++;
+        continue;
+      }
+      if (e.storageId) await ctx.storage.delete(e.storageId);
+      for (const l of await ctx.db
+        .query("evidenceLinks")
+        .withIndex("by_evidence", (q) => q.eq("evidenceFileId", e._id))
+        .take(100)) {
+        await ctx.db.delete(l._id);
+      }
+      await ctx.db.delete(e._id);
+      counts.evidence!++;
+    }
+    for (const m of await ctx.db
+      .query("kpiMeasurements")
+      .withIndex("by_employee_period", (q) => q.eq("employeeId", emp))
+      .take(2000)) {
+      await ctx.db.delete(m._id);
+      counts.measurements!++;
+    }
+    for (const o of (await ctx.db.query("scoreOverrides").take(1000)).filter(
+      (o) => o.employeeId === emp,
+    )) {
+      await ctx.db.delete(o._id);
+      counts.overrides!++;
+    }
+    for (const r of await ctx.db
+      .query("reviews")
+      .withIndex("by_employee_period", (q) => q.eq("employeeId", emp))
+      .take(2000)) {
+      await ctx.db.delete(r._id);
+      counts.reviews!++;
+    }
+    for (const ap of await ctx.db
+      .query("approvals")
+      .withIndex("by_employee_period", (q) => q.eq("employeeId", emp))
+      .take(1000)) {
+      await ctx.db.delete(ap._id);
+      counts.approvals!++;
+    }
+    for (const s of await ctx.db
+      .query("scoreSnapshots")
+      .withIndex("by_scope_period", (q) =>
+        q.eq("scope", "individual").eq("scopeRef", emp),
+      )
+      .take(500)) {
+      await ctx.db.delete(s._id);
+      counts.snapshots!++;
+    }
+  }
+  for (const n of await ctx.db
+    .query("notifications")
+    .withIndex("by_user_unread", (q) => q.eq("userId", target._id))
+    .take(1000)) {
+    await ctx.db.delete(n._id);
+    counts.notifications!++;
+  }
+  return counts;
+}
+
+/**
+ * Reset a user's dashboard data (System Admin only): every captured activity,
+ * evidence item (files destroyed; legal holds kept), measurement, override,
+ * review, approval and score snapshot for their linked employee is deleted.
+ * KPI configuration and the audit trail are untouched.
+ */
+export const resetUserData = mutation({
+  args: { userId: v.id("users") },
+  returns: v.record(v.string(), v.number()),
+  handler: async (ctx, { userId }) => {
+    const { user: actor } = await requireRole(ctx, ["system_admin"]);
+    const target = await ctx.db.get(userId);
+    if (!target) throw new Error("User not found");
+    const counts = await wipeUserData(ctx, target);
+    await recordAudit(ctx, {
+      entityType: "user",
+      entityId: userId,
+      action: "reset_user_data",
+      actorUserId: actor._id,
+      after: counts,
+    });
+    return counts;
+  },
+});
+
+/**
+ * Permanently delete a user account (System Admin only): roles, sessions,
+ * auth records, notifications — and optionally their captured KPI data. The
+ * roster employee itself remains. Self-deletion and deleting the last active
+ * System Admin are blocked.
+ */
+export const deleteUser = mutation({
+  args: { userId: v.id("users"), alsoResetData: v.optional(v.boolean()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user: actor } = await requireRole(ctx, ["system_admin"]);
+    if (args.userId === actor._id) {
+      throw new Error("You cannot delete your own account.");
+    }
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new Error("User not found");
+    const targetRoles = await getUserRoles(ctx, target._id);
+    if (targetRoles.includes("system_admin")) {
+      const stillCovered = await anotherActiveAdminExists(ctx, target._id);
+      if (!stillCovered) {
+        throw new Error("Cannot delete the last active System Admin.");
+      }
+    }
+
+    let dataCounts: Record<string, number> | undefined;
+    if (args.alsoResetData) dataCounts = await wipeUserData(ctx, target);
+
+    for (const r of await ctx.db
+      .query("userRoleAssignments")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect()) {
+      await ctx.db.delete(r._id);
+    }
+    for (const n of await ctx.db
+      .query("notifications")
+      .withIndex("by_user_unread", (q) => q.eq("userId", args.userId))
+      .take(1000)) {
+      await ctx.db.delete(n._id);
+    }
+    for (const s of await ctx.db
+      .query("authSessions")
+      .withIndex("userId", (q) => q.eq("userId", args.userId))
+      .take(200)) {
+      await ctx.db.delete(s._id);
+    }
+    for (const a of await ctx.db
+      .query("authAccounts")
+      .withIndex("userIdAndProvider", (q) => q.eq("userId", args.userId))
+      .take(50)) {
+      await ctx.db.delete(a._id);
+    }
+    if (target.avatarStorageId) await ctx.storage.delete(target.avatarStorageId);
+    await ctx.db.delete(args.userId);
+
+    await recordAudit(ctx, {
+      entityType: "user",
+      entityId: args.userId,
+      action: "delete_user",
+      actorUserId: actor._id,
+      before: { email: target.email, employeeId: target.employeeId },
+      after: { dataAlsoReset: Boolean(args.alsoResetData), dataCounts },
     });
     return null;
   },
