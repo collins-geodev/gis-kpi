@@ -19,10 +19,14 @@ import { APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
 import { initials } from "@convex/lib/format";
 import {
   BadgeCheck,
+  BookOpen,
   Camera,
   CheckCircle2,
+  Download,
+  FileText,
   Loader2,
   MapPin,
+  Presentation,
   RefreshCcw,
   Save,
   Trash2,
@@ -30,6 +34,25 @@ import {
   UserCircle,
   X,
 } from "lucide-react";
+
+const WORKFLOW_DOCS = [
+  {
+    href: "/docs/GIS-KPI-Dashboard-Workflow.pdf",
+    icon: FileText,
+    title: "Workflow Guide (PDF)",
+    meta: "Application & Performance Workflow · 13 pages · 0.6 MB",
+    description:
+      "The end-to-end operational guide — roles, KPI catalogue, capture, evidence, approval, scoring and audit.",
+  },
+  {
+    href: "/docs/GIS-KPI-Dashboard-Workflow-Deck.pptx",
+    icon: Presentation,
+    title: "Workflow Deck (PowerPoint)",
+    meta: "8-slide presentation · PPTX · 1.2 MB",
+    description:
+      "The same workflow as a presentation deck — ready for briefings, onboarding and stakeholder walkthroughs.",
+  },
+] as const;
 
 export default function ProfilePage() {
   const profile = useQuery(api.profile.getMine);
@@ -349,6 +372,52 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Documentation downloads — available to every role. */}
+      <Card className="card-lift sheen">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <span className="icon-chip">
+              <BookOpen className="h-4 w-4" />
+            </span>
+            Documentation
+          </CardTitle>
+          <CardDescription>
+            The official platform workflow — how capture, evidence, review, scoring
+            and reporting fit together. Available to admins and all users.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="stagger-children grid gap-4 sm:grid-cols-2">
+            {WORKFLOW_DOCS.map((doc) => (
+              <div
+                key={doc.href}
+                className="group flex flex-col justify-between gap-3 rounded-lg border border-border bg-muted/30 p-4 transition-colors hover:border-accent/50"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="icon-chip shrink-0">
+                    <doc.icon className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">{doc.title}</div>
+                    <div className="mt-0.5 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {doc.meta}
+                    </div>
+                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                      {doc.description}
+                    </p>
+                  </div>
+                </div>
+                <a href={doc.href} download className="self-start">
+                  <Button variant="accent" size="sm" className="hover-wiggle">
+                    <Download className="h-4 w-4" /> Download
+                  </Button>
+                </a>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
