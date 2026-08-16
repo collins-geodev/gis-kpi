@@ -1,12 +1,18 @@
 # Workflow documentation — sources
 
-Sources for the two downloadable documents served from `public/docs/` and offered on
-the **/profile** page (Documentation card, visible to every role):
+Sources for the two downloadable documents served from `server-assets/docs/` through
+the auth-gated `/api/docs/[doc]` route and offered on the **/profile** page
+(Documentation card, visible to every signed-in role):
 
 | Deliverable | Source | Rebuild |
 |---|---|---|
 | `GIS-KPI-Dashboard-Workflow.pdf` (13-page A4 guide) | `gis-kpi-workflow.html` (+ `ie-logo.png`) | Headless Edge print, see below |
 | `GIS-KPI-Dashboard-Workflow-Deck.pptx` (8 slides, 16:9) | `build-deck.js` (+ `bg-title.png`, `bg-content.png`) | `npm i pptxgenjs && node build-deck.js` |
+
+> The deliverables intentionally do NOT live under `public/` — signed-out visitors get
+> 401 from `/api/docs/[doc]`. Note the repository itself is public on GitHub, so the
+> committed files (and these sources) are still visible there; the gate protects the
+> deployed app only.
 
 Both follow the Ikeja Electric corporate template (Calibri, `#C00000` red, the IE
 title/content slide backgrounds) in the same format as the SwitchTrace workflow docs.

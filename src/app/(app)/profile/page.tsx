@@ -37,7 +37,7 @@ import {
 
 const WORKFLOW_DOCS = [
   {
-    href: "/docs/GIS-KPI-Dashboard-Workflow.pdf",
+    href: "/api/docs/GIS-KPI-Dashboard-Workflow.pdf",
     icon: FileText,
     title: "Workflow Guide (PDF)",
     meta: "Application & Performance Workflow · 13 pages · 0.6 MB",
@@ -45,7 +45,7 @@ const WORKFLOW_DOCS = [
       "The end-to-end operational guide — roles, KPI catalogue, capture, evidence, approval, scoring and audit.",
   },
   {
-    href: "/docs/GIS-KPI-Dashboard-Workflow-Deck.pptx",
+    href: "/api/docs/GIS-KPI-Dashboard-Workflow-Deck.pptx",
     icon: Presentation,
     title: "Workflow Deck (PowerPoint)",
     meta: "8-slide presentation · PPTX · 1.2 MB",
@@ -384,7 +384,8 @@ export default function ProfilePage() {
           </CardTitle>
           <CardDescription>
             The official platform workflow — how capture, evidence, review, scoring
-            and reporting fit together. Available to admins and all users.
+            and reporting fit together. Available to admins and all signed-in users;
+            downloads are auth-gated.
           </CardDescription>
         </CardHeader>
         <CardContent>
