@@ -11,6 +11,7 @@ import { RadialGauge } from "@/components/charts/radial-gauge";
 import { CountUp } from "@/components/count-up";
 import { AlertTriangle, ClipboardCheck, Lightbulb, Lock, Users } from "lucide-react";
 import { STATUS_BAND_LABELS, type StatusBand } from "@convex/lib/types";
+import { EmployeeAnalytics } from "@/components/employee-analytics";
 
 export default function AnalyticsPage() {
   const data = useQuery(api.analytics.dashboard);
@@ -125,6 +126,9 @@ export default function AnalyticsPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Per-employee analytics: moderators pick anyone; employees see themselves. */}
+      <EmployeeAnalytics />
 
       {/* Insights */}
       <Card className="card-lift border-accent/30">

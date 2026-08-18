@@ -1327,6 +1327,41 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
   });
 });
 
+describe("employee analytics scoping", () => {
+  test("employees always get their own analytics; moderators can select anyone", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const ownId = await employeeIdByBiz(t, "IKD034860");
+    const otherId = await employeeIdByBiz(t, "IKD030835");
+    const { as: emp } = await makeUser(t, {
+      email: "e@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: mgr } = await makeUser(t, {
+      email: "m@x.com",
+      roles: ["manager"],
+    });
+
+    // An employee asking for someone else still gets themselves.
+    const own = await emp.query(api.analytics.employeeAnalytics, {
+      employeeId: otherId,
+    });
+    expect(own.canSelect).toBe(false);
+    expect(own.employee?.id).toBe(ownId);
+    expect(own.roster.length).toBe(0);
+    expect(own.kpis.length).toBe(5);
+
+    // A manager can pick any employee and gets the roster for the selector.
+    const picked = await mgr.query(api.analytics.employeeAnalytics, {
+      employeeId: otherId,
+    });
+    expect(picked.canSelect).toBe(true);
+    expect(picked.employee?.id).toBe(otherId);
+    expect(picked.roster.length).toBe(15);
+  });
+});
+
 describe("pinned baseline & scoring-block repair", () => {
   test("pinned baseline is injected server-side for reduction KPIs", async () => {
     const t = harness();
