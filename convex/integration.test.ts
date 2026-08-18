@@ -1173,6 +1173,101 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
     );
     expect(audit.length).toBe(1);
   });
+
+  test("reject clears the queue row; recall restores it; period approval can be recalled", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "e3@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "a3@x.com",
+      roles: ["system_admin"],
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    const readMeasurement = () =>
+      t.run(async (ctx) =>
+        ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+          )
+          .first(),
+      );
+
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+
+    // Reject → entries returned, provisional measurement gone from the queue.
+    await admin.mutation(api.approvals.rejectSubmission, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      reason: "Numbers do not tally",
+    });
+    expect(await readMeasurement()).toBeNull();
+
+    // Recall the rejection → entries re-submitted, measurement restored.
+    const recalled = await admin.mutation(api.approvals.recallRejection, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+    });
+    expect(recalled.restored).toBe(1);
+    const restored = await readMeasurement();
+    expect(restored?.hasData).toBe(true);
+    expect(restored?.isProvisional).toBe(true);
+
+    // Approve evidence + the period, then recall the approval.
+    await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/log",
+      originalFilename: "log",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "qa_log",
+      title: "Integration log",
+    });
+    await admin.mutation(api.evidence.approveAllForAssignment, {
+      kpiAssignmentId: assignmentId,
+    });
+    await admin.mutation(api.approvals.approveEmployeePeriod, {
+      employeeId: empId,
+      periodKey: "2026-M08",
+    });
+    expect((await readMeasurement())?.isProvisional).toBe(false);
+
+    const recallRes = await admin.mutation(api.approvals.recallPeriodApproval, {
+      employeeId: empId,
+      periodKey: "2026-M08",
+      reason: "Approved in error",
+    });
+    expect(recallRes.measurementsReopened).toBeGreaterThan(0);
+    expect((await readMeasurement())?.isProvisional).toBe(true);
+    const snapshots = await t.run(async (ctx) =>
+      ctx.db
+        .query("scoreSnapshots")
+        .withIndex("by_scope_period", (q) =>
+          q.eq("scope", "individual").eq("scopeRef", empId).eq("periodKey", "2026-M08"),
+        )
+        .take(10),
+    );
+    expect(snapshots.length).toBe(0);
+  });
 });
 
 describe("pinned baseline & scoring-block repair", () => {

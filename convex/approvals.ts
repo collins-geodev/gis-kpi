@@ -237,6 +237,11 @@ export const rejectSubmission = mutation({
       throw new Error("No submitted activities to reject for this KPI and period.");
     }
 
+    // Returned entries no longer count — the provisional measurement recomputes
+    // (and disappears when nothing counted remains), so the queue reflects the
+    // rejection immediately.
+    await recomputeMeasurement(ctx, assignment, periodKey);
+
     await ctx.db.insert("reviews", {
       subjectType: "measurement",
       subjectId: `${kpiAssignmentId}:${periodKey}`,
@@ -300,6 +305,204 @@ export const rejectSubmission = mutation({
     }
 
     return { returned };
+  },
+});
+
+/**
+ * Recall a rejection made in error: the returned (`needs_changes`) entries go
+ * back to `submitted`, the measurement recomputes, and the employee is told to
+ * disregard the earlier rejection.
+ */
+export const recallRejection = mutation({
+  args: { kpiAssignmentId: v.id("kpiAssignments"), periodKey: v.string() },
+  returns: v.object({ restored: v.number() }),
+  handler: async (ctx, { kpiAssignmentId, periodKey }) => {
+    const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
+    const assignment = await ctx.db.get(kpiAssignmentId);
+    if (!assignment) throw new Error("KPI assignment not found");
+    await assertEmployeeReadScope(ctx, assignment.employeeId);
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", kpiAssignmentId).eq("periodKey", periodKey),
+      )
+      .take(200);
+    let restored = 0;
+    for (const a of activities) {
+      if (a.status !== "needs_changes") continue;
+      await ctx.db.patch(a._id, {
+        status: "submitted",
+        updatedByUserId: user._id,
+        updatedAt: Date.now(),
+      });
+      restored++;
+    }
+    if (restored === 0) {
+      throw new Error("Nothing to recall — no returned entries for this KPI and period.");
+    }
+    await recomputeMeasurement(ctx, assignment, periodKey);
+
+    await recordAudit(ctx, {
+      entityType: "kpiAssignment",
+      entityId: kpiAssignmentId,
+      action: "recall_rejection",
+      actorUserId: user._id,
+      after: { periodKey, activitiesRestored: restored },
+    });
+
+    const reviewerName = await resolveDisplayName(ctx, user);
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", assignment.employeeId))
+      .take(10);
+    const notices = [];
+    for (const target of linked) {
+      if (!target.email || target.isActive === false || target._id === user._id) continue;
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Please disregard the rejection — ${periodKey} submission restored`,
+        intro: `*${reviewerName}* recalled the earlier rejection of your ${periodKey} submission for “${assignment.objective.slice(0, 120)}”. Your entries are back in review — no action is needed.`,
+        panelTitle: "Rejection recalled",
+        rows: [
+          { label: "KPI objective", value: assignment.objective.slice(0, 200) },
+          { label: "Period", value: periodKey },
+          { label: "Entries restored", value: String(restored), strong: true },
+        ],
+        ctaLabel: "Open the KPI",
+        ctaPath: `/kpi/${kpiAssignmentId}`,
+        inAppTitle: `Rejection recalled — ${periodKey}`,
+        inAppBody: `${reviewerName} restored your submission; no action needed.`,
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "kpiAssignment",
+        entityId: kpiAssignmentId,
+        auditAction: "rejection_recalled",
+        notices,
+      });
+    }
+    return { restored };
+  },
+});
+
+/**
+ * Recall a period approval made in error: the latest frozen snapshot is
+ * removed, the period's measurements return to provisional (back into the
+ * review queue), a "reopened" approvals record keeps the trail, and the
+ * employee is notified.
+ */
+export const recallPeriodApproval = mutation({
+  args: {
+    employeeId: v.id("employees"),
+    periodKey: v.string(),
+    reason: v.optional(v.string()),
+  },
+  returns: v.object({ measurementsReopened: v.number() }),
+  handler: async (ctx, { employeeId, periodKey, reason }) => {
+    const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
+    await assertEmployeeReadScope(ctx, employeeId);
+    const year = await ctx.db
+      .query("performanceYears")
+      .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+      .first();
+    if (!year) throw new Error("Performance year not seeded");
+
+    const snapshots = await ctx.db
+      .query("scoreSnapshots")
+      .withIndex("by_scope_period", (q) =>
+        q.eq("scope", "individual").eq("scopeRef", employeeId).eq("periodKey", periodKey),
+      )
+      .take(50);
+    const latest = snapshots.sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!latest) {
+      throw new Error("No approved snapshot to recall for this employee and period.");
+    }
+    await ctx.db.delete(latest._id);
+
+    const assignments = await ctx.db
+      .query("kpiAssignments")
+      .withIndex("by_employee_year", (q) =>
+        q.eq("employeeId", employeeId).eq("performanceYearId", year._id),
+      )
+      .collect();
+    let measurementsReopened = 0;
+    for (const assignment of assignments) {
+      const lookupKey = cadencePeriodKey(assignment.frequency as Frequency, periodKey);
+      const m = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignment._id).eq("periodKey", lookupKey),
+        )
+        .first();
+      if (m && !m.isProvisional) {
+        await ctx.db.patch(m._id, { isProvisional: true });
+        measurementsReopened++;
+      }
+    }
+
+    await ctx.db.insert("approvals", {
+      employeeId,
+      performanceYearId: year._id,
+      periodKey,
+      approverUserId: user._id,
+      state: "reopened",
+      reason: reason ?? "Approval recalled",
+      priorScoreSnapshotId: undefined,
+      createdAt: Date.now(),
+    });
+
+    await recordAudit(ctx, {
+      entityType: "scoreSnapshot",
+      entityId: latest._id,
+      action: "recall_period_approval",
+      actorUserId: user._id,
+      reason,
+      before: {
+        employeeId,
+        periodKey,
+        assignedWeightScore: latest.assignedWeightScore,
+        configuredWeight: latest.configuredWeight,
+      },
+    });
+
+    const approverName = await resolveDisplayName(ctx, user);
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", employeeId))
+      .take(10);
+    const notices = [];
+    for (const target of linked) {
+      if (!target.email || target.isActive === false || target._id === user._id) continue;
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Your ${periodKey} approval was recalled`,
+        intro: `*${approverName}* recalled the approval of your ${periodKey} scorecard${reason ? ` (“${reason.slice(0, 140)}”)` : ""}. Your scores are provisional again and will be re-reviewed.`,
+        panelTitle: "Approval recalled",
+        rows: [
+          { label: "Period", value: periodKey },
+          ...(reason ? [{ label: "Reason", value: reason.slice(0, 500) }] : []),
+        ],
+        ctaLabel: "Open your scorecard",
+        ctaPath: "/profile",
+        inAppTitle: `${periodKey} approval recalled`,
+        inAppBody: reason ? reason.slice(0, 180) : "Scores are provisional again.",
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "scoreSnapshot",
+        entityId: `${employeeId}:${periodKey}`,
+        auditAction: "period_approval_recalled",
+        notices,
+      });
+    }
+    return { measurementsReopened };
   },
 });
 

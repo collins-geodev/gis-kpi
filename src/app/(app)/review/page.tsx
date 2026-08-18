@@ -34,8 +34,28 @@ export default function ReviewPage() {
   const reject = useMutation(api.approvals.rejectSubmission);
   const approveEvidence = useMutation(api.evidence.approveAllForAssignment);
   const deleteSubmission = useMutation(api.approvals.deleteSubmission);
+  const recallRejection = useMutation(api.approvals.recallRejection);
+  const recallApproval = useMutation(api.approvals.recallPeriodApproval);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    text: string;
+    undo?: () => Promise<void>;
+  } | null>(null);
+
+  async function doUndo() {
+    if (!notice?.undo) return;
+    setBusy("undo");
+    setError(null);
+    try {
+      await notice.undo();
+      setNotice({ text: "Recalled — the decision has been reversed and the employee notified." });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Recall failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function doReject(assignmentId: string, periodKey: string) {
     const reason = window.prompt(
@@ -49,6 +69,15 @@ export default function ReviewPage() {
         kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
         periodKey,
         reason: reason.trim(),
+      });
+      setNotice({
+        text: `Rejected — the ${periodKey} submission was returned to the employee and they have been notified.`,
+        undo: async () => {
+          await recallRejection({
+            kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
+            periodKey,
+          });
+        },
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Rejection failed.");
@@ -64,6 +93,7 @@ export default function ReviewPage() {
       await approveEvidence({
         kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
       });
+      setNotice({ text: "Evidence approved — the employee has been notified." });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Evidence approval failed.");
     } finally {
@@ -83,6 +113,9 @@ export default function ReviewPage() {
         kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
         periodKey,
         reason: reason.trim(),
+      });
+      setNotice({
+        text: `Deleted — the ${periodKey} entries and attached evidence were removed and the employee notified.`,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Deletion failed.");
@@ -127,6 +160,16 @@ export default function ReviewPage() {
         periodKey,
         reason: "Period approved from review queue",
       });
+      setNotice({
+        text: `Period ${periodKey} approved — the official score is frozen and the employee notified.`,
+        undo: async () => {
+          await recallApproval({
+            employeeId: employeeId as Id<"employees">,
+            periodKey,
+            reason: "Approved in error — recalled from the review queue",
+          });
+        },
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Approval failed.");
     } finally {
@@ -144,6 +187,34 @@ export default function ReviewPage() {
       {error && (
         <Card className="border-critical/50 bg-critical/5">
           <CardContent className="p-3 text-sm text-critical">{error}</CardContent>
+        </Card>
+      )}
+
+      {notice && (
+        <Card className="border-success/50 bg-success/5" role="status" aria-live="polite">
+          <CardContent className="flex flex-wrap items-center gap-3 p-3 text-sm">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+            <span className="flex-1">{notice.text}</span>
+            {notice.undo && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy === "undo"}
+                title="Recall this decision — it is reversed and the employee notified"
+                onClick={doUndo}
+              >
+                Undo
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Dismiss"
+              onClick={() => setNotice(null)}
+            >
+              <XCircle className="h-4 w-4" />
+            </Button>
+          </CardContent>
         </Card>
       )}
 
