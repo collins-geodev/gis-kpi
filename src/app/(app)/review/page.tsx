@@ -280,6 +280,9 @@ export default function ReviewPage() {
                         {i.objective}
                       </Link>
                       <div className="flex items-center gap-2">
+                        {i.kpiCategory === "non_core" && (
+                          <Badge variant="info">non-core</Badge>
+                        )}
                         <span className="tabular text-muted-foreground">
                           {i.cappedAttainment === null
                             ? "—"

@@ -11,6 +11,7 @@ import {
   vDqStatus,
   vFrequency,
   vJobState,
+  vKpiCategory,
   vKpiStatus,
   vMeasurementMode,
   vPeriodGrain,
@@ -180,6 +181,8 @@ export default defineSchema({
     needsRubric: v.boolean(),
     needsClarification: v.boolean(),
     scoringNotes: v.string(),
+    /** core carries the role's 80 points; non_core the shared corporate 20. */
+    kpiCategory: v.optional(vKpiCategory),
     status: vKpiStatus,
     currentVersion: v.number(),
     ownerUserId: v.optional(v.id("users")),
@@ -232,6 +235,8 @@ export default defineSchema({
     sourceFrequency: v.union(v.string(), v.null()),
 
     status: vKpiStatus,
+    /** core carries the role's 80 points; non_core the shared corporate 20. */
+    kpiCategory: v.optional(vKpiCategory),
     /** True until every blocking data-quality issue for this row is resolved. */
     scoringBlocked: v.boolean(),
     displayOrder: v.number(),

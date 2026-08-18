@@ -62,6 +62,7 @@ type Assignment = {
   evidenceRequired: boolean;
   pinnedBaseline: number | null;
   scoringBlocked: boolean;
+  kpiCategory: string;
 };
 
 /** KPI-specific overrides for the generic mode field labels. */
@@ -479,6 +480,9 @@ export default function ActivitiesPage() {
 
               {selected && (
                 <div className="flex flex-wrap gap-2 text-xs">
+                  {selected.kpiCategory === "non_core" && (
+                    <Badge variant="info">non-core</Badge>
+                  )}
                   <Badge variant="muted">{selected.measurementMode}</Badge>
                   <Badge variant="muted">{selected.frequency}</Badge>
                   <Badge variant="muted">weight {selected.weight}</Badge>

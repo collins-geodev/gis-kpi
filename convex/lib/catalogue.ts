@@ -14,6 +14,7 @@ import type {
   Direction,
   Frequency,
   JobRole,
+  KpiCategory,
   MeasurementMode,
   TargetType,
 } from "./types";
@@ -42,6 +43,8 @@ export interface CanonicalKpiTemplate {
   needsRubric?: boolean;
   /** Requires business clarification before final scoring (surfaced in Data Quality). */
   needsClarification?: boolean;
+  /** core (role's 80 points, default) or non_core (shared corporate 20). */
+  category?: KpiCategory;
 }
 
 export const CANONICAL_KPI_TITLES: Record<CanonicalKpiKey, string> = {
@@ -56,6 +59,11 @@ export const CANONICAL_KPI_TITLES: Record<CanonicalKpiKey, string> = {
   capture_integrate: "Capture, process & integrate spatial/non-spatial data",
   qa_data_quality: "GIS data quality assurance",
   issue_resolution_24h: "Resolution of GIS technical issues within 24 hours",
+  // Non-core (shared corporate 20 points, 2025 workbook).
+  safety_hazard_reporting: "Safety — QHSE hazard reporting",
+  compliance_recertification: "Corporate governance — compliance recertification",
+  internal_customer_satisfaction: "SLA compliance — internal customer satisfaction",
+  training_hours: "People development — training hours",
 };
 
 // --- Reusable template fragments -------------------------------------------
@@ -346,6 +354,108 @@ export const ROLE_WEIGHT_TOTALS: Record<JobRole, number> = Object.fromEntries(
     ROLE_TEMPLATES[role].reduce((sum, t) => sum + t.weight, 0),
   ]),
 ) as Record<JobRole, number>;
+
+/**
+ * Non-core KPIs — the shared corporate 20 points that complete each
+ * employee's 100. Identical for every role in the 2025 workbook (GIS
+ * Coordinator excluded by scope). Weights are points (5 each = 20).
+ */
+export const NON_CORE_TEMPLATES: CanonicalKpiTemplate[] = [
+  {
+    key: "safety_hazard_reporting",
+    title: CANONICAL_KPI_TITLES.safety_hazard_reporting,
+    canonicalObjective: "Report at least one hazard per month using the QHSE email.",
+    canonicalMetric:
+      "Hazard reports sent to the QHSE email — at least 1 per month (workbook target: 12 per year).",
+    measurementMode: "count",
+    direction: "higherIsBetter",
+    targetType: "number",
+    target: 1,
+    unit: "hazard reports",
+    frequency: "Monthly",
+    weight: 5,
+    evidenceRequired: true,
+    requiredInputs: ["Hazard reports sent this month (count)", "QHSE e-mail records"],
+    scoringNotes:
+      "Count vs 1 per month (the workbook's 12/year expressed at the monthly cadence). Entries add up within the month.",
+    category: "non_core",
+  },
+  {
+    key: "compliance_recertification",
+    title: CANONICAL_KPI_TITLES.compliance_recertification,
+    canonicalObjective:
+      "Score at least 80% in the Annual Compliance Online Recertification Assessment.",
+    canonicalMetric: "Assessment score achieved ÷ maximum score, vs the 80% target.",
+    measurementMode: "ratio",
+    direction: "higherIsBetter",
+    targetType: "percentage",
+    target: 0.8,
+    unit: "score",
+    frequency: "Annually",
+    weight: 5,
+    evidenceRequired: true,
+    requiredInputs: [
+      "Score achieved (numerator)",
+      "Maximum score (denominator)",
+      "Recertification assessment result",
+    ],
+    scoringNotes:
+      "Annual single-summary ratio: score ÷ max vs 80%. One entry for the year; edit it if the result is corrected.",
+    category: "non_core",
+  },
+  {
+    key: "internal_customer_satisfaction",
+    title: CANONICAL_KPI_TITLES.internal_customer_satisfaction,
+    canonicalObjective:
+      "Achieve 85% departmental internal customer satisfaction survey score.",
+    canonicalMetric: "Survey score achieved ÷ maximum score, vs the 85% target.",
+    measurementMode: "ratio",
+    direction: "higherIsBetter",
+    targetType: "percentage",
+    target: 0.85,
+    unit: "score",
+    frequency: "Annually",
+    weight: 5,
+    evidenceRequired: true,
+    requiredInputs: [
+      "Survey score achieved (numerator)",
+      "Maximum score (denominator)",
+      "Department survey result",
+    ],
+    scoringNotes:
+      "Annual single-summary ratio: departmental survey score ÷ max vs 85%.",
+    category: "non_core",
+  },
+  {
+    key: "training_hours",
+    title: CANONICAL_KPI_TITLES.training_hours,
+    canonicalObjective:
+      "Achieve at least 20 hours of relevant assigned & self-directed training (GL 1–3; 10 hours for GL 4 and above).",
+    canonicalMetric:
+      "Training hours completed vs the annual target (20 hours; admins set 10 on the assignment for GL 4+).",
+    measurementMode: "count",
+    direction: "higherIsBetter",
+    targetType: "number",
+    target: 20,
+    unit: "hours",
+    frequency: "Annually",
+    weight: 5,
+    evidenceRequired: true,
+    requiredInputs: [
+      "Training hours completed (per training)",
+      "Training report / certificate of attendance or completion",
+    ],
+    scoringNotes:
+      "Hours accumulate across the year against 20 (workbook: 20 for GL 1–3, 10 for GL 4+ — adjust the target per assignment in KPI Settings for senior grades).",
+    category: "non_core",
+  },
+];
+
+/** Non-core weights must always total exactly 20 points. */
+export const NON_CORE_WEIGHT_TOTAL = NON_CORE_TEMPLATES.reduce(
+  (s, t) => s + t.weight,
+  0,
+);
 
 /**
  * Classify a source objective to its canonical KPI key.

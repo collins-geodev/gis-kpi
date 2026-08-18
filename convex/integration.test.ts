@@ -1327,6 +1327,51 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
   });
 });
 
+describe("non-core KPIs (80 core + 20 non-core = 100)", () => {
+  test("migration adds 4 non-core KPIs per employee and resolves weight flags", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const first = await t.mutation(internal.migrations.addNonCoreKpis, {});
+    expect(first.assignments).toBe(60); // 15 employees × 4
+    expect(first.definitions).toBe(16); // 4 roles × 4
+    expect(first.weightIssuesResolved).toBe(15);
+
+    // Idempotent.
+    const again = await t.mutation(internal.migrations.addNonCoreKpis, {});
+    expect(again.assignments).toBe(0);
+    expect(again.definitions).toBe(0);
+
+    // Every employee now totals exactly 100: 80 core + 20 non-core.
+    const totals = await t.run(async (ctx) => {
+      const assignments = await ctx.db.query("kpiAssignments").take(500);
+      const byEmp = new Map<string, { core: number; nonCore: number }>();
+      for (const a of assignments) {
+        const e = byEmp.get(a.employeeId) ?? { core: 0, nonCore: 0 };
+        if ((a.kpiCategory ?? "core") === "non_core") e.nonCore += a.weight;
+        else e.core += a.weight;
+        byEmp.set(a.employeeId, e);
+      }
+      return [...byEmp.values()];
+    });
+    expect(totals.length).toBe(15);
+    for (const tot of totals) {
+      expect(tot.core).toBe(80);
+      expect(tot.nonCore).toBe(20);
+    }
+
+    // The weight_incomplete flags are resolved.
+    const openWeightIssues = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("dataQualityIssues")
+          .withIndex("by_category", (q) => q.eq("category", "weight_incomplete"))
+          .take(100)
+      ).filter((i) => !["approved", "rejected", "resolved"].includes(i.status)),
+    );
+    expect(openWeightIssues.length).toBe(0);
+  });
+});
+
 describe("employee analytics scoping", () => {
   test("employees always get their own analytics; moderators can select anyone", async () => {
     const t = harness();

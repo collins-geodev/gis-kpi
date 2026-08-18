@@ -144,15 +144,36 @@ export function EmployeeAnalytics() {
             />
           </div>
 
-          {/* Per-KPI attainment vs peers */}
-          <div className="space-y-2">
+          {/* Per-KPI attainment vs peers, grouped core / non-core */}
+          {(["core", "non_core"] as const).map((cat) => {
+            const group = data.kpis.filter(
+              (k: { kpiCategory?: string }) => (k.kpiCategory ?? "core") === cat,
+            );
+            if (group.length === 0) return null;
+            const groupWeight = group.reduce(
+              (s: number, k: { weight: number }) => s + k.weight,
+              0,
+            );
+            const groupPoints = group.reduce(
+              (s: number, k: { weightedContribution: number }) =>
+                s + k.weightedContribution,
+              0,
+            );
+            return (
+          <div key={cat} className="space-y-2">
             <h3 className="text-sm font-medium">
-              Attainment by KPI{" "}
-              <span className="font-normal text-muted-foreground">
-                — ◆ marks the same-role peer average
+              {cat === "core" ? "Core KPIs" : "Non-core KPIs"}{" "}
+              <span className="tabular font-normal text-muted-foreground">
+                — {groupPoints.toFixed(1)} / {groupWeight} pts
               </span>
+              {cat === "core" && (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  · ◆ marks the same-role peer average
+                </span>
+              )}
             </h3>
-            {data.kpis.map((k) => {
+            {group.map((k) => {
               const pct = k.attainment === null ? 0 : Math.min(k.attainment, 1) * 100;
               return (
                 <div key={k.assignmentId} className="space-y-1">
@@ -200,6 +221,8 @@ export function EmployeeAnalytics() {
               );
             })}
           </div>
+            );
+          })}
 
           {/* Monthly trend */}
           <div className="space-y-2">

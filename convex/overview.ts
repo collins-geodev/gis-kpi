@@ -19,6 +19,7 @@ export const baselineSummary = query({
     blockers: v.number(),
     awaitingReview: v.number(),
     returnedForChanges: v.number(),
+    weightsComplete: v.boolean(),
     configuredWeightTotal: v.number(),
     fullWeightTotal: v.number(),
     seeded: v.boolean(),
@@ -27,7 +28,17 @@ export const baselineSummary = query({
     await requireUser(ctx);
     // Baseline tables are small (15 employees / 75 assignments); bounded reads.
     const employees = (await ctx.db.query("employees").take(2000)).length;
-    const assignments = (await ctx.db.query("kpiAssignments").take(5000)).length;
+    const assignmentRows = await ctx.db.query("kpiAssignments").take(5000);
+    const assignments = assignmentRows.length;
+    // True once every employee's configured weights total 100 (core 80 +
+    // non-core 20) — flips the overview's 80/100 warning to a confirmation.
+    const weightByEmp: Record<string, number> = {};
+    for (const a of assignmentRows) {
+      weightByEmp[a.employeeId] = (weightByEmp[a.employeeId] ?? 0) + a.weight;
+    }
+    const totals = Object.values(weightByEmp);
+    const weightsComplete =
+      totals.length > 0 && totals.every((t) => t === FULL_WEIGHT_TOTAL);
     const kpiDefinitions = (await ctx.db.query("kpiDefinitions").take(1000)).length;
     const open = await ctx.db
       .query("dataQualityIssues")
@@ -55,6 +66,7 @@ export const baselineSummary = query({
       blockers,
       awaitingReview,
       returnedForChanges,
+      weightsComplete,
       configuredWeightTotal: CONFIGURED_WEIGHT_TOTAL,
       fullWeightTotal: FULL_WEIGHT_TOTAL,
       seeded: employees > 0,

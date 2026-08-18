@@ -167,27 +167,49 @@ export default function OverviewPage() {
             />
           </div>
 
-          <Card className="border-brand/40">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <AlertTriangle className="h-5 w-5 text-brand" />
-                Configured weight: {summary.configuredWeightTotal} /{" "}
-                {summary.fullWeightTotal}
-              </CardTitle>
-              <CardDescription>
-                Every employee&apos;s five KPIs total{" "}
-                <strong>{summary.configuredWeightTotal}</strong>, not{" "}
-                {summary.fullWeightTotal}. The missing 20 points are surfaced, not
-                invented. Resolve via the{" "}
-                <Link href="/data-quality" className="text-accent hover:underline">
-                  Data Quality queue
-                </Link>{" "}
-                — add a KPI, change weights, or explicitly approve normalization.{" "}
-                <strong>{summary.blockers}</strong> issue(s) currently block final
-                scoring.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          {summary.weightsComplete ? (
+            <Card className="border-success/40 bg-success/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ShieldCheck className="h-5 w-5 text-success" />
+                  Configured weight: {summary.fullWeightTotal} /{" "}
+                  {summary.fullWeightTotal}
+                </CardTitle>
+                <CardDescription>
+                  Every employee carries the full 100 points — {" "}
+                  <strong>{summary.configuredWeightTotal} core</strong> +{" "}
+                  <strong>
+                    {summary.fullWeightTotal - summary.configuredWeightTotal} non-core
+                  </strong>{" "}
+                  (safety, compliance, customer satisfaction, training).{" "}
+                  <strong>{summary.blockers}</strong> issue(s) currently block final
+                  scoring.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          ) : (
+            <Card className="border-brand/40">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <AlertTriangle className="h-5 w-5 text-brand" />
+                  Configured weight: {summary.configuredWeightTotal} /{" "}
+                  {summary.fullWeightTotal}
+                </CardTitle>
+                <CardDescription>
+                  Every employee&apos;s five KPIs total{" "}
+                  <strong>{summary.configuredWeightTotal}</strong>, not{" "}
+                  {summary.fullWeightTotal}. The missing 20 points are surfaced, not
+                  invented. Resolve via the{" "}
+                  <Link href="/data-quality" className="text-accent hover:underline">
+                    Data Quality queue
+                  </Link>{" "}
+                  — add a KPI, change weights, or explicitly approve normalization.{" "}
+                  <strong>{summary.blockers}</strong> issue(s) currently block final
+                  scoring.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
         </>
       )}
     </div>

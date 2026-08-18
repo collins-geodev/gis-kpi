@@ -133,4 +133,10 @@ export const vCanonicalKpiKey = v.union(
   v.literal("capture_integrate"),
   v.literal("qa_data_quality"),
   v.literal("issue_resolution_24h"),
+  v.literal("safety_hazard_reporting"),
+  v.literal("compliance_recertification"),
+  v.literal("internal_customer_satisfaction"),
+  v.literal("training_hours"),
 );
+
+export const vKpiCategory = v.union(v.literal("core"), v.literal("non_core"));

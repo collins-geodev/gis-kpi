@@ -262,6 +262,7 @@ export async function computeEmployeeAnalytics(
         canonicalKey: a.canonicalKey,
         objective: a.objective,
         measurementMode: a.measurementMode,
+        kpiCategory: a.kpiCategory ?? "core",
         weight: a.weight,
         periodKey: pk,
         attainment: m?.hasData ? (m.cappedAttainment ?? null) : null,

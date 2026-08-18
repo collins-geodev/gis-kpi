@@ -57,6 +57,7 @@ export const reviewQueue = query({
         evidenceRequired: assignment.evidenceRequired,
         evidenceComplete: m.evidenceComplete,
         pendingEvidence,
+        kpiCategory: assignment.kpiCategory ?? "core",
         cadenceCompliant: m.cadenceCompliant,
         scoringBlocked: assignment.scoringBlocked,
         ready:

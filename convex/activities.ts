@@ -596,6 +596,7 @@ export const myAssignments = query({
         evidenceRequired: a.evidenceRequired,
         pinnedBaseline: a.pinnedBaseline ?? null,
         scoringBlocked: a.scoringBlocked,
+        kpiCategory: a.kpiCategory ?? "core",
       }));
   },
 });

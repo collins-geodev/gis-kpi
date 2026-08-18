@@ -85,8 +85,20 @@ export const CANONICAL_KPI_KEYS = [
   "capture_integrate",
   "qa_data_quality",
   "issue_resolution_24h",
+  // Non-core (the 20 points shared by every role in the 2025 workbook).
+  "safety_hazard_reporting",
+  "compliance_recertification",
+  "internal_customer_satisfaction",
+  "training_hours",
 ] as const;
 export type CanonicalKpiKey = (typeof CANONICAL_KPI_KEYS)[number];
+
+/**
+ * Core KPIs carry the role's 80 configured points; non-core KPIs carry the
+ * shared 20 corporate points that complete the 100.
+ */
+export const KPI_CATEGORIES = ["core", "non_core"] as const;
+export type KpiCategory = (typeof KPI_CATEGORIES)[number];
 
 /** Activity / evidence / period workflow states. */
 export const WORKFLOW_STATES = [

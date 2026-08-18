@@ -3,7 +3,13 @@
  * UI. Each is idempotent so re-running is safe.
  */
 import { internalMutation, internalQuery } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import { NON_CORE_TEMPLATES } from "./lib/catalogue";
+import {
+  BASELINE_PERFORMANCE_YEAR,
+  FULL_WEIGHT_TOTAL,
+  JOB_ROLES,
+} from "./lib/types";
 import { v } from "convex/values";
 import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
@@ -612,5 +618,178 @@ export const renameEmployeeBusinessId = internalMutation({
       after: { employeeId: to },
     });
     return { renamed: true, employee: employee.displayName };
+  },
+});
+
+/**
+ * Add the shared non-core KPIs (20 corporate points: safety, compliance,
+ * customer satisfaction, training hours) to every roster employee, completing
+ * the 80 + 20 = 100 configured weight. Creates per-role definitions and
+ * per-employee assignments (idempotent), and resolves each employee's
+ * weight_incomplete data-quality flag once their total reaches 100.
+ */
+export const addNonCoreKpis = internalMutation({
+  args: {},
+  returns: v.object({
+    definitions: v.number(),
+    assignments: v.number(),
+    weightIssuesResolved: v.number(),
+  }),
+  handler: async (ctx) => {
+    const year = await ctx.db
+      .query("performanceYears")
+      .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+      .first();
+    if (!year) throw new Error("Performance year not seeded");
+
+    // Workbook source-layer values (audit): weight 0.05 each.
+    const SOURCE: Record<string, { target: number; type: string; freq: string }> = {
+      safety_hazard_reporting: { target: 12, type: "Number", freq: "Monthly" },
+      compliance_recertification: { target: 0.8, type: "Percentage", freq: "Annually" },
+      internal_customer_satisfaction: {
+        target: 0.85,
+        type: "Percentage",
+        freq: "Annually",
+      },
+      training_hours: { target: 20, type: "Number", freq: "Annually" },
+    };
+
+    let definitions = 0;
+    let assignments = 0;
+    let weightIssuesResolved = 0;
+
+    // Per-role definitions.
+    const defIdByRoleKey = new Map<string, Id<"kpiDefinitions">>();
+    for (const role of JOB_ROLES) {
+      for (const t of NON_CORE_TEMPLATES) {
+        const mapKey = `${role}::${t.key}`;
+        const existing = await ctx.db
+          .query("kpiDefinitions")
+          .withIndex("by_role_key", (q) => q.eq("jobRole", role).eq("canonicalKey", t.key))
+          .first();
+        if (existing) {
+          defIdByRoleKey.set(mapKey, existing._id);
+          continue;
+        }
+        const defId = await ctx.db.insert("kpiDefinitions", {
+          canonicalKey: t.key,
+          jobRole: role,
+          title: t.title,
+          canonicalObjective: t.canonicalObjective,
+          canonicalMetric: t.canonicalMetric,
+          measurementMode: t.measurementMode,
+          direction: t.direction,
+          targetType: t.targetType,
+          defaultTarget: t.target,
+          unit: t.unit,
+          frequency: t.frequency,
+          defaultWeight: t.weight,
+          evidenceRequired: t.evidenceRequired,
+          needsRubric: false,
+          needsClarification: false,
+          scoringNotes: t.scoringNotes,
+          kpiCategory: "non_core",
+          status: "active",
+          currentVersion: 1,
+        });
+        await ctx.db.insert("kpiDefinitionVersions", {
+          kpiDefinitionId: defId,
+          version: 1,
+          effectiveFrom: Date.now(),
+          snapshot: t,
+          changeReason: "Non-core KPI import (2025 workbook, 20 corporate points)",
+          createdAt: Date.now(),
+        });
+        defIdByRoleKey.set(mapKey, defId);
+        definitions++;
+      }
+    }
+
+    // Per-employee assignments + weight flag resolution.
+    for (const employee of await ctx.db.query("employees").take(2000)) {
+      const existing = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", employee._id).eq("performanceYearId", year._id),
+        )
+        .collect();
+      const haveKeys = new Set(existing.map((a) => a.canonicalKey));
+      const maxOrder = existing.reduce((m, a) => Math.max(m, a.displayOrder), 0);
+      let added = 0;
+      for (const t of NON_CORE_TEMPLATES) {
+        if (haveKeys.has(t.key)) continue;
+        const src = SOURCE[t.key]!;
+        await ctx.db.insert("kpiAssignments", {
+          performanceYearId: year._id,
+          employeeId: employee._id,
+          kpiDefinitionId: defIdByRoleKey.get(`${employee.jobRole}::${t.key}`),
+          canonicalKey: t.key,
+          objective: t.canonicalObjective,
+          metric: t.canonicalMetric,
+          weight: t.weight,
+          target: t.target,
+          targetType: t.targetType,
+          frequency: t.frequency,
+          measurementMode: t.measurementMode,
+          direction: t.direction,
+          scoreCap: 1,
+          stretchCap: 1.2,
+          evidenceRequired: t.evidenceRequired,
+          kpiCategory: "non_core",
+          // Synthetic source layer: these rows come from the non-core sheet
+          // sections, outside the core import's row numbering.
+          sourceRowNumber: 0,
+          sourceObjective: t.canonicalObjective,
+          sourceMetric: t.canonicalMetric,
+          sourceWeight: 0.05,
+          sourceTarget: src.target,
+          sourceTargetType: src.type,
+          sourceFrequency: src.freq,
+          status: "active",
+          scoringBlocked: false,
+          displayOrder: maxOrder + 1 + added,
+          createdAt: Date.now(),
+        });
+        added++;
+        assignments++;
+      }
+
+      // Resolve the 80/100 flag once this employee's weights total 100.
+      const total =
+        existing.reduce((s, a) => s + a.weight, 0) +
+        NON_CORE_TEMPLATES.filter((t) => !haveKeys.has(t.key)).reduce(
+          (s, t) => s + t.weight,
+          0,
+        );
+      if (total === FULL_WEIGHT_TOTAL) {
+        // Issue codes are keyed by the business staff ID from the source rows.
+        const issue = await ctx.db
+          .query("dataQualityIssues")
+          .withIndex("by_code", (q) =>
+            q.eq("code", `weight_incomplete:${employee.employeeId}`),
+          )
+          .first();
+        if (issue && !["approved", "rejected", "resolved"].includes(issue.status)) {
+          await ctx.db.patch(issue._id, {
+            status: "resolved",
+            resolutionNote:
+              "Non-core KPIs (20 corporate points) added — configured weights now total 100.",
+            resolvedAt: Date.now(),
+          });
+          weightIssuesResolved++;
+        }
+      }
+    }
+
+    if (definitions + assignments > 0) {
+      await recordAudit(ctx, {
+        entityType: "kpiDefinition",
+        entityId: "non_core_import",
+        action: "add_non_core_kpis",
+        reason: "2025 workbook non-core sections (20 corporate points per employee)",
+        after: { definitions, assignments, weightIssuesResolved },
+      });
+    }
+    return { definitions, assignments, weightIssuesResolved };
   },
 });
