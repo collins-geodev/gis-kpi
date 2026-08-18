@@ -224,26 +224,24 @@ export const convertCommercialMaintenanceToErrorBudget = internalMutation({
 });
 
 /**
- * Pin (or unpin, with null) the prior-year baseline on every reduction-mode
- * assignment of a canonical KPI, so employees only enter the current value at
- * capture time and the baseline stays fixed all year. Idempotent.
+ * Pin (or unpin, with null) the prior-year baseline on every assignment of a
+ * canonical KPI. On reduction-mode assignments the pin takes effect at capture
+ * time: employees only enter the current value and the baseline stays fixed
+ * all year. On other modes the value is recorded for documentation and applies
+ * automatically if the KPI is ever switched (back) to reduction. Idempotent.
  */
 export const pinReductionBaseline = internalMutation({
   args: {
     canonicalKey: vCanonicalKpiKey,
     baseline: v.union(v.number(), v.null()),
   },
-  returns: v.object({ pinned: v.number(), skippedNonReduction: v.number() }),
+  returns: v.object({ pinned: v.number(), inertOnNonReduction: v.number() }),
   handler: async (ctx, { canonicalKey, baseline }) => {
     if (baseline !== null && baseline < 0) throw new Error("baseline must be ≥ 0");
     let pinned = 0;
-    let skippedNonReduction = 0;
+    let inertOnNonReduction = 0;
     for (const a of await ctx.db.query("kpiAssignments").take(1000)) {
       if (a.canonicalKey !== canonicalKey) continue;
-      if (a.measurementMode !== "reduction") {
-        skippedNonReduction++;
-        continue;
-      }
       const next = baseline ?? undefined;
       if ((a.pinnedBaseline ?? undefined) === next) continue;
       await ctx.db.patch(a._id, { pinnedBaseline: next });
@@ -256,8 +254,9 @@ export const pinReductionBaseline = internalMutation({
         after: { pinnedBaseline: baseline },
       });
       pinned++;
+      if (a.measurementMode !== "reduction") inertOnNonReduction++;
     }
-    return { pinned, skippedNonReduction };
+    return { pinned, inertOnNonReduction };
   },
 });
 
