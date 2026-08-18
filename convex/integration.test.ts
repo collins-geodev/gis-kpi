@@ -1204,7 +1204,7 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
           .first(),
       );
 
-    await emp.mutation(api.activities.create, {
+    const activityId = await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
       activityAt: AUG_2026,
@@ -1213,6 +1213,8 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
       numerator: 9,
       denominator: 10,
     });
+    const activityStatus = () =>
+      t.run(async (ctx) => (await ctx.db.get(activityId))!.status);
 
     // Reject → entries returned, provisional measurement gone from the queue.
     await admin.mutation(api.approvals.rejectSubmission, {
@@ -1250,6 +1252,8 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
       periodKey: "2026-M08",
     });
     expect((await readMeasurement())?.isProvisional).toBe(false);
+    // The decision is visible on the employee's side immediately.
+    expect(await activityStatus()).toBe("approved");
 
     const recallRes = await admin.mutation(api.approvals.recallPeriodApproval, {
       employeeId: empId,
@@ -1258,6 +1262,7 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
     });
     expect(recallRes.measurementsReopened).toBeGreaterThan(0);
     expect((await readMeasurement())?.isProvisional).toBe(true);
+    expect(await activityStatus()).toBe("submitted");
     const snapshots = await t.run(async (ctx) =>
       ctx.db
         .query("scoreSnapshots")

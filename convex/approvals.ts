@@ -514,6 +514,19 @@ export const recallPeriodApproval = mutation({
       if (m && !m.isProvisional) {
         await ctx.db.patch(m._id, { isProvisional: true });
         measurementsReopened++;
+        // Mirror of approval: the employee's approved entries return to
+        // "submitted" so their side shows the period is under review again.
+        const acts = await ctx.db
+          .query("activities")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignment._id).eq("periodKey", lookupKey),
+          )
+          .take(500);
+        for (const a of acts) {
+          if (a.status === "approved") {
+            await ctx.db.patch(a._id, { status: "submitted", updatedAt: Date.now() });
+          }
+        }
       }
     }
 
@@ -652,10 +665,23 @@ export const approveEmployeePeriod = mutation({
       throw new ConvexError(`Cannot approve — resolve first: ${blockers.join("; ")}`);
     }
 
-    // Finalize measurements (no longer provisional) and lock them.
+    // Finalize measurements (no longer provisional) and lock them. The
+    // employee's counted entries flip to "approved" so the decision is
+    // immediately visible on their side too.
     for (const it of items) {
-      if (it.measurementId) {
-        await ctx.db.patch(it.measurementId as never, { isProvisional: false });
+      if (!it.measurementId) continue;
+      await ctx.db.patch(it.measurementId as never, { isProvisional: false });
+      const lookupKey = cadencePeriodKey(it.assignment.frequency as Frequency, periodKey);
+      const acts = await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", it.assignment._id).eq("periodKey", lookupKey),
+        )
+        .take(500);
+      for (const a of acts) {
+        if (["submitted", "verified"].includes(a.status)) {
+          await ctx.db.patch(a._id, { status: "approved", updatedAt: Date.now() });
+        }
       }
     }
 

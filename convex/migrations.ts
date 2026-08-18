@@ -361,6 +361,36 @@ export const recomputeAllMeasurements = internalMutation({
   },
 });
 
+/**
+ * Repair job: periods approved before approvals also flipped activity
+ * statuses left the employee's entries showing "submitted". Align them —
+ * every official (non-provisional) measurement's submitted/verified entries
+ * become "approved".
+ */
+export const alignActivityStatusesWithApprovals = internalMutation({
+  args: {},
+  returns: v.object({ activitiesApproved: v.number() }),
+  handler: async (ctx) => {
+    let activitiesApproved = 0;
+    for (const m of await ctx.db.query("kpiMeasurements").take(1000)) {
+      if (m.isProvisional) continue;
+      const acts = await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", m.kpiAssignmentId).eq("periodKey", m.periodKey),
+        )
+        .take(500);
+      for (const a of acts) {
+        if (["submitted", "verified"].includes(a.status)) {
+          await ctx.db.patch(a._id, { status: "approved", updatedAt: Date.now() });
+          activitiesApproved++;
+        }
+      }
+    }
+    return { activitiesApproved };
+  },
+});
+
 /** Full KPI settings per assignment (CLI audit helper). */
 export const listKpiSettings = internalQuery({
   args: {},

@@ -34,6 +34,11 @@ export default function OverviewPage() {
   const [claimError, setClaimError] = useState<string | null>(null);
 
   const hasRoles = (me?.roles.length ?? 0) > 0;
+  // Cards only link to pages the viewer can actually open; employees are
+  // routed to their own Activity Capture for submission-state tiles.
+  const canModerate = (me?.roles ?? []).some((r) =>
+    ["manager", "reviewer", "kpi_admin", "system_admin"].includes(r),
+  );
 
   return (
     <div className="space-y-6">
@@ -145,20 +150,20 @@ export default function OverviewPage() {
               value={summary.openIssues}
               icon={<AlertTriangle className="h-4 w-4" />}
               tone={summary.blockers > 0 ? "warning" : "default"}
-              href="/data-quality"
+              href={canModerate ? "/data-quality" : undefined}
             />
             <StatCard
               label="Submissions awaiting review"
               value={summary.awaitingReview}
               icon={<Hourglass className="h-4 w-4" />}
-              href="/review"
+              href={canModerate ? "/review" : "/activities"}
             />
             <StatCard
               label="Returned for changes"
               value={summary.returnedForChanges}
               icon={<Undo2 className="h-4 w-4" />}
               tone={summary.returnedForChanges > 0 ? "warning" : "default"}
-              href="/review"
+              href={canModerate ? "/review" : "/activities"}
             />
           </div>
 
