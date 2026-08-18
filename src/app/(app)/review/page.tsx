@@ -40,6 +40,7 @@ export default function ReviewPage() {
   const isAdmin = roles.some((r) => ["kpi_admin", "system_admin"].includes(r));
 
   const queue = useQuery(api.approvals.reviewQueue, canView ? {} : "skip");
+  const decisions = useQuery(api.approvals.recentDecisions, canView ? {} : "skip");
   const approve = useMutation(api.approvals.approveEmployeePeriod);
   const reject = useMutation(api.approvals.rejectSubmission);
   const approveEvidence = useMutation(api.evidence.approveAllForAssignment);
@@ -350,6 +351,124 @@ export default function ReviewPage() {
           })}
         </div>
       )}
+
+      {/* Standing recall panel — decisions can be reversed later, not only
+          right after the click. */}
+      {canApprove &&
+        decisions &&
+        (decisions.rejections.length > 0 || decisions.periodApprovals.length > 0) && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Recent decisions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {decisions.periodApprovals.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2.5 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={a.state === "approved" ? "success" : "muted"}>
+                      {a.state === "approved" ? "period approved" : a.state}
+                    </Badge>
+                    <span className="font-medium">{a.employeeName}</span>
+                    <span className="text-muted-foreground">· {a.periodKey}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(a.at).toLocaleString("en-GB", {
+                        timeZone: "Africa/Lagos",
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </span>
+                  </div>
+                  {a.recallable && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === a.id}
+                      title="Recall this approval — the frozen score returns to the review queue and the employee is notified"
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            `Recall the ${a.periodKey} approval for ${a.employeeName}? The frozen score is removed and their measurements return to review.`,
+                          )
+                        )
+                          return;
+                        setBusy(a.id);
+                        setError(null);
+                        try {
+                          await recallApproval({
+                            employeeId: a.employeeId as Id<"employees">,
+                            periodKey: a.periodKey,
+                            reason: "Approval recalled from Recent decisions",
+                          });
+                          setNotice({ text: `Approval for ${a.periodKey} recalled.` });
+                        } catch (e) {
+                          setError(errorMessage(e, "Recall failed."));
+                        } finally {
+                          setBusy(null);
+                        }
+                      }}
+                    >
+                      Recall
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {decisions.rejections.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2.5 text-sm"
+                >
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Badge variant="critical">rejected</Badge>
+                    <span className="font-medium">{r.employeeName}</span>
+                    <span className="max-w-xs truncate text-muted-foreground">
+                      {r.objective}
+                    </span>
+                    <span className="text-muted-foreground">· {r.periodKey}</span>
+                    {r.comment && (
+                      <span className="w-full text-xs text-muted-foreground">
+                        “{r.comment.slice(0, 140)}”
+                      </span>
+                    )}
+                  </div>
+                  {r.recallable ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === r.id}
+                      title="Recall this rejection — the entries return to review and the employee is told to disregard it"
+                      onClick={async () => {
+                        setBusy(r.id);
+                        setError(null);
+                        try {
+                          await recallRejection({
+                            kpiAssignmentId: r.kpiAssignmentId as Id<"kpiAssignments">,
+                            periodKey: r.periodKey,
+                          });
+                          setNotice({
+                            text: `Rejection recalled — ${r.employeeName}'s entries are back in review.`,
+                          });
+                        } catch (e) {
+                          setError(errorMessage(e, "Recall failed."));
+                        } finally {
+                          setBusy(null);
+                        }
+                      }}
+                    >
+                      Recall
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      resolved — the employee already edited or it was recalled
+                    </span>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
     </div>
   );
 }

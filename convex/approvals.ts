@@ -8,6 +8,7 @@
  */
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { ConvexError, v } from "convex/values";
 import { assertEmployeeReadScope, readableEmployeeIds, requireRole } from "./authz";
 import { recordAudit } from "./audit";
@@ -65,6 +66,76 @@ export const reviewQueue = query({
       });
     }
     return rows;
+  },
+});
+
+/**
+ * Recent review decisions (rejections + period approvals) with their recall
+ * eligibility — powers the standing "Recent decisions" panel so a decision
+ * made in error can be recalled later, not only right after the click.
+ */
+export const recentDecisions = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, ["manager", "reviewer", "kpi_admin", "system_admin"]);
+    const scope = await readableEmployeeIds(ctx);
+    const inScope = (empId: Id<"employees">) =>
+      scope === "all" || scope.includes(empId);
+
+    const reviews = await ctx.db.query("reviews").order("desc").take(100);
+    const rejections = [];
+    for (const r of reviews) {
+      if (r.decision !== "request_changes" || !r.kpiAssignmentId || !r.periodKey) {
+        continue;
+      }
+      if (!inScope(r.employeeId)) continue;
+      const assignment = await ctx.db.get(r.kpiAssignmentId);
+      const employee = await ctx.db.get(r.employeeId);
+      if (!assignment || !employee) continue;
+      const acts = await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", r.kpiAssignmentId!).eq("periodKey", r.periodKey!),
+        )
+        .take(50);
+      rejections.push({
+        id: r._id,
+        kpiAssignmentId: r.kpiAssignmentId,
+        periodKey: r.periodKey,
+        employeeName: employee.displayName,
+        objective: assignment.objective,
+        comment: r.comment ?? null,
+        at: r.createdAt,
+        // Recallable while the returned entries are still untouched.
+        recallable: acts.some((a) => a.status === "needs_changes"),
+      });
+      if (rejections.length >= 10) break;
+    }
+
+    // Latest approval record per (employee, period); recallable while approved.
+    const approvalRows = await ctx.db.query("approvals").order("desc").take(100);
+    const seen = new Set<string>();
+    const periodApprovals = [];
+    for (const a of approvalRows) {
+      const key = `${a.employeeId}::${a.periodKey}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!inScope(a.employeeId)) continue;
+      const employee = await ctx.db.get(a.employeeId);
+      if (!employee) continue;
+      periodApprovals.push({
+        id: a._id,
+        employeeId: a.employeeId,
+        periodKey: a.periodKey,
+        employeeName: employee.displayName,
+        state: a.state,
+        at: a.createdAt,
+        recallable: a.state === "approved",
+      });
+      if (periodApprovals.length >= 10) break;
+    }
+
+    return { rejections, periodApprovals };
   },
 });
 
