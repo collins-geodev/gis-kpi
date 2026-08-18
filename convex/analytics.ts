@@ -4,6 +4,7 @@
  * seeded configuration even before measurements exist.
  */
 import { query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertEmployeeReadScope, getAuthContext } from "./authz";
@@ -158,42 +159,48 @@ export const employeeAnalytics = query({
           .map((e) => ({ id: e._id, displayName: e.displayName, jobRole: e.jobRole }))
       : [];
 
-    if (!employeeId) return {
-      canSelect,
-      roster,
-      employee: null,
-      currentPeriodKey: null,
-      tiles: null,
-      kpis: [],
-      trend: [],
-      activities: [],
-    };
+    if (!employeeId) {
+      return {
+        canSelect,
+        roster,
+        employee: null,
+        currentPeriodKey: null,
+        tiles: null,
+        kpis: [],
+        trend: [],
+        activities: [],
+      };
+    }
+    const core = await computeEmployeeAnalytics(ctx, employeeId);
+    if (!core) {
+      return {
+        canSelect,
+        roster,
+        employee: null,
+        currentPeriodKey: null,
+        tiles: null,
+        kpis: [],
+        trend: [],
+        activities: [],
+      };
+    }
+    return { canSelect, roster, ...core };
+  },
+});
+
+/** Shared computation for one employee (also used by the CLI audit query). */
+export async function computeEmployeeAnalytics(
+  ctx: QueryCtx,
+  employeeId: Id<"employees">,
+) {
     const employee = await ctx.db.get(employeeId);
-    if (!employee) return {
-      canSelect,
-      roster,
-      employee: null,
-      currentPeriodKey: null,
-      tiles: null,
-      kpis: [],
-      trend: [],
-      activities: [],
-    };
+    if (!employee) return null;
 
     const year = await ctx.db
       .query("performanceYears")
       .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
       .first();
-    if (!year) return {
-      canSelect,
-      roster,
-      employee: null,
-      currentPeriodKey: null,
-      tiles: null,
-      kpis: [],
-      trend: [],
-      activities: [],
-    };
+    if (!year) return null;
 
     const assignments = await ctx.db
       .query("kpiAssignments")
@@ -332,8 +339,6 @@ export const employeeAnalytics = query({
     ).length;
 
     return {
-      canSelect,
-      roster,
       employee: {
         id: employee._id,
         displayName: employee.displayName,
@@ -353,5 +358,4 @@ export const employeeAnalytics = query({
       trend,
       activities,
     };
-  },
-});
+}

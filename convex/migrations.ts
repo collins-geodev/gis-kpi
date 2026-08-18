@@ -9,6 +9,7 @@ import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
 import { recomputeMeasurement } from "./measurementsModel";
 import { vCanonicalKpiKey } from "./validators";
+import { computeEmployeeAnalytics } from "./analytics";
 
 /**
  * Change an employee's business staff ID in place (e.g. HR issued a corrected
@@ -462,6 +463,20 @@ export const cliDeleteSubmission = internalMutation({
       }
     }
     return { assignments, deleted, evidenceDeleted };
+  },
+});
+
+/** One employee's analytics by staff ID (CLI audit helper). */
+export const cliEmployeeAnalytics = internalQuery({
+  args: { employeeBusinessId: v.string() },
+  returns: v.any(),
+  handler: async (ctx, { employeeBusinessId }) => {
+    const employee = await ctx.db
+      .query("employees")
+      .withIndex("by_employeeId", (q) => q.eq("employeeId", employeeBusinessId))
+      .first();
+    if (!employee) return null;
+    return await computeEmployeeAnalytics(ctx, employee._id);
   },
 });
 

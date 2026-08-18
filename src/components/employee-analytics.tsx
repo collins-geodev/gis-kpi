@@ -85,7 +85,7 @@ export function EmployeeAnalytics() {
             aria-label="Select an employee"
           >
             {!data.employee && <option value="">Select an employee…</option>}
-            {data.roster.map((r) => (
+            {data.roster.map((r: { id: string; displayName: string; jobRole: string }) => (
               <option key={r.id} value={r.id}>
                 {r.displayName} — {r.jobRole}
               </option>
