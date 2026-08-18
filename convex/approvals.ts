@@ -81,7 +81,7 @@ export const deleteSubmission = mutation({
     periodKey: v.string(),
     reason: v.string(),
   },
-  returns: v.object({ deleted: v.number() }),
+  returns: v.object({ deleted: v.number(), evidenceDeleted: v.number() }),
   handler: async (ctx, { kpiAssignmentId, periodKey, reason }) => {
     const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
     const assignment = await ctx.db.get(kpiAssignmentId);
@@ -114,7 +114,46 @@ export const deleteSubmission = mutation({
       throw new Error("No deletable activities for this KPI and period.");
     }
 
-    await recomputeMeasurement(ctx, assignment, periodKey);
+    // The attached evidence goes with the submission: soft-delete every active
+    // item on the KPI (same semantics as Evidence Centre deletion — the blob
+    // is removed, the record is tombstoned; legal holds are never touched).
+    const evidence = await ctx.db
+      .query("evidenceFiles")
+      .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
+      .take(500);
+    let evidenceDeleted = 0;
+    for (const e of evidence) {
+      if (e.retentionState !== "active") continue;
+      if (e.storageId) await ctx.storage.delete(e.storageId);
+      await ctx.db.patch(e._id, { retentionState: "deleted", storageId: undefined });
+      await recordAudit(ctx, {
+        entityType: "evidenceFile",
+        entityId: e._id,
+        action: "delete_submission_evidence",
+        actorUserId: user._id,
+        reason: cleanReason,
+        before: {
+          title: e.title,
+          originalFilename: e.originalFilename,
+          reviewStatus: e.reviewStatus,
+          kpiAssignmentId: e.kpiAssignmentId,
+        },
+      });
+      evidenceDeleted++;
+    }
+
+    // Evidence gates may change on every period of this KPI — recompute all.
+    const measurements = await ctx.db
+      .query("kpiMeasurements")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", kpiAssignmentId),
+      )
+      .take(500);
+    const periods = new Set(measurements.map((m) => m.periodKey));
+    periods.add(periodKey);
+    for (const pk of periods) {
+      await recomputeMeasurement(ctx, assignment, pk);
+    }
 
     // Notify the employee — same channel as approval/rejection decisions.
     const adminName = await resolveDisplayName(ctx, user);
@@ -130,12 +169,13 @@ export const deleteSubmission = mutation({
         email: target.email,
         recipientName: await resolveDisplayName(ctx, target),
         subject: `Your ${periodKey} submission was deleted — ${assignment.objective.slice(0, 80)}`,
-        intro: `*${adminName}* deleted your ${periodKey} submission (${deleted} ${deleted === 1 ? "entry" : "entries"}) for “${assignment.objective.slice(0, 120)}”. If work for this period still needs to be recorded, please capture it again.`,
+        intro: `*${adminName}* deleted your ${periodKey} submission (${deleted} ${deleted === 1 ? "entry" : "entries"}${evidenceDeleted > 0 ? ` and ${evidenceDeleted} evidence item${evidenceDeleted === 1 ? "" : "s"}` : ""}) for “${assignment.objective.slice(0, 120)}”. If work for this period still needs to be recorded, please capture it again.`,
         panelTitle: "Submission deleted",
         rows: [
           { label: "KPI objective", value: assignment.objective.slice(0, 200) },
           { label: "Period", value: periodKey },
           { label: "Entries removed", value: String(deleted), strong: true },
+          { label: "Evidence removed", value: String(evidenceDeleted) },
           { label: "Reason", value: cleanReason.slice(0, 500) },
         ],
         ctaLabel: "Open Activity Capture",
@@ -152,7 +192,7 @@ export const deleteSubmission = mutation({
         notices,
       });
     }
-    return { deleted };
+    return { deleted, evidenceDeleted };
   },
 });
 

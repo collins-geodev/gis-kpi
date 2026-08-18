@@ -73,7 +73,7 @@ export default function ReviewPage() {
 
   async function doDelete(assignmentId: string, periodKey: string, objective: string) {
     const reason = window.prompt(
-      `Delete the ${periodKey} submission for “${objective.slice(0, 80)}”?\n\nEvery entry is removed for the employee as well, and they are notified with this reason (required):`,
+      `Delete the ${periodKey} submission for “${objective.slice(0, 80)}”?\n\nEvery entry AND the KPI's attached evidence are removed for the employee as well, and they are notified with this reason (required):`,
     );
     if (!reason?.trim()) return;
     setBusy(assignmentId);
@@ -252,7 +252,7 @@ export default function ReviewPage() {
                             variant="ghost"
                             className="text-muted-foreground hover:text-critical"
                             disabled={busy === i.assignmentId}
-                            title="Delete this submission — removed for the employee too; they are notified with your reason (audited)"
+                            title="Delete this submission and its attached evidence — removed for the employee too; they are notified with your reason (audited)"
                             onClick={() =>
                               doDelete(i.assignmentId, i.periodKey, i.objective)
                             }

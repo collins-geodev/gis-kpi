@@ -1137,6 +1137,16 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
       reason: "Duplicate numbers — recapture",
     });
     expect(del.deleted).toBe(1);
+    expect(del.evidenceDeleted).toBe(1);
+    const evidenceAfter = await t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("evidenceFiles")
+          .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", assignmentId))
+          .take(10)
+      ).filter((e) => e.retentionState === "active"),
+    );
+    expect(evidenceAfter.length).toBe(0);
 
     const remaining = await t.run(async (ctx) =>
       ctx.db
