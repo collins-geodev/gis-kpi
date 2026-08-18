@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { PageHeader } from "@/components/page-header";
@@ -16,6 +17,15 @@ import { AccessDenied } from "@/components/access-denied";
 import { formatPercent } from "@convex/lib/format";
 import { CheckCircle2, FileCheck2, Inbox, Lock, Trash2, XCircle } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+
+
+/** Convex redacts plain Error messages in prod — surface ConvexError data. */
+function errorMessage(e: unknown, fallback: string): string {
+  if (e instanceof ConvexError) {
+    return typeof e.data === "string" ? e.data : fallback;
+  }
+  return e instanceof Error ? e.message : fallback;
+}
 
 export default function ReviewPage() {
   const me = useQuery(api.access.currentUser);
@@ -51,7 +61,7 @@ export default function ReviewPage() {
       await notice.undo();
       setNotice({ text: "Recalled — the decision has been reversed and the employee notified." });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Recall failed.");
+      setError(errorMessage(e, "Recall failed."));
     } finally {
       setBusy(null);
     }
@@ -80,7 +90,7 @@ export default function ReviewPage() {
         },
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Rejection failed.");
+      setError(errorMessage(e, "Rejection failed."));
     } finally {
       setBusy(null);
     }
@@ -95,7 +105,7 @@ export default function ReviewPage() {
       });
       setNotice({ text: "Evidence approved — the employee has been notified." });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Evidence approval failed.");
+      setError(errorMessage(e, "Evidence approval failed."));
     } finally {
       setBusy(null);
     }
@@ -118,7 +128,7 @@ export default function ReviewPage() {
         text: `Deleted — the ${periodKey} entries and attached evidence were removed and the employee notified.`,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Deletion failed.");
+      setError(errorMessage(e, "Deletion failed."));
     } finally {
       setBusy(null);
     }
@@ -171,7 +181,7 @@ export default function ReviewPage() {
         },
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Approval failed.");
+      setError(errorMessage(e, "Approval failed."));
     } finally {
       setBusy(null);
     }

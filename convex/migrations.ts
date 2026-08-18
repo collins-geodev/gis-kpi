@@ -339,6 +339,28 @@ export const convertQaDataQualityToCoverageRatio = internalMutation({
   },
 });
 
+/**
+ * Repair job: re-run the deterministic recompute for every stored measurement.
+ * Clears stale provisional rows left by decisions that predate the
+ * recompute-on-reject fix (a measurement whose entries were all returned).
+ */
+export const recomputeAllMeasurements = internalMutation({
+  args: {},
+  returns: v.object({ scanned: v.number(), remaining: v.number() }),
+  handler: async (ctx) => {
+    const measurements = await ctx.db.query("kpiMeasurements").take(1000);
+    let scanned = 0;
+    for (const m of measurements) {
+      const assignment = await ctx.db.get(m.kpiAssignmentId);
+      if (!assignment) continue;
+      await recomputeMeasurement(ctx, assignment, m.periodKey);
+      scanned++;
+    }
+    const remaining = (await ctx.db.query("kpiMeasurements").take(1000)).length;
+    return { scanned, remaining };
+  },
+});
+
 /** Full KPI settings per assignment (CLI audit helper). */
 export const listKpiSettings = internalQuery({
   args: {},
