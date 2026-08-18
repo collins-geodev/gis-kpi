@@ -260,6 +260,38 @@ export const pinReductionBaseline = internalMutation({
   },
 });
 
+/** Full KPI settings per assignment (CLI audit helper). */
+export const listKpiSettings = internalQuery({
+  args: {},
+  returns: v.array(v.any()),
+  handler: async (ctx) => {
+    const out = [];
+    for (const a of await ctx.db.query("kpiAssignments").take(1000)) {
+      const emp = a.employeeId ? await ctx.db.get(a.employeeId) : null;
+      out.push({
+        employee: emp?.displayName ?? null,
+        jobRole: emp?.jobRole ?? null,
+        canonicalKey: a.canonicalKey,
+        mode: a.measurementMode,
+        direction: a.direction,
+        target: a.target,
+        targetType: a.targetType,
+        weight: a.weight,
+        frequency: a.frequency,
+        evidenceRequired: a.evidenceRequired,
+        pinnedBaseline: a.pinnedBaseline ?? null,
+        scoringBlocked: a.scoringBlocked,
+        status: a.status,
+      });
+    }
+    return out.sort(
+      (x, y) =>
+        (x.employee ?? "").localeCompare(y.employee ?? "") ||
+        x.canonicalKey.localeCompare(y.canonicalKey),
+    );
+  },
+});
+
 /** List every reduction-mode assignment and its pin state (CLI audit helper). */
 export const listReductionPins = internalQuery({
   args: {},
