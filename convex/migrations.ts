@@ -145,6 +145,84 @@ export const resolveCommercialMaintenanceTarget = internalMutation({
 });
 
 /**
+ * Convert the commercial-maintenance KPI from reduction-vs-baseline to a
+ * monthly error budget (count, lower-is-better): attainment = budget ÷ errors
+ * found, capped. The budget encodes the workbook's "reduce by 20%" intent as
+ * prior-year monthly baseline × 0.8; pass `monthlyBudget` to set the agreed
+ * number (defaults to the seeded 24). Re-runnable: pass a new budget any time.
+ */
+export const convertCommercialMaintenanceToErrorBudget = internalMutation({
+  args: { monthlyBudget: v.optional(v.number()) },
+  returns: v.object({
+    budget: v.number(),
+    definitions: v.number(),
+    assignments: v.number(),
+    measurementsRecomputed: v.number(),
+  }),
+  handler: async (ctx, { monthlyBudget }) => {
+    const KEY = "commercial_maintenance_quality" as const;
+    const budget = monthlyBudget ?? 24;
+    if (budget <= 0) throw new Error("monthlyBudget must be > 0");
+    const METRIC =
+      "Keep identified errors within a monthly error budget set 20% below the prior-year monthly baseline.";
+    const NOTES =
+      "Monthly error budget = prior-year monthly error baseline × 0.8. Attainment = budget ÷ errors found, capped at 100%.";
+    let definitions = 0;
+    let assignments = 0;
+    let measurementsRecomputed = 0;
+
+    for (const d of await ctx.db.query("kpiDefinitions").take(500)) {
+      if (d.canonicalKey !== KEY) continue;
+      if (d.measurementMode === "count" && d.defaultTarget === budget) continue;
+      await ctx.db.patch(d._id, {
+        measurementMode: "count",
+        direction: "lowerIsBetter",
+        targetType: "number",
+        defaultTarget: budget,
+        canonicalMetric: METRIC,
+        scoringNotes: NOTES,
+      });
+      definitions++;
+    }
+
+    for (const a of await ctx.db.query("kpiAssignments").take(1000)) {
+      if (a.canonicalKey !== KEY) continue;
+      if (a.measurementMode !== "count" || a.target !== budget) {
+        await ctx.db.patch(a._id, {
+          measurementMode: "count",
+          direction: "lowerIsBetter",
+          targetType: "number",
+          target: budget,
+          metric: METRIC,
+        });
+        assignments++;
+      }
+      const updated = (await ctx.db.get(a._id))!;
+      const measurements = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", a._id))
+        .take(500);
+      for (const m of measurements) {
+        await recomputeMeasurement(ctx, updated, m.periodKey);
+        measurementsRecomputed++;
+      }
+    }
+
+    if (definitions + assignments > 0) {
+      await recordAudit(ctx, {
+        entityType: "kpiDefinition",
+        entityId: KEY,
+        action: "convert_to_error_budget",
+        reason:
+          "Reduction-vs-baseline scored as a cliff with small counts; converted to a monthly error budget (count, lower-is-better).",
+        after: { budget, definitions, assignments, measurementsRecomputed },
+      });
+    }
+    return { budget, definitions, assignments, measurementsRecomputed };
+  },
+});
+
+/**
  * Wipe the audit log (e.g. clearing test data before go-live). Deliberately
  * CLI-only — no dashboard button, so the immutable-log guarantee holds for
  * day-to-day use. Leaves a single tombstone entry recording the wipe.

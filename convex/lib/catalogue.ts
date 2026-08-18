@@ -284,22 +284,21 @@ export const ROLE_TEMPLATES: Record<JobRole, CanonicalKpiTemplate[]> = {
       canonicalObjective:
         "Ensure the accuracy and quality of all GIS data during the maintenance window with the Commercial department.",
       canonicalMetric:
-        "Reduce identified errors by 20% versus the previous-year baseline.",
-      measurementMode: "reduction",
+        "Keep identified errors within a monthly error budget set 20% below the prior-year monthly baseline.",
+      measurementMode: "count",
       direction: "lowerIsBetter",
-      targetType: "percentage",
-      target: 0.2,
+      targetType: "number",
+      target: 24,
       unit: "errors",
       frequency: "Monthly",
       weight: 10,
       evidenceRequired: true,
       requiredInputs: [
-        "Prior-year baseline error count",
-        "Current error count",
+        "Errors found this month",
         "Maintenance-window QA evidence",
       ],
       scoringNotes:
-        "Reduction vs prior-year baseline with a 20% target. The source workbook typed this as Number/20; resolved to Percentage/0.2 (the engine also self-normalizes percent-encoded reduction targets).",
+        "Monthly error budget = prior-year monthly error baseline × 0.8 (the workbook's 'reduce by 20%' intent; source typed it Number/20). Attainment = budget ÷ errors found, capped at 100% — a smooth gradient instead of the reduction cliff. Admins set the real budget per assignment in KPI settings once the prior-year count is agreed.",
     },
     {
       ...assetIntegration(20),

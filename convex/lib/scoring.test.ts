@@ -82,6 +82,26 @@ describe("computeAttainment — count", () => {
   });
 });
 
+describe("computeAttainment — count as an error budget (lowerIsBetter)", () => {
+  const budget = { mode: "count", direction: "lowerIsBetter", target: 24 } as const;
+  it("at or below budget is met", () => {
+    const r = computeAttainment({ ...budget, actual: 24 });
+    expect(r.attainment).toBe(1);
+    expect(r.status).toBe("on_target");
+  });
+  it("over budget degrades gradually, not a cliff", () => {
+    expect(computeAttainment({ ...budget, actual: 30 }).attainment).toBe(0.8);
+    expect(computeAttainment({ ...budget, actual: 40 }).attainment).toBe(0.6);
+    expect(computeAttainment({ ...budget, actual: 48 }).attainment).toBe(0.5);
+  });
+  it("zero occurrences is perfect (capped)", () => {
+    const r = computeAttainment({ ...budget, actual: 0 });
+    expect(r.hasData).toBe(true);
+    expect(r.cappedAttainment).toBe(1);
+    expect(r.status).toBe("on_target");
+  });
+});
+
 describe("computeAttainment — reduction", () => {
   it("achieves the target reduction fraction", () => {
     const r = computeAttainment({

@@ -143,9 +143,16 @@ export default function ActivitiesPage() {
   );
   const baselinePinned =
     selected?.measurementMode === "reduction" && selected.pinnedBaseline !== null;
-  const fields = (selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : []).filter(
-    (fld) => !(baselinePinned && fld.name === "baseline"),
-  );
+  const fields = (selected ? (MODE_FIELDS[selected.measurementMode] ?? []) : [])
+    .filter((fld) => !(baselinePinned && fld.name === "baseline"))
+    .map((fld) =>
+      // Budget-style counts (lower is better) count occurrences, not achievements.
+      selected?.measurementMode === "count" &&
+      selected.direction === "lowerIsBetter" &&
+      fld.name === "quantity"
+        ? { ...fld, label: "Count found this period (e.g. errors)" }
+        : fld,
+    );
 
   // The title is fully auto-generated from the KPI + period (read-only field).
   useEffect(() => {
@@ -358,7 +365,10 @@ export default function ActivitiesPage() {
                       ? formatPercent(normalizeReductionTarget(selected.target))
                       : selected.targetType === "percentage"
                         ? formatPercent(selected.target)
-                        : selected.target}
+                        : selected.measurementMode === "count" &&
+                            selected.direction === "lowerIsBetter"
+                          ? `≤ ${selected.target}`
+                          : selected.target}
                   </Badge>
                   {selected.evidenceRequired && (
                     <Badge variant="warning">evidence required</Badge>
@@ -660,6 +670,17 @@ function modeHint(a: Assignment): React.ReactNode {
         </>
       );
     case "count":
+      if (a.direction === "lowerIsBetter") {
+        return (
+          <>
+            Enter how many were <strong>found</strong> this period (e.g. QA errors) — it
+            is scored against a budget of <strong>at most {a.target}</strong>. At or
+            below budget = 100%; going over degrades gradually (budget ÷ found), and
+            zero is perfect. Multiple entries in the same period add up, so log each
+            batch as it happens.
+          </>
+        );
+      }
       return (
         <>
           Enter the number <strong>actually achieved</strong> this period — it is scored
