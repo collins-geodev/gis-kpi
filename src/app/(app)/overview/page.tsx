@@ -20,7 +20,9 @@ import {
   AlertTriangle,
   BookOpenCheck,
   ClipboardCheck,
+  Hourglass,
   ShieldCheck,
+  Undo2,
   Users,
 } from "lucide-react";
 
@@ -144,6 +146,19 @@ export default function OverviewPage() {
               icon={<AlertTriangle className="h-4 w-4" />}
               tone={summary.blockers > 0 ? "warning" : "default"}
               href="/data-quality"
+            />
+            <StatCard
+              label="Submissions awaiting review"
+              value={summary.awaitingReview}
+              icon={<Hourglass className="h-4 w-4" />}
+              href="/review"
+            />
+            <StatCard
+              label="Returned for changes"
+              value={summary.returnedForChanges}
+              icon={<Undo2 className="h-4 w-4" />}
+              tone={summary.returnedForChanges > 0 ? "warning" : "default"}
+              href="/review"
             />
           </div>
 

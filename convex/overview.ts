@@ -17,6 +17,8 @@ export const baselineSummary = query({
     kpiDefinitions: v.number(),
     openIssues: v.number(),
     blockers: v.number(),
+    awaitingReview: v.number(),
+    returnedForChanges: v.number(),
     configuredWeightTotal: v.number(),
     fullWeightTotal: v.number(),
     seeded: v.boolean(),
@@ -36,6 +38,14 @@ export const baselineSummary = query({
       .withIndex("by_status", (q) => q.eq("status", "proposed"))
       .take(5000);
     const blockers = open.filter((i) => i.blocksScoring).length;
+    // Submission workflow posture: what reviewers owe vs what employees owe.
+    const activities = await ctx.db.query("activities").take(5000);
+    const awaitingReview = activities.filter((a) =>
+      ["submitted", "verified"].includes(a.status),
+    ).length;
+    const returnedForChanges = activities.filter(
+      (a) => a.status === "needs_changes",
+    ).length;
     return {
       year: 2026,
       employees,
@@ -43,6 +53,8 @@ export const baselineSummary = query({
       kpiDefinitions,
       openIssues: open.length + proposed.length,
       blockers,
+      awaitingReview,
+      returnedForChanges,
       configuredWeightTotal: CONFIGURED_WEIGHT_TOTAL,
       fullWeightTotal: FULL_WEIGHT_TOTAL,
       seeded: employees > 0,
