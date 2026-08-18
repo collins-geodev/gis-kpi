@@ -312,7 +312,7 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
     expect(audit.length).toBe(1);
   });
 
-  test("admin can unlink a user's roster employee; non-admin cannot", async () => {
+  test("admin can unlink a user's roster employee; non-admin cannot; unlink wipes captured data", async () => {
     const t = harness();
     await t.mutation(internal.seed.seedBaseline, {});
     const { as: admin } = await makeUser(t, {
@@ -324,6 +324,32 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
       roles: ["employee"],
       employeeBusinessId: "IKD030835",
     });
+    const empId = await employeeIdByBiz(t, "IKD030835");
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+    await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/log",
+      originalFilename: "log",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "qa_log",
+      title: "Integration log",
+    });
 
     await expect(
       emp.mutation(api.access.unlinkUserFromEmployee, { userId: empUserId }),
@@ -333,6 +359,32 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
     const linked = await t.run(async (ctx) => (await ctx.db.get(empUserId))?.employeeId);
     // convex-test surfaces an unset optional field as null.
     expect(linked ?? null).toBeNull();
+
+    // The employee's captured data is gone from the records and dashboards.
+    const remaining = await t.run(async (ctx) => {
+      const acts = await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+        )
+        .take(10);
+      const evidence = (
+        await ctx.db
+          .query("evidenceFiles")
+          .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", assignmentId))
+          .take(10)
+      ).filter((e) => e.retentionState === "active");
+      const measurement = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+        )
+        .first();
+      return { acts: acts.length, evidence: evidence.length, measurement };
+    });
+    expect(remaining.acts).toBe(0);
+    expect(remaining.evidence).toBe(0);
+    expect(remaining.measurement).toBeNull();
   });
 
   test("owner deletes a submitted activity and the measurement recomputes", async () => {

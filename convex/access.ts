@@ -491,23 +491,34 @@ export const deleteUser = mutation({
   },
 });
 
-/** Remove a user's roster-employee link (System Admin only). */
+/**
+ * Remove a user's roster-employee link (System Admin only). By default the
+ * employee's captured data (submissions, evidence, measurements, snapshots)
+ * is wiped with it so nothing lingers on the dashboards; pass
+ * keepData: true to unlink only (e.g. when fixing a mislink before
+ * re-linking the right account).
+ */
 export const unlinkUserFromEmployee = mutation({
-  args: { userId: v.id("users") },
+  args: { userId: v.id("users"), keepData: v.optional(v.boolean()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const { user: actor } = await requireRole(ctx, ["system_admin"]);
     const before = await ctx.db.get(args.userId);
     if (!before) throw new Error("User not found");
     if (!before.employeeId) return null; // already unlinked
+    const employeeId = before.employeeId;
     await ctx.db.patch(args.userId, { employeeId: undefined });
+    let counts: Record<string, number> | undefined;
+    if (!args.keepData) {
+      counts = await wipeEmployeeData(ctx, employeeId);
+    }
     await recordAudit(ctx, {
       entityType: "user",
       entityId: args.userId,
       action: "unlink_employee",
       actorUserId: actor._id,
-      before: { employeeId: before.employeeId },
-      after: { employeeId: null },
+      before: { employeeId },
+      after: { employeeId: null, dataWiped: !args.keepData, ...(counts ?? {}) },
     });
     return null;
   },

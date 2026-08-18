@@ -145,7 +145,7 @@ export default function UsersPage() {
                             onClick={() => {
                               if (
                                 !window.confirm(
-                                  `Unlink ${u.employee!.displayName} from ${u.name ?? u.email}? The account keeps its roles but loses self-service scope.`,
+                                  `Unlink ${u.employee!.displayName} from ${u.name ?? u.email}?\n\nAll of ${u.employee!.displayName}'s captured data — submissions, evidence files, measurements and score snapshots — is deleted from the records and dashboards. The account keeps its roles; KPI configuration and the audit trail are untouched.`,
                                 )
                               )
                                 return;
