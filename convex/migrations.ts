@@ -2,7 +2,7 @@
  * One-off, audited data migrations run via `npx convex run` — never from the
  * UI. Each is idempotent so re-running is safe.
  */
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { recordAudit } from "./audit";
@@ -257,6 +257,33 @@ export const pinReductionBaseline = internalMutation({
       if (a.measurementMode !== "reduction") inertOnNonReduction++;
     }
     return { pinned, inertOnNonReduction };
+  },
+});
+
+/** List every reduction-mode assignment and its pin state (CLI audit helper). */
+export const listReductionPins = internalQuery({
+  args: {},
+  returns: v.array(
+    v.object({
+      canonicalKey: v.string(),
+      jobRole: v.union(v.string(), v.null()),
+      employee: v.union(v.string(), v.null()),
+      pinnedBaseline: v.union(v.number(), v.null()),
+    }),
+  ),
+  handler: async (ctx) => {
+    const out = [];
+    for (const a of await ctx.db.query("kpiAssignments").take(1000)) {
+      if (a.measurementMode !== "reduction") continue;
+      const emp = a.employeeId ? await ctx.db.get(a.employeeId) : null;
+      out.push({
+        canonicalKey: a.canonicalKey as string,
+        jobRole: emp?.jobRole ?? null,
+        employee: emp?.displayName ?? null,
+        pinnedBaseline: a.pinnedBaseline ?? null,
+      });
+    }
+    return out;
   },
 });
 
