@@ -24,6 +24,20 @@ export async function recomputeMeasurement(
     .take(1000);
   const counted = activities.filter((a) => COUNTED_STATES.includes(a.status));
 
+  // Nothing counted → nothing to measure. Remove any provisional measurement
+  // instead of scoring an empty input set (a zero-entry count would otherwise
+  // read as 0% — or as perfect for lower-is-better budgets).
+  if (counted.length === 0) {
+    const existing = await ctx.db
+      .query("kpiMeasurements")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", assignment._id).eq("periodKey", periodKey),
+      )
+      .first();
+    if (existing?.isProvisional) await ctx.db.delete(existing._id);
+    return;
+  }
+
   const input = aggregateActivityInputs(
     assignment.measurementMode,
     assignment.direction,

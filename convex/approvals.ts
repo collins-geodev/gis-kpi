@@ -14,6 +14,7 @@ import { recordAudit } from "./audit";
 import { resolveDisplayName } from "./emails";
 import { formatPercent } from "./lib/format";
 import { CALC_VERSION, scoreScorecard, type ScorecardItem } from "./lib/scoring";
+import { recomputeMeasurement } from "./measurementsModel";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
 import { cadencePeriodKey } from "./lib/periods";
 
@@ -31,6 +32,18 @@ export const reviewQueue = query({
       const assignment = await ctx.db.get(m.kpiAssignmentId);
       const employee = await ctx.db.get(m.employeeId);
       if (!assignment || !employee) continue;
+      // Evidence that exists but awaits review — the queue can offer a
+      // one-click approve instead of a misleading "evidence needed".
+      let pendingEvidence = 0;
+      if (assignment.evidenceRequired && !m.evidenceComplete) {
+        const ev = await ctx.db
+          .query("evidenceFiles")
+          .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", assignment._id))
+          .take(200);
+        pendingEvidence = ev.filter((e) =>
+          ["submitted", "verified"].includes(e.reviewStatus),
+        ).length;
+      }
       rows.push({
         measurementId: m._id,
         employeeId: m.employeeId,
@@ -43,6 +56,7 @@ export const reviewQueue = query({
         status: m.status,
         evidenceRequired: assignment.evidenceRequired,
         evidenceComplete: m.evidenceComplete,
+        pendingEvidence,
         cadenceCompliant: m.cadenceCompliant,
         scoringBlocked: assignment.scoringBlocked,
         ready:
@@ -51,6 +65,94 @@ export const reviewQueue = query({
       });
     }
     return rows;
+  },
+});
+
+/**
+ * Admin hard-delete of a period's submission: every non-locked activity for
+ * the (KPI, period) is removed — the records are shared, so they disappear
+ * from the employee's side too — the provisional measurement is recomputed
+ * (and removed when nothing counted remains), everything is audit-logged with
+ * the full former payload, and the employee is notified with the reason.
+ */
+export const deleteSubmission = mutation({
+  args: {
+    kpiAssignmentId: v.id("kpiAssignments"),
+    periodKey: v.string(),
+    reason: v.string(),
+  },
+  returns: v.object({ deleted: v.number() }),
+  handler: async (ctx, { kpiAssignmentId, periodKey, reason }) => {
+    const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
+    const assignment = await ctx.db.get(kpiAssignmentId);
+    if (!assignment) throw new Error("KPI assignment not found");
+    await assertEmployeeReadScope(ctx, assignment.employeeId);
+    const cleanReason = reason.trim();
+    if (!cleanReason) throw new Error("A reason is required to delete a submission.");
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", kpiAssignmentId).eq("periodKey", periodKey),
+      )
+      .take(500);
+    let deleted = 0;
+    for (const a of activities) {
+      if (a.status === "locked") continue;
+      await recordAudit(ctx, {
+        entityType: "activity",
+        entityId: a._id,
+        action: "delete_submission_activity",
+        actorUserId: user._id,
+        reason: cleanReason,
+        before: { ...a },
+      });
+      await ctx.db.delete(a._id);
+      deleted++;
+    }
+    if (deleted === 0) {
+      throw new Error("No deletable activities for this KPI and period.");
+    }
+
+    await recomputeMeasurement(ctx, assignment, periodKey);
+
+    // Notify the employee — same channel as approval/rejection decisions.
+    const adminName = await resolveDisplayName(ctx, user);
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", assignment.employeeId))
+      .take(10);
+    const notices = [];
+    for (const target of linked) {
+      if (!target.email || target.isActive === false || target._id === user._id) continue;
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Your ${periodKey} submission was deleted — ${assignment.objective.slice(0, 80)}`,
+        intro: `*${adminName}* deleted your ${periodKey} submission (${deleted} ${deleted === 1 ? "entry" : "entries"}) for “${assignment.objective.slice(0, 120)}”. If work for this period still needs to be recorded, please capture it again.`,
+        panelTitle: "Submission deleted",
+        rows: [
+          { label: "KPI objective", value: assignment.objective.slice(0, 200) },
+          { label: "Period", value: periodKey },
+          { label: "Entries removed", value: String(deleted), strong: true },
+          { label: "Reason", value: cleanReason.slice(0, 500) },
+        ],
+        ctaLabel: "Open Activity Capture",
+        ctaPath: "/activities",
+        inAppTitle: `${periodKey} submission deleted — ${assignment.objective.slice(0, 80)}`,
+        inAppBody: `${adminName}: ${cleanReason.slice(0, 180)}`,
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "activity",
+        entityId: `${kpiAssignmentId}:${periodKey}`,
+        auditAction: "submission_deleted_notice",
+        notices,
+      });
+    }
+    return { deleted };
   },
 });
 

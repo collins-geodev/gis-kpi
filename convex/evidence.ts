@@ -214,6 +214,95 @@ export const saveEvidence = mutation({
   },
 });
 
+/**
+ * One-click reviewer action for the review queue: approve every pending
+ * (submitted/verified) evidence item on a KPI, recompute its gates once, and
+ * send the employee a single combined notification.
+ */
+export const approveAllForAssignment = mutation({
+  args: { kpiAssignmentId: v.id("kpiAssignments") },
+  returns: v.object({ approved: v.number() }),
+  handler: async (ctx, { kpiAssignmentId }) => {
+    const { user } = await requireRole(ctx, [
+      "reviewer",
+      "manager",
+      "kpi_admin",
+      "system_admin",
+    ]);
+    const assignment = await ctx.db.get(kpiAssignmentId);
+    if (!assignment) throw new Error("KPI assignment not found");
+    await assertEmployeeReadScope(ctx, assignment.employeeId);
+
+    const evidence = await ctx.db
+      .query("evidenceFiles")
+      .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
+      .take(500);
+    const pending = evidence.filter((e) =>
+      ["submitted", "verified"].includes(e.reviewStatus),
+    );
+    if (pending.length === 0) return { approved: 0 };
+
+    for (const e of pending) {
+      await ctx.db.patch(e._id, { reviewStatus: "approved" });
+    }
+
+    const measurements = await ctx.db
+      .query("kpiMeasurements")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", kpiAssignmentId),
+      )
+      .take(500);
+    const periods = new Set(measurements.map((m) => m.periodKey));
+    for (const e of pending) if (e.periodKey) periods.add(e.periodKey);
+    for (const periodKey of periods) {
+      await recomputeMeasurement(ctx, assignment, periodKey);
+    }
+
+    await recordAudit(ctx, {
+      entityType: "evidenceFile",
+      entityId: kpiAssignmentId,
+      action: "evidence_bulk_approve",
+      actorUserId: user._id,
+      after: { approved: pending.length, titles: pending.map((e) => e.title.slice(0, 80)) },
+    });
+
+    const reviewerName = await resolveDisplayName(ctx, user);
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", assignment.employeeId))
+      .take(10);
+    const notices = [];
+    for (const target of linked) {
+      if (!target.email || target.isActive === false || target._id === user._id) continue;
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Your evidence was approved — ${assignment.objective.slice(0, 80)}`,
+        intro: `*${reviewerName}* approved ${pending.length === 1 ? "your evidence item" : `all ${pending.length} pending evidence items`} for “${assignment.objective.slice(0, 120)}”. It now counts toward the evidence gate for official scoring.`,
+        panelTitle: "Review decision",
+        rows: [
+          { label: "KPI objective", value: assignment.objective.slice(0, 200) },
+          { label: "Items approved", value: String(pending.length), strong: true },
+        ],
+        ctaLabel: "Open in the dashboard",
+        ctaPath: `/kpi/${kpiAssignmentId}`,
+        inAppTitle: `Evidence approved — ${assignment.objective.slice(0, 80)}`,
+        inAppBody: `${reviewerName} approved ${pending.length} evidence item${pending.length === 1 ? "" : "s"}.`,
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "evidenceFile",
+        entityId: kpiAssignmentId,
+        auditAction: "evidence_decision_approved",
+        notices,
+      });
+    }
+    return { approved: pending.length };
+  },
+});
+
 /** Reviewer decision on an evidence item; approval unblocks scoring gates. */
 export const reviewEvidence = mutation({
   args: {

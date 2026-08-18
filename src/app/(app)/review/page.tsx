@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AccessDenied } from "@/components/access-denied";
 import { formatPercent } from "@convex/lib/format";
-import { CheckCircle2, Inbox, Lock, XCircle } from "lucide-react";
+import { CheckCircle2, FileCheck2, Inbox, Lock, Trash2, XCircle } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 
 export default function ReviewPage() {
@@ -27,9 +27,13 @@ export default function ReviewPage() {
     ["manager", "kpi_admin", "system_admin"].includes(r),
   );
 
+  const isAdmin = roles.some((r) => ["kpi_admin", "system_admin"].includes(r));
+
   const queue = useQuery(api.approvals.reviewQueue, canView ? {} : "skip");
   const approve = useMutation(api.approvals.approveEmployeePeriod);
   const reject = useMutation(api.approvals.rejectSubmission);
+  const approveEvidence = useMutation(api.evidence.approveAllForAssignment);
+  const deleteSubmission = useMutation(api.approvals.deleteSubmission);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -48,6 +52,40 @@ export default function ReviewPage() {
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Rejection failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doApproveEvidence(assignmentId: string) {
+    setBusy(assignmentId);
+    setError(null);
+    try {
+      await approveEvidence({
+        kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Evidence approval failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doDelete(assignmentId: string, periodKey: string, objective: string) {
+    const reason = window.prompt(
+      `Delete the ${periodKey} submission for “${objective.slice(0, 80)}”?\n\nEvery entry is removed for the employee as well, and they are notified with this reason (required):`,
+    );
+    if (!reason?.trim()) return;
+    setBusy(assignmentId);
+    setError(null);
+    try {
+      await deleteSubmission({
+        kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
+        periodKey,
+        reason: reason.trim(),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Deletion failed.");
     } finally {
       setBusy(null);
     }
@@ -170,6 +208,21 @@ export default function ReviewPage() {
                         {i.evidenceRequired &&
                           (i.evidenceComplete ? (
                             <Badge variant="success">evidence ✓</Badge>
+                          ) : i.pendingEvidence > 0 ? (
+                            <>
+                              <Badge variant="info">
+                                evidence submitted ({i.pendingEvidence})
+                              </Badge>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={busy === i.assignmentId}
+                                title={`Approve the ${i.pendingEvidence} pending evidence item${i.pendingEvidence === 1 ? "" : "s"} — the employee is notified`}
+                                onClick={() => doApproveEvidence(i.assignmentId)}
+                              >
+                                <FileCheck2 className="h-4 w-4" /> Approve evidence
+                              </Button>
+                            </>
                           ) : (
                             <Badge variant="warning">evidence needed</Badge>
                           ))}
@@ -191,6 +244,20 @@ export default function ReviewPage() {
                             onClick={() => doReject(i.assignmentId, i.periodKey)}
                           >
                             <XCircle className="h-4 w-4" /> Reject
+                          </Button>
+                        )}
+                        {isAdmin && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground hover:text-critical"
+                            disabled={busy === i.assignmentId}
+                            title="Delete this submission — removed for the employee too; they are notified with your reason (audited)"
+                            onClick={() =>
+                              doDelete(i.assignmentId, i.periodKey, i.objective)
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" /> Delete
                           </Button>
                         )}
                       </div>
