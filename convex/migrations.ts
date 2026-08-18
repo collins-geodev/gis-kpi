@@ -391,6 +391,80 @@ export const alignActivityStatusesWithApprovals = internalMutation({
   },
 });
 
+/**
+ * CLI variant of the review queue's submission delete (no signed-in actor):
+ * removes every non-locked activity for the KPI/period, soft-deletes the
+ * KPI's active evidence, and recomputes measurements. Fully audited; prefer
+ * the UI's Delete button when possible — it additionally notifies the
+ * employee.
+ */
+export const cliDeleteSubmission = internalMutation({
+  args: {
+    canonicalKey: vCanonicalKpiKey,
+    periodKey: v.string(),
+    reason: v.string(),
+  },
+  returns: v.object({
+    assignments: v.number(),
+    deleted: v.number(),
+    evidenceDeleted: v.number(),
+  }),
+  handler: async (ctx, { canonicalKey, periodKey, reason }) => {
+    let assignments = 0;
+    let deleted = 0;
+    let evidenceDeleted = 0;
+    for (const a of await ctx.db.query("kpiAssignments").take(1000)) {
+      if (a.canonicalKey !== canonicalKey) continue;
+      assignments++;
+      const acts = await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", a._id).eq("periodKey", periodKey),
+        )
+        .take(500);
+      for (const act of acts) {
+        if (act.status === "locked") continue;
+        await recordAudit(ctx, {
+          entityType: "activity",
+          entityId: act._id,
+          action: "delete_submission_activity",
+          reason,
+          before: { ...act },
+        });
+        await ctx.db.delete(act._id);
+        deleted++;
+      }
+      const evidence = await ctx.db
+        .query("evidenceFiles")
+        .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", a._id))
+        .take(500);
+      for (const e of evidence) {
+        if (e.retentionState !== "active") continue;
+        if (e.storageId) await ctx.storage.delete(e.storageId);
+        await ctx.db.patch(e._id, { retentionState: "deleted", storageId: undefined });
+        await recordAudit(ctx, {
+          entityType: "evidenceFile",
+          entityId: e._id,
+          action: "delete_submission_evidence",
+          reason,
+          before: { title: e.title, reviewStatus: e.reviewStatus },
+        });
+        evidenceDeleted++;
+      }
+      const ms = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", a._id))
+        .take(500);
+      const periods = new Set(ms.map((m) => m.periodKey));
+      periods.add(periodKey);
+      for (const pk of periods) {
+        await recomputeMeasurement(ctx, a, pk);
+      }
+    }
+    return { assignments, deleted, evidenceDeleted };
+  },
+});
+
 /** Full KPI settings per assignment (CLI audit helper). */
 export const listKpiSettings = internalQuery({
   args: {},
