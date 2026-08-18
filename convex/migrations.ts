@@ -8,6 +8,7 @@ import { v } from "convex/values";
 import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
 import { recomputeMeasurement } from "./measurementsModel";
+import { vCanonicalKpiKey } from "./validators";
 
 /**
  * Change an employee's business staff ID in place (e.g. HR issued a corrected
@@ -219,6 +220,44 @@ export const convertCommercialMaintenanceToErrorBudget = internalMutation({
       });
     }
     return { budget, definitions, assignments, measurementsRecomputed };
+  },
+});
+
+/**
+ * Pin (or unpin, with null) the prior-year baseline on every reduction-mode
+ * assignment of a canonical KPI, so employees only enter the current value at
+ * capture time and the baseline stays fixed all year. Idempotent.
+ */
+export const pinReductionBaseline = internalMutation({
+  args: {
+    canonicalKey: vCanonicalKpiKey,
+    baseline: v.union(v.number(), v.null()),
+  },
+  returns: v.object({ pinned: v.number(), skippedNonReduction: v.number() }),
+  handler: async (ctx, { canonicalKey, baseline }) => {
+    if (baseline !== null && baseline < 0) throw new Error("baseline must be ≥ 0");
+    let pinned = 0;
+    let skippedNonReduction = 0;
+    for (const a of await ctx.db.query("kpiAssignments").take(1000)) {
+      if (a.canonicalKey !== canonicalKey) continue;
+      if (a.measurementMode !== "reduction") {
+        skippedNonReduction++;
+        continue;
+      }
+      const next = baseline ?? undefined;
+      if ((a.pinnedBaseline ?? undefined) === next) continue;
+      await ctx.db.patch(a._id, { pinnedBaseline: next });
+      await recordAudit(ctx, {
+        entityType: "kpiAssignment",
+        entityId: a._id,
+        action: baseline === null ? "unpin_baseline" : "pin_baseline",
+        reason: "Baseline fixed by admin so capture only asks for the current value",
+        before: { pinnedBaseline: a.pinnedBaseline ?? null },
+        after: { pinnedBaseline: baseline },
+      });
+      pinned++;
+    }
+    return { pinned, skippedNonReduction };
   },
 });
 
