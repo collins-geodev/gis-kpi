@@ -163,7 +163,7 @@ export const create = mutation({
     await assertActivityDateInPeriod(ctx, args.periodKey, args.activityAt);
 
     // Period-total modes: one entry IS the period's summary — block duplicates.
-    if (PERIOD_TOTAL_MODES.includes(assignment.measurementMode)) {
+    if (isPeriodTotal(assignment.measurementMode, assignment.canonicalKey)) {
       const existing = (
         await ctx.db
           .query("activities")
@@ -280,6 +280,22 @@ export const listRecentAll = query({
  * modes (count/durationSla/milestone/composite) legitimately accumulate.
  */
 const PERIOD_TOTAL_MODES = ["ratio", "reduction", "binary", "rubric"];
+
+/**
+ * Ratio KPIs whose entries are incremental batch logs rather than one period
+ * summary — numerators/denominators sum across the period (QA batches are
+ * logged as they happen).
+ */
+export const ACCUMULATING_RATIO_KEYS = ["qa_data_quality"];
+
+/** Whether one entry is this KPI's whole period summary (duplicates blocked). */
+function isPeriodTotal(measurementMode: string, canonicalKey: string): boolean {
+  return (
+    PERIOD_TOTAL_MODES.includes(measurementMode) &&
+    !ACCUMULATING_RATIO_KEYS.includes(canonicalKey)
+  );
+}
+
 const DUPLICATE_BLOCKING_STATES = [
   "draft",
   "submitted",
@@ -317,7 +333,7 @@ export const existingForPeriod = query({
     const MEASURED_STATES = ["submitted", "verified", "approved"];
     return {
       count: rows.length,
-      singleEntry: PERIOD_TOTAL_MODES.includes(assignment.measurementMode),
+      singleEntry: isPeriodTotal(assignment.measurementMode, assignment.canonicalKey),
       entries: rows
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, 5)

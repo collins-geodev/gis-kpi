@@ -42,6 +42,11 @@ const clampTs = (ts: number, min?: number, max?: number) =>
 const DATED_FREQUENCIES = ["Daily", "Weekly"];
 /** Modes whose entries add up across the period (period-so-far is meaningful). */
 const ACCUMULATING_MODES = ["count", "durationSla", "milestone", "composite"];
+/** Ratio KPIs captured as incremental batch logs (mirrors the server list). */
+const ACCUMULATING_RATIO_KEYS = ["qa_data_quality"];
+const accumulates = (a: Assignment) =>
+  ACCUMULATING_MODES.includes(a.measurementMode) ||
+  ACCUMULATING_RATIO_KEYS.includes(a.canonicalKey);
 
 type Assignment = {
   id: string;
@@ -62,8 +67,8 @@ type Assignment = {
 /** KPI-specific overrides for the generic mode field labels. */
 const KEY_FIELD_LABELS: Record<string, Record<string, string>> = {
   qa_data_quality: {
-    numerator: "Errors corrected this month",
-    denominator: "Errors identified this month",
+    numerator: "Errors corrected (this batch)",
+    denominator: "Errors identified (this batch)",
   },
 };
 
@@ -302,7 +307,7 @@ export default function ActivitiesPage() {
    */
   const soFar = useMemo(() => {
     if (!selected || !preview) return null;
-    if (!ACCUMULATING_MODES.includes(selected.measurementMode)) return null;
+    if (!accumulates(selected)) return null;
     const others = (existing?.countedInputs ?? []).filter((e) => e.id !== editingId);
     if (others.length === 0) return null;
     try {
@@ -813,6 +818,16 @@ function num(v: number | boolean | undefined): number | undefined {
 function modeHint(a: Assignment): React.ReactNode {
   switch (a.measurementMode) {
     case "ratio":
+      if (ACCUMULATING_RATIO_KEYS.includes(a.canonicalKey)) {
+        return (
+          <>
+            Log each QA batch as it happens — <strong>corrected / identified</strong> in
+            that batch. Entries add up across the month (6/8 this week + 9/9 next week =
+            15/17 so far), and the score always reflects the real volume, whether the
+            month brings fewer or more than usual.
+          </>
+        );
+      }
       return (
         <>
           The denominator is the number of eligible items that{" "}

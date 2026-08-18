@@ -997,6 +997,61 @@ describe("duplicate capture guard", () => {
     expect(cInfo?.singleEntry).toBe(false);
     expect(cInfo?.count).toBe(2);
   });
+
+  test("QA coverage ratio accumulates as batch logs (exempt from the guard)", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    await t.mutation(internal.migrations.convertQaDataQualityToCoverageRatio, {});
+    const empId = await employeeIdByBiz(t, "IKD034860"); // GIS Analyst
+    const { as: emp } = await makeUser(t, {
+      email: "qa@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const qaAssignment = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "qa_data_quality")!._id;
+    });
+    const base = {
+      kpiAssignmentId: qaAssignment,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      description: "QA batch",
+    };
+    // Two batches in the same month both save (ratio, but batch-accumulating).
+    await emp.mutation(api.activities.create, {
+      ...base,
+      title: "QA batch 1",
+      numerator: 6,
+      denominator: 8,
+    });
+    await emp.mutation(api.activities.create, {
+      ...base,
+      title: "QA batch 2",
+      numerator: 9,
+      denominator: 9,
+    });
+    const info = await emp.query(api.activities.existingForPeriod, {
+      kpiAssignmentId: qaAssignment,
+      periodKey: "2026-M08",
+    });
+    expect(info?.singleEntry).toBe(false);
+    expect(info?.count).toBe(2);
+    // The measurement sums the batches: 15/17 vs 100% target.
+    const measurement = await t.run(async (ctx) => {
+      return await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", qaAssignment).eq("periodKey", "2026-M08"),
+        )
+        .first();
+    });
+    expect(measurement?.rawActual).toBeCloseTo(15 / 17, 5);
+    expect(measurement?.cappedAttainment).toBeCloseTo(15 / 17, 5);
+  });
 });
 
 describe("pinned baseline & scoring-block repair", () => {

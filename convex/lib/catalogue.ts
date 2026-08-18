@@ -193,7 +193,7 @@ const qaDataQuality = (weight: number): CanonicalKpiTemplate => ({
     "QA log evidence",
   ],
   scoringNotes:
-    "Coverage ratio (corrected ÷ identified), target 100%. Replaces the workbook's fixed 20/month count so light and heavy months both score fairly — the month's actual volume is the denominator.",
+    "Coverage ratio (corrected ÷ identified), target 100%. Replaces the workbook's fixed 20/month count so light and heavy months both score fairly — the month's actual volume is the denominator. QA batches are logged incrementally; numerators and denominators sum across the month.",
 });
 
 const captureIntegrate = (weight: number): CanonicalKpiTemplate => ({

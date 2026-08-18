@@ -278,14 +278,19 @@ export const convertQaDataQualityToCoverageRatio = internalMutation({
     const METRIC =
       "Correct 100% of the data errors and inconsistencies identified during QA — errors corrected ÷ errors identified, at whatever volume the month brings.";
     const NOTES =
-      "Coverage ratio (corrected ÷ identified), target 100%. Replaces the workbook's fixed 20/month count — the month's actual volume is the denominator.";
+      "Coverage ratio (corrected ÷ identified), target 100%. Replaces the workbook's fixed 20/month count — the month's actual volume is the denominator. QA batches are logged incrementally; numerators and denominators sum across the month.";
     let definitions = 0;
     let assignments = 0;
     let measurementsRecomputed = 0;
 
     for (const d of await ctx.db.query("kpiDefinitions").take(500)) {
       if (d.canonicalKey !== KEY) continue;
-      if (d.measurementMode === "ratio" && d.defaultTarget === 1) continue;
+      if (
+        d.measurementMode === "ratio" &&
+        d.defaultTarget === 1 &&
+        d.scoringNotes === NOTES
+      )
+        continue;
       await ctx.db.patch(d._id, {
         measurementMode: "ratio",
         direction: "higherIsBetter",
