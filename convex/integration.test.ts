@@ -13,6 +13,10 @@ import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
 
+// A work-date inside both 2026-M08 and 2026-Q3 (activity dates must fall
+// inside the period they are logged to).
+const AUG_2026 = Date.UTC(2026, 7, 15, 11);
+
 function harness() {
   return convexTest(schema, modules);
 }
@@ -201,7 +205,7 @@ describe("activity → measurement, evidence gate & approval (#7, #9)", () => {
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
       numerator: 9,
@@ -363,7 +367,7 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
     const activityId = await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
       numerator: 9,
@@ -420,7 +424,7 @@ describe("activity capture: required fields + edit", () => {
     const base = {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
     };
@@ -585,7 +589,7 @@ describe("submission rejection", () => {
     const activityId = await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
       numerator: 9,
@@ -654,7 +658,7 @@ describe("score overrides", () => {
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "10 of 15 planned — only 10 arrived",
       numerator: 10,
@@ -744,7 +748,7 @@ describe("cadence-aware periods", () => {
 
     const base = {
       kpiAssignmentId: assignmentId,
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Training session",
       description: "geospatial onboarding",
       quantity: 1,
@@ -808,7 +812,7 @@ describe("submission compliance & gating", () => {
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
       numerator: 9,
@@ -851,7 +855,7 @@ describe("submission compliance & gating", () => {
     const base = {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
       numerator: 1,
@@ -935,7 +939,7 @@ describe("duplicate capture guard", () => {
     const base = {
       kpiAssignmentId: ratioAssignment,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
       numerator: 9,
@@ -979,7 +983,7 @@ describe("duplicate capture guard", () => {
     const cBase = {
       kpiAssignmentId: countAssignment,
       periodKey: "2026-Q3",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Training session",
       description: "onboarding",
       quantity: 1,
@@ -1025,7 +1029,7 @@ describe("pinned baseline & scoring-block repair", () => {
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "QA errors this month",
       description: "40 errors vs pinned 50",
       currentValue: 40,
@@ -1139,7 +1143,7 @@ describe("account reset & delete", () => {
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
       numerator: 9,
@@ -1222,7 +1226,7 @@ describe("employee-level reset", () => {
     await admin.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
-      activityAt: 1,
+      activityAt: AUG_2026,
       title: "Integrated assets",
       description: "batch",
       numerator: 9,

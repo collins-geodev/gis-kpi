@@ -35,6 +35,16 @@ export const getAssignment = query({
       .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", assignmentId))
       .take(200);
 
+    // Counted entries with raw inputs — powers the day/week breakdown for
+    // daily/weekly KPIs (grouped and scored client-side by the same engine).
+    const MEASURED_STATES = ["submitted", "verified", "approved"];
+    const activities = (
+      await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", assignmentId))
+        .take(500)
+    ).filter((a) => MEASURED_STATES.includes(a.status));
+
     return {
       assignment: {
         id: assignment._id,
@@ -89,6 +99,26 @@ export const getAssignment = query({
         reason: i.reason,
         blocksScoring: i.blocksScoring,
       })),
+      activities: activities
+        .sort((a, b) => b.activityAt - a.activityAt)
+        .map((a) => ({
+          id: a._id,
+          periodKey: a.periodKey,
+          activityAt: a.activityAt,
+          status: a.status,
+          quantity: a.quantity ?? null,
+          numerator: a.numerator ?? null,
+          denominator: a.denominator ?? null,
+          baseline: a.baseline ?? null,
+          currentValue: a.currentValue ?? null,
+          withinThreshold: a.withinThreshold ?? null,
+          eligible: a.eligible ?? null,
+          completed: a.completed ?? null,
+          planned: a.planned ?? null,
+          pass: a.pass ?? null,
+          score: a.score ?? null,
+          maxScore: a.maxScore ?? null,
+        })),
       measurements: measurements
         .sort((a, b) => b.computedAt - a.computedAt)
         .map((m) => ({

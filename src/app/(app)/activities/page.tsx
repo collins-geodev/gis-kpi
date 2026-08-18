@@ -23,8 +23,25 @@ import { aggregateActivityInputs } from "@convex/lib/measure";
 import { computeAttainment } from "@convex/lib/scoring";
 import { formatPercent, normalizeReductionTarget } from "@convex/lib/format";
 import type { Direction, Frequency, MeasurementMode } from "@convex/lib/types";
-import { captureGrainForFrequency } from "@convex/lib/periods";
+import { LAGOS_OFFSET_MS, captureGrainForFrequency } from "@convex/lib/periods";
 import { suggestActivityTitle } from "@/lib/evidence-suggestions";
+
+/** Lagos calendar date ("2026-08-18") of an epoch instant. */
+function lagosDateString(epochMs: number): string {
+  return new Date(epochMs + LAGOS_OFFSET_MS).toISOString().slice(0, 10);
+}
+/** Noon-Lagos epoch for a yyyy-mm-dd date (avoids timezone edge flips). */
+function epochFromLagosDate(date: string): number {
+  const [y, m, d] = date.split("-").map(Number);
+  return Date.UTC(y!, m! - 1, d!, 12) - LAGOS_OFFSET_MS;
+}
+const clampTs = (ts: number, min?: number, max?: number) =>
+  Math.min(Math.max(ts, min ?? ts), max ?? ts);
+
+/** Cadences where the exact work-date matters enough to ask for it. */
+const DATED_FREQUENCIES = ["Daily", "Weekly"];
+/** Modes whose entries add up across the period (period-so-far is meaningful). */
+const ACCUMULATING_MODES = ["count", "durationSla", "milestone", "composite"];
 
 type Assignment = {
   id: string;
@@ -88,6 +105,7 @@ export default function ActivitiesPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [values, setValues] = useState<Record<string, number | boolean>>({});
+  const [activityDate, setActivityDate] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +141,7 @@ export default function ActivitiesPage() {
       if (v !== undefined) inputs[key] = v;
     }
     setValues(inputs);
+    setActivityDate(lagosDateString(editing.activityAt));
     setDone(false);
     setError(null);
   }, [editing]);
@@ -134,6 +153,7 @@ export default function ActivitiesPage() {
     setTitle("");
     setDescription("");
     setValues({});
+    setActivityDate("");
     setError(null);
   }
 
@@ -163,10 +183,11 @@ export default function ActivitiesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, periodKey, editingId]);
 
-  // What's already captured for this (KPI, period) — the duplicate guard.
+  // What's already captured for this (KPI, period) — powers the duplicate
+  // guard and the "period so far" preview (also needed while editing).
   const existing = useQuery(
     api.activities.existingForPeriod,
-    selected && !editingId
+    selected
       ? { kpiAssignmentId: selected.id as Id<"kpiAssignments">, periodKey }
       : "skip",
   );
@@ -196,6 +217,30 @@ export default function ActivitiesPage() {
     setPeriodKey(current.periodKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id, availablePeriods]);
+
+  const selectedPeriod = useMemo(
+    () => (periods ?? []).find((p) => p.periodKey === periodKey),
+    [periods, periodKey],
+  );
+  // Daily/weekly KPIs ask for the exact work-date (accurate backfill + the
+  // day/week breakdown); other cadences stamp save-time clamped to the period.
+  const showDateField = Boolean(
+    selected && DATED_FREQUENCIES.includes(selected.frequency),
+  );
+  const dateMin = selectedPeriod ? lagosDateString(selectedPeriod.startAt) : undefined;
+  const dateMax = lagosDateString(
+    selectedPeriod ? Math.min(selectedPeriod.endAt, Date.now()) : Date.now(),
+  );
+
+  // Default the activity date to today, clamped into the selected period.
+  useEffect(() => {
+    if (editingId) return;
+    const bounded = selectedPeriod
+      ? clampTs(Date.now(), selectedPeriod.startAt, Math.min(selectedPeriod.endAt, Date.now()))
+      : Date.now();
+    setActivityDate(lagosDateString(bounded));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, periodKey, editingId]);
 
   /**
    * Live preview through the REAL scoring engine — what this entry alone
@@ -236,6 +281,56 @@ export default function ActivitiesPage() {
       return null; // required inputs not filled in yet
     }
   }, [selected, values]);
+
+  /**
+   * "Period so far" — this entry PLUS the already-counted entries of the same
+   * (KPI, period), through the same engine. Only shown for accumulating modes,
+   * so daily/weekly logging visibly builds the period's running score.
+   */
+  const soFar = useMemo(() => {
+    if (!selected || !preview) return null;
+    if (!ACCUMULATING_MODES.includes(selected.measurementMode)) return null;
+    const others = (existing?.countedInputs ?? []).filter((e) => e.id !== editingId);
+    if (others.length === 0) return null;
+    try {
+      const input = aggregateActivityInputs(
+        selected.measurementMode as MeasurementMode,
+        selected.direction as Direction,
+        selected.target,
+        [
+          ...others.map((e) => ({
+            activityAt: e.activityAt,
+            quantity: e.quantity ?? undefined,
+            numerator: e.numerator ?? undefined,
+            denominator: e.denominator ?? undefined,
+            baseline: e.baseline ?? undefined,
+            currentValue: e.currentValue ?? undefined,
+            withinThreshold: e.withinThreshold ?? undefined,
+            eligible: e.eligible ?? undefined,
+            completed: e.completed ?? undefined,
+            planned: e.planned ?? undefined,
+            pass: e.pass ?? undefined,
+            score: e.score ?? undefined,
+            maxScore: e.maxScore ?? undefined,
+          })),
+          {
+            activityAt: Number.MAX_SAFE_INTEGER,
+            quantity: num(values.quantity),
+            numerator: num(values.numerator),
+            denominator: num(values.denominator),
+            withinThreshold: num(values.withinThreshold),
+            eligible: num(values.eligible),
+            completed: num(values.completed),
+            planned: num(values.planned),
+          },
+        ],
+      );
+      const r = computeAttainment(input);
+      return r.hasData ? r : null;
+    } catch {
+      return null;
+    }
+  }, [selected, preview, existing, editingId, values]);
 
   if (assignments === undefined) return <Skeleton className="h-64" />;
 
@@ -284,14 +379,24 @@ export default function ActivitiesPage() {
             ? values.pass
             : undefined,
     };
+    // Dated cadences use the chosen work-date (noon Lagos); the rest stamp
+    // save-time clamped into the period so late logging stays inside it.
+    const activityAt =
+      showDateField && activityDate
+        ? epochFromLagosDate(activityDate)
+        : clampTs(Date.now(), selectedPeriod?.startAt, selectedPeriod?.endAt);
     try {
       if (editingId) {
-        await updateActivity({ activityId: editingId, ...payload });
+        await updateActivity({
+          activityId: editingId,
+          ...(showDateField ? { activityAt } : {}),
+          ...payload,
+        });
         resetForm();
       } else {
         await create({
           kpiAssignmentId: selected.id as Id<"kpiAssignments">,
-          activityAt: Date.now(),
+          activityAt,
           ...payload,
         });
         setTitle("");
@@ -406,6 +511,25 @@ export default function ActivitiesPage() {
                 />
               </Row>
 
+              {showDateField && (
+                <Row label="Activity date" required>
+                  <input
+                    type="date"
+                    required
+                    value={activityDate}
+                    min={dateMin}
+                    max={dateMax}
+                    onChange={(e) => setActivityDate(e.target.value)}
+                    aria-label="The day the work actually happened (within the selected period)"
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    The day the work actually happened — backfilling is fine, it just
+                    has to stay inside the selected period.
+                  </p>
+                </Row>
+              )}
+
               {baselinePinned && (
                 <p className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
                   Baseline (pinned by admin):{" "}
@@ -519,13 +643,15 @@ export default function ActivitiesPage() {
                   className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
                   aria-live="polite"
                 >
-                  <span className="text-muted-foreground">Computes to:</span>
+                  <span className="text-muted-foreground">
+                    {soFar ? "This entry:" : "Computes to:"}
+                  </span>
                   <span className="tabular font-semibold">
                     {preview.cappedAttainment !== null
                       ? formatPercent(preview.cappedAttainment)
                       : "—"}
                   </span>
-                  <StatusBadge status={preview.status as never} />
+                  {!soFar && <StatusBadge status={preview.status as never} />}
                   {preview.attainment !== null &&
                     preview.cappedAttainment !== null &&
                     preview.attainment > preview.cappedAttainment && (
@@ -533,6 +659,19 @@ export default function ActivitiesPage() {
                         (raw {formatPercent(preview.attainment)}, capped)
                       </span>
                     )}
+                  {soFar && (
+                    <>
+                      <span className="text-muted-foreground">
+                        · {selectedPeriod?.label ?? "Period"} so far:
+                      </span>
+                      <span className="tabular font-semibold">
+                        {soFar.cappedAttainment !== null
+                          ? formatPercent(soFar.cappedAttainment)
+                          : "—"}
+                      </span>
+                      <StatusBadge status={soFar.status as never} />
+                    </>
+                  )}
                 </div>
               )}
 

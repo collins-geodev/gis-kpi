@@ -25,6 +25,15 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatKpiTarget, formatNumber, formatPercent } from "@convex/lib/format";
+import { aggregateActivityInputs } from "@convex/lib/measure";
+import { computeAttainment } from "@convex/lib/scoring";
+import type { Direction, MeasurementMode } from "@convex/lib/types";
+import {
+  lagosDayKeyOf,
+  lagosWeekKeyOf,
+  lagosWeekLabelOf,
+} from "@convex/lib/periods";
+import { StatusBadge } from "@/components/status-badge";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { ScoreOverridePanel } from "@/components/score-override-panel";
 import { ArrowLeft, GaugeCircle, Lock } from "lucide-react";
@@ -53,7 +62,7 @@ export default function KpiDetailPage() {
     );
   }
 
-  const { assignment, employee, definition, issues, measurements } = data;
+  const { assignment, employee, definition, issues, measurements, activities } = data;
 
   return (
     <div className="space-y-6">
@@ -203,6 +212,18 @@ export default function KpiDetailPage() {
 
       <ScoreOverridePanel assignmentId={assignment.id as Id<"kpiAssignments">} />
 
+      {/* Day/week trend for daily & weekly cadences — informational only; the
+          official score stays the period aggregate. */}
+      {["Daily", "Weekly"].includes(assignment.frequency) && activities.length > 0 && (
+        <CadenceBreakdown
+          frequency={assignment.frequency}
+          measurementMode={assignment.measurementMode}
+          direction={assignment.direction}
+          target={assignment.target}
+          activities={activities}
+        />
+      )}
+
       {/* Measurements */}
       <Card>
         <CardHeader>
@@ -251,6 +272,134 @@ export default function KpiDetailPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+type BreakdownActivity = {
+  id: string;
+  activityAt: number;
+  quantity: number | null;
+  numerator: number | null;
+  denominator: number | null;
+  baseline: number | null;
+  currentValue: number | null;
+  withinThreshold: number | null;
+  eligible: number | null;
+  completed: number | null;
+  planned: number | null;
+  pass: boolean | null;
+  score: number | null;
+  maxScore: number | null;
+};
+
+/**
+ * Groups counted entries by Lagos day (Daily KPIs) or ISO week (Weekly KPIs)
+ * and scores each group through the same deterministic engine — a trend view
+ * of what was actually done, while the official score stays the period total.
+ */
+function CadenceBreakdown({
+  frequency,
+  measurementMode,
+  direction,
+  target,
+  activities,
+}: {
+  frequency: string;
+  measurementMode: string;
+  direction: string;
+  target: number;
+  activities: BreakdownActivity[];
+}) {
+  const byGroup = new Map<string, { label: string; entries: BreakdownActivity[] }>();
+  for (const a of activities) {
+    const key =
+      frequency === "Daily" ? lagosDayKeyOf(a.activityAt) : lagosWeekKeyOf(a.activityAt);
+    const label =
+      frequency === "Daily"
+        ? new Date(a.activityAt).toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            timeZone: "Africa/Lagos",
+          })
+        : `${lagosWeekKeyOf(a.activityAt).split("-")[1]} · ${lagosWeekLabelOf(a.activityAt)}`;
+    const group = byGroup.get(key) ?? { label, entries: [] };
+    group.entries.push(a);
+    byGroup.set(key, group);
+  }
+
+  const rows = [...byGroup.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, 12)
+    .map(([key, g]) => {
+      try {
+        const input = aggregateActivityInputs(
+          measurementMode as MeasurementMode,
+          direction as Direction,
+          target,
+          g.entries.map((e) => ({
+            activityAt: e.activityAt,
+            quantity: e.quantity ?? undefined,
+            numerator: e.numerator ?? undefined,
+            denominator: e.denominator ?? undefined,
+            baseline: e.baseline ?? undefined,
+            currentValue: e.currentValue ?? undefined,
+            withinThreshold: e.withinThreshold ?? undefined,
+            eligible: e.eligible ?? undefined,
+            completed: e.completed ?? undefined,
+            planned: e.planned ?? undefined,
+            pass: e.pass ?? undefined,
+            score: e.score ?? undefined,
+            maxScore: e.maxScore ?? undefined,
+          })),
+        );
+        const r = computeAttainment(input);
+        return { key, label: g.label, entries: g.entries.length, result: r };
+      } catch {
+        return { key, label: g.label, entries: g.entries.length, result: null };
+      }
+    });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {frequency === "Daily" ? "Daily" : "Weekly"} breakdown
+        </CardTitle>
+        <CardDescription>
+          Each {frequency === "Daily" ? "day" : "week"} scored by the same engine —
+          informational trend; the official score is the period total above.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{frequency === "Daily" ? "Day" : "Week"}</TableHead>
+              <TableHead className="text-right">Entries</TableHead>
+              <TableHead className="text-right">Computes to</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => (
+              <TableRow key={r.key}>
+                <TableCell>{r.label}</TableCell>
+                <TableCell className="tabular text-right">{r.entries}</TableCell>
+                <TableCell className="tabular text-right">
+                  {r.result?.cappedAttainment != null
+                    ? formatPercent(r.result.cappedAttainment)
+                    : "—"}
+                </TableCell>
+                <TableCell>
+                  {r.result ? <StatusBadge status={r.result.status as never} /> : "—"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 

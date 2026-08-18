@@ -48,6 +48,28 @@ async function assertPeriodMatchesCadence(
   }
 }
 
+/**
+ * The activity date must fall inside the tracking period it is logged to —
+ * otherwise day/week breakdowns and backfilled entries would be mis-dated.
+ * Unknown period keys are tolerated (consistent with assertPeriodMatchesCadence).
+ */
+async function assertActivityDateInPeriod(
+  ctx: QueryCtx,
+  periodKey: string,
+  activityAt: number,
+): Promise<void> {
+  const period = await ctx.db
+    .query("trackingPeriods")
+    .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
+    .first();
+  if (!period) return;
+  if (activityAt < period.startAt || activityAt > period.endAt) {
+    throw new Error(
+      `Activity date must fall inside ${period.label} — pick the day the work actually happened, or switch the period.`,
+    );
+  }
+}
+
 /** Inputs each measurement mode must supply — capture is all-fields-required. */
 const REQUIRED_INPUTS: Record<string, string[]> = {
   ratio: ["numerator", "denominator"],
@@ -138,6 +160,7 @@ export const create = mutation({
     await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey, {
       isAdmin,
     });
+    await assertActivityDateInPeriod(ctx, args.periodKey, args.activityAt);
 
     // Period-total modes: one entry IS the period's summary — block duplicates.
     if (PERIOD_TOTAL_MODES.includes(assignment.measurementMode)) {
@@ -286,9 +309,12 @@ export const existingForPeriod = query({
         .withIndex("by_assignment_period", (q) =>
           q.eq("kpiAssignmentId", kpiAssignmentId).eq("periodKey", periodKey),
         )
-        .take(50)
+        .take(100)
     ).filter((a) => DUPLICATE_BLOCKING_STATES.includes(a.status));
 
+    // Raw inputs of the entries that count toward the measurement, so the
+    // capture form can preview "period so far" through the real engine.
+    const MEASURED_STATES = ["submitted", "verified", "approved"];
     return {
       count: rows.length,
       singleEntry: PERIOD_TOTAL_MODES.includes(assignment.measurementMode),
@@ -296,6 +322,24 @@ export const existingForPeriod = query({
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, 5)
         .map((a) => ({ id: a._id, title: a.title, status: a.status })),
+      countedInputs: rows
+        .filter((a) => MEASURED_STATES.includes(a.status))
+        .map((a) => ({
+          id: a._id,
+          activityAt: a.activityAt,
+          quantity: a.quantity ?? null,
+          numerator: a.numerator ?? null,
+          denominator: a.denominator ?? null,
+          baseline: a.baseline ?? null,
+          currentValue: a.currentValue ?? null,
+          withinThreshold: a.withinThreshold ?? null,
+          eligible: a.eligible ?? null,
+          completed: a.completed ?? null,
+          planned: a.planned ?? null,
+          pass: a.pass ?? null,
+          score: a.score ?? null,
+          maxScore: a.maxScore ?? null,
+        })),
     };
   },
 });
@@ -391,6 +435,7 @@ export const update = mutation({
   args: {
     activityId: v.id("activities"),
     periodKey: v.string(),
+    activityAt: v.optional(v.number()),
     title: v.string(),
     description: v.string(),
     quantity: v.optional(v.number()),
@@ -440,11 +485,14 @@ export const update = mutation({
     await assertPeriodMatchesCadence(ctx, assignment.frequency, args.periodKey, {
       isAdmin,
     });
+    const activityAt = args.activityAt ?? activity.activityAt;
+    await assertActivityDateInPeriod(ctx, args.periodKey, activityAt);
 
     const before = { ...activity };
     const oldPeriodKey = activity.periodKey;
     await ctx.db.patch(args.activityId, {
       periodKey: args.periodKey,
+      activityAt,
       title: args.title.slice(0, 300),
       description: args.description.slice(0, 4000),
       quantity: args.quantity,
@@ -494,6 +542,7 @@ export const periods = query({
         label: p.label,
         grain: p.grain,
         startAt: p.startAt,
+        endAt: p.endAt,
       }));
   },
 });

@@ -153,6 +153,40 @@ export function cadencePeriodKey(freq: Frequency, periodKey: string): string {
   return periodKey;
 }
 
+// --- Day/week grouping of activity timestamps (for incremental breakdowns) --
+
+/** Lagos calendar-day key ("2026-08-18") for an epoch instant. */
+export function lagosDayKeyOf(epochMs: number): string {
+  const d = new Date(epochMs + LAGOS_OFFSET_MS);
+  return dayKey(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/** Start (Monday 00:00 Lagos) of the ISO week containing an epoch instant. */
+export function lagosWeekStartOf(epochMs: number): number {
+  const d = new Date(epochMs + LAGOS_OFFSET_MS);
+  const dow = (d.getUTCDay() + 6) % 7; // 0 Mon .. 6 Sun
+  return lagos(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - dow);
+}
+
+/** ISO-8601 week key ("2026-W34", Monday-based, Lagos time) for an instant. */
+export function lagosWeekKeyOf(epochMs: number): string {
+  // ISO week number = week containing the Thursday of this week.
+  const thursday = new Date(lagosWeekStartOf(epochMs) + LAGOS_OFFSET_MS);
+  thursday.setUTCDate(thursday.getUTCDate() + 3);
+  const isoYear = thursday.getUTCFullYear();
+  const jan1 = Date.UTC(isoYear, 0, 1);
+  const week = Math.floor((Date.UTC(isoYear, thursday.getUTCMonth(), thursday.getUTCDate()) - jan1) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return weekKey(isoYear, week);
+}
+
+/** Human label for a Lagos ISO week ("Mon 17 – Sun 23 Aug"). */
+export function lagosWeekLabelOf(epochMs: number): string {
+  const start = new Date(lagosWeekStartOf(epochMs) + LAGOS_OFFSET_MS);
+  const end = new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]!.slice(0, 3)}`;
+  return `Mon ${fmt(start)} – Sun ${fmt(end)}`;
+}
+
 /** Whether an epoch-ms timestamp is a Lagos business day (Mon–Fri). */
 export function isLagosBusinessDay(epochMs: number): boolean {
   const local = new Date(epochMs + LAGOS_OFFSET_MS);
