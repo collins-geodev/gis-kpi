@@ -59,6 +59,14 @@ type Assignment = {
   scoringBlocked: boolean;
 };
 
+/** KPI-specific overrides for the generic mode field labels. */
+const KEY_FIELD_LABELS: Record<string, Record<string, string>> = {
+  qa_data_quality: {
+    numerator: "Errors corrected this month",
+    denominator: "Errors identified this month",
+  },
+};
+
 const MODE_FIELDS: Record<
   string,
   { name: string; label: string; kind: "number" | "bool" }[]
@@ -172,7 +180,12 @@ export default function ActivitiesPage() {
       fld.name === "quantity"
         ? { ...fld, label: "Count found this period (e.g. errors)" }
         : fld,
-    );
+    )
+    .map((fld) => {
+      const override =
+        selected && KEY_FIELD_LABELS[selected.canonicalKey]?.[fld.name];
+      return override ? { ...fld, label: override } : fld;
+    });
 
   // The title is fully auto-generated from the KPI + period (read-only field).
   useEffect(() => {
@@ -803,9 +816,11 @@ function modeHint(a: Assignment): React.ReactNode {
       return (
         <>
           The denominator is the number of eligible items that{" "}
-          <strong>actually existed</strong> this period (e.g. projects that came in) — not
-          an aspirational quota. If 10 came and you handled all 10, enter 10 / 10. Entries
-          in the same period add up.
+          <strong>actually existed</strong> this period (e.g. items that came in) — not an
+          aspirational quota. If 10 came and you handled all 10, enter 10 / 10; fewer or
+          more than usual is fine — the score adjusts to the real volume. One entry
+          summarizes the period: as the numbers grow, <strong>edit it</strong> (pencil
+          icon under Recent activities) and the score recomputes.
         </>
       );
     case "count":

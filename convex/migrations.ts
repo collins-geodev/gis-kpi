@@ -260,6 +260,80 @@ export const pinReductionBaseline = internalMutation({
   },
 });
 
+/**
+ * Convert the QA data-quality KPI from a fixed monthly count (20) to a
+ * coverage ratio: errors corrected ÷ errors identified, target 100%. The
+ * month's real workload becomes the denominator, so both light (<20) and
+ * heavy (>20) months score fairly. Idempotent.
+ */
+export const convertQaDataQualityToCoverageRatio = internalMutation({
+  args: {},
+  returns: v.object({
+    definitions: v.number(),
+    assignments: v.number(),
+    measurementsRecomputed: v.number(),
+  }),
+  handler: async (ctx) => {
+    const KEY = "qa_data_quality" as const;
+    const METRIC =
+      "Correct 100% of the data errors and inconsistencies identified during QA — errors corrected ÷ errors identified, at whatever volume the month brings.";
+    const NOTES =
+      "Coverage ratio (corrected ÷ identified), target 100%. Replaces the workbook's fixed 20/month count — the month's actual volume is the denominator.";
+    let definitions = 0;
+    let assignments = 0;
+    let measurementsRecomputed = 0;
+
+    for (const d of await ctx.db.query("kpiDefinitions").take(500)) {
+      if (d.canonicalKey !== KEY) continue;
+      if (d.measurementMode === "ratio" && d.defaultTarget === 1) continue;
+      await ctx.db.patch(d._id, {
+        measurementMode: "ratio",
+        direction: "higherIsBetter",
+        targetType: "percentage",
+        defaultTarget: 1,
+        canonicalMetric: METRIC,
+        scoringNotes: NOTES,
+      });
+      definitions++;
+    }
+
+    for (const a of await ctx.db.query("kpiAssignments").take(1000)) {
+      if (a.canonicalKey !== KEY) continue;
+      if (a.measurementMode !== "ratio" || a.target !== 1) {
+        await ctx.db.patch(a._id, {
+          measurementMode: "ratio",
+          direction: "higherIsBetter",
+          targetType: "percentage",
+          target: 1,
+          metric: METRIC,
+        });
+        assignments++;
+      }
+      const updated = (await ctx.db.get(a._id))!;
+      const measurements = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", a._id))
+        .take(500);
+      for (const m of measurements) {
+        await recomputeMeasurement(ctx, updated, m.periodKey);
+        measurementsRecomputed++;
+      }
+    }
+
+    if (definitions + assignments > 0) {
+      await recordAudit(ctx, {
+        entityType: "kpiDefinition",
+        entityId: KEY,
+        action: "convert_to_coverage_ratio",
+        reason:
+          "Fixed 20/month count penalized light months and ignored heavy ones; coverage ratio scores against the month's actual identified errors.",
+        after: { definitions, assignments, measurementsRecomputed },
+      });
+    }
+    return { definitions, assignments, measurementsRecomputed };
+  },
+});
+
 /** Full KPI settings per assignment (CLI audit helper). */
 export const listKpiSettings = internalQuery({
   args: {},

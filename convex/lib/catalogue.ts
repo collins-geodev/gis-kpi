@@ -178,17 +178,22 @@ const qaDataQuality = (weight: number): CanonicalKpiTemplate => ({
   canonicalObjective:
     "Perform quality assurance checks on all incoming and existing GIS data to ensure accuracy and completeness.",
   canonicalMetric:
-    "Identify and correct an average of 20 data errors or inconsistencies per month.",
-  measurementMode: "count",
+    "Correct 100% of the data errors and inconsistencies identified during QA — errors corrected ÷ errors identified, at whatever volume the month brings.",
+  measurementMode: "ratio",
   direction: "higherIsBetter",
-  targetType: "number",
-  target: 20,
-  unit: "errors corrected",
+  targetType: "percentage",
+  target: 1,
+  unit: "errors",
   frequency: "Monthly",
   weight,
   evidenceRequired: true,
-  requiredInputs: ["Errors identified & corrected (count)", "QA log evidence"],
-  scoringNotes: "Count vs monthly target of 20.",
+  requiredInputs: [
+    "Errors corrected (numerator)",
+    "Errors identified (denominator)",
+    "QA log evidence",
+  ],
+  scoringNotes:
+    "Coverage ratio (corrected ÷ identified), target 100%. Replaces the workbook's fixed 20/month count so light and heavy months both score fairly — the month's actual volume is the denominator.",
 });
 
 const captureIntegrate = (weight: number): CanonicalKpiTemplate => ({
