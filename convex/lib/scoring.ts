@@ -10,7 +10,7 @@
  * the 2026 baseline) -> optional normalized score (only shown when the org
  * explicitly enables it, always labelled).
  */
-import { clamp, round } from "./format";
+import { clamp, formatPercent, normalizeReductionTarget, round } from "./format";
 import {
   DEFAULT_THRESHOLDS,
   statusFromAttainment,
@@ -136,13 +136,29 @@ export function computeAttainment(
     case "reduction": {
       const baseline = req(input.baseline, "baseline", mode);
       const current = req(input.current, "current", mode);
+      // A reduction target is a fraction of the baseline (0.2 = 20%); a value
+      // above 1 is a percent-encoded workbook artefact (e.g. Number/20).
+      const targetFraction = normalizeReductionTarget(target);
+      const normNote =
+        targetFraction !== target
+          ? `Target ${target} interpreted as a ${formatPercent(targetFraction)} reduction. `
+          : "";
       if (baseline === 0) {
-        note = "Baseline is zero — reduction undefined, no data.";
+        if (current === 0) {
+          // Zero errors in the reference period and zero now: sustained
+          // perfection — scored as met, not as missing data.
+          rawActual = 0;
+          attainment = 1;
+          note = `${normNote}Baseline and current are both zero — perfection sustained, scored as met.`;
+          break;
+        }
+        note = `${normNote}Baseline is zero with a nonzero current — reduction undefined, no data.`;
         break;
       }
       // Achieved reduction fraction vs the target reduction fraction.
       rawActual = (baseline - current) / baseline;
-      attainment = target === 0 ? null : rawActual / target;
+      attainment = targetFraction === 0 ? null : rawActual / targetFraction;
+      note = normNote.trim();
       break;
     }
     case "durationSla": {

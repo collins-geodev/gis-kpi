@@ -24,7 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatNumber, formatPercent, formatTargetValue } from "@convex/lib/format";
+import { formatKpiTarget, formatNumber, formatPercent } from "@convex/lib/format";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { ScoreOverridePanel } from "@/components/score-override-panel";
 import { ArrowLeft, GaugeCircle, Lock } from "lucide-react";
@@ -103,7 +103,11 @@ export default function KpiDetailPage() {
             <div className="grid grid-cols-2 gap-3">
               <Field label="Weight">{assignment.weight}</Field>
               <Field label="Target">
-                {formatTargetValue(assignment.target, assignment.targetType)}
+                {formatKpiTarget(
+                  assignment.target,
+                  assignment.targetType,
+                  assignment.measurementMode,
+                )}
               </Field>
               <Field label="Cadence">{assignment.frequency}</Field>
               <Field label="Measurement">

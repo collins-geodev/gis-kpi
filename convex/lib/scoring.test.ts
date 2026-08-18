@@ -104,15 +104,50 @@ describe("computeAttainment — reduction", () => {
     expect(r.rawActual).toBe(0.1);
     expect(r.attainment).toBe(0.5);
   });
-  it("missing/zero baseline is no data", () => {
+  it("zero baseline with zero current is sustained perfection (met)", () => {
     const r = computeAttainment({
       mode: "reduction",
       target: 0.2,
       baseline: 0,
       current: 0,
     });
+    expect(r.hasData).toBe(true);
+    expect(r.attainment).toBe(1);
+    expect(r.cappedAttainment).toBe(1);
+    expect(r.status).toBe("on_target");
+    expect(r.note).toMatch(/perfection sustained/i);
+  });
+  it("zero baseline with a nonzero current is no data", () => {
+    const r = computeAttainment({
+      mode: "reduction",
+      target: 0.2,
+      baseline: 0,
+      current: 3,
+    });
     expect(r.hasData).toBe(false);
     expect(r.status).toBe("no_data");
+  });
+  it("normalizes a percent-encoded target (workbook Number/20 means 20%)", () => {
+    const r = computeAttainment({
+      mode: "reduction",
+      target: 20,
+      baseline: 50,
+      current: 40,
+    });
+    expect(r.rawActual).toBe(0.2);
+    expect(r.attainment).toBe(1);
+    expect(r.status).toBe("on_target");
+    expect(r.note).toMatch(/interpreted as a 20% reduction/i);
+  });
+  it("percent-encoded target still gives linear partial credit", () => {
+    const r = computeAttainment({
+      mode: "reduction",
+      target: 20,
+      baseline: 50,
+      current: 45,
+    });
+    expect(r.rawActual).toBe(0.1);
+    expect(r.attainment).toBe(0.5);
   });
   it("over-achievement is capped", () => {
     const r = computeAttainment({

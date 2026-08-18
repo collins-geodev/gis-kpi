@@ -284,11 +284,11 @@ export const ROLE_TEMPLATES: Record<JobRole, CanonicalKpiTemplate[]> = {
       canonicalObjective:
         "Ensure the accuracy and quality of all GIS data during the maintenance window with the Commercial department.",
       canonicalMetric:
-        "Reduce identified errors by 20% versus the previous year (source records this as Number/20 — unit mismatch to resolve).",
+        "Reduce identified errors by 20% versus the previous-year baseline.",
       measurementMode: "reduction",
       direction: "lowerIsBetter",
-      targetType: "number",
-      target: 20,
+      targetType: "percentage",
+      target: 0.2,
       unit: "errors",
       frequency: "Monthly",
       weight: 10,
@@ -299,8 +299,7 @@ export const ROLE_TEMPLATES: Record<JobRole, CanonicalKpiTemplate[]> = {
         "Maintenance-window QA evidence",
       ],
       scoringNotes:
-        "Source metric says 'reduce by 20%' but is typed Number with target 20 — flagged as a unit mismatch; final scoring blocked until an admin resolves the target type.",
-      needsClarification: true,
+        "Reduction vs prior-year baseline with a 20% target. The source workbook typed this as Number/20; resolved to Percentage/0.2 (the engine also self-normalizes percent-encoded reduction targets).",
     },
     {
       ...assetIntegration(20),

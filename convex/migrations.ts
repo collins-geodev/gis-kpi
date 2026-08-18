@@ -3,9 +3,11 @@
  * UI. Each is idempotent so re-running is safe.
  */
 import { internalMutation } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
+import { recomputeMeasurement } from "./measurementsModel";
 
 /**
  * Change an employee's business staff ID in place (e.g. HR issued a corrected
@@ -45,6 +47,100 @@ export const recomputeScoringBlocks = internalMutation({
       });
     }
     return { assignments: assignments.length, blocked, unblocked };
+  },
+});
+
+/**
+ * Resolve the commercial-maintenance unit mismatch: the source workbook typed
+ * "reduce errors by 20%" as Number/20, which made the reduction engine score
+ * a met 20% drop as 1% attainment. Applies the approved resolution
+ * (Percentage/0.2) to the seeded definition and every assignment, approves the
+ * open unit_mismatch data-quality issue, recomputes scoring blocks, and
+ * recomputes every existing measurement for the affected assignments.
+ */
+export const resolveCommercialMaintenanceTarget = internalMutation({
+  args: {},
+  returns: v.object({
+    definitions: v.number(),
+    assignments: v.number(),
+    issuesApproved: v.number(),
+    measurementsRecomputed: v.number(),
+  }),
+  handler: async (ctx) => {
+    const KEY = "commercial_maintenance_quality" as const;
+    let definitions = 0;
+    let assignments = 0;
+    let issuesApproved = 0;
+    let measurementsRecomputed = 0;
+
+    for (const d of await ctx.db.query("kpiDefinitions").take(500)) {
+      if (d.canonicalKey !== KEY) continue;
+      if (d.targetType === "percentage" && d.defaultTarget === 0.2) continue;
+      await ctx.db.patch(d._id, {
+        targetType: "percentage",
+        defaultTarget: 0.2,
+        needsClarification: false,
+        scoringNotes:
+          "Reduction vs prior-year baseline with a 20% target. The source workbook typed this as Number/20; resolved to Percentage/0.2.",
+      });
+      definitions++;
+    }
+
+    const affected: Doc<"kpiAssignments">[] = [];
+    for (const a of await ctx.db.query("kpiAssignments").take(1000)) {
+      if (a.canonicalKey !== KEY) continue;
+      if (a.targetType !== "percentage" || a.target !== 0.2) {
+        await ctx.db.patch(a._id, { targetType: "percentage", target: 0.2 });
+        assignments++;
+      }
+      affected.push(a);
+    }
+
+    // Approve the open unit-mismatch issue(s) — this is the admin resolution
+    // the issue was waiting for, applied in data above.
+    for (const i of await ctx.db
+      .query("dataQualityIssues")
+      .withIndex("by_category", (q) => q.eq("category", "unit_mismatch"))
+      .take(100)) {
+      if (i.canonicalKey !== KEY) continue;
+      if (["approved", "rejected", "resolved"].includes(i.status)) continue;
+      await ctx.db.patch(i._id, {
+        status: "approved",
+        resolutionNote:
+          "Applied via migrations:resolveCommercialMaintenanceTarget — target resolved to Percentage/0.2 on the definition and all assignments.",
+        resolvedAt: Date.now(),
+      });
+      issuesApproved++;
+    }
+
+    for (const a of affected) {
+      const fresh = await ctx.db.get(a._id);
+      if (!fresh) continue;
+      const blocked = await isStillBlocked(ctx, fresh);
+      if (fresh.scoringBlocked !== blocked) {
+        await ctx.db.patch(fresh._id, { scoringBlocked: blocked });
+      }
+      const measurements = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", fresh._id))
+        .take(500);
+      const updated = (await ctx.db.get(fresh._id))!;
+      for (const m of measurements) {
+        await recomputeMeasurement(ctx, updated, m.periodKey);
+        measurementsRecomputed++;
+      }
+    }
+
+    if (definitions + assignments + issuesApproved > 0) {
+      await recordAudit(ctx, {
+        entityType: "kpiDefinition",
+        entityId: KEY,
+        action: "resolve_unit_mismatch",
+        reason: "Reduce-by-20% typed as Number/20 in the source workbook",
+        after: { definitions, assignments, issuesApproved, measurementsRecomputed },
+      });
+    }
+    return { definitions, assignments, issuesApproved, measurementsRecomputed };
   },
 });
 

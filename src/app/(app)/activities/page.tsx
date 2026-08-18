@@ -21,7 +21,7 @@ import { CheckCircle2, ClipboardList, Loader2, Pencil, Trash2, X } from "lucide-
 import { StatusBadge } from "@/components/status-badge";
 import { aggregateActivityInputs } from "@convex/lib/measure";
 import { computeAttainment } from "@convex/lib/scoring";
-import { formatPercent } from "@convex/lib/format";
+import { formatPercent, normalizeReductionTarget } from "@convex/lib/format";
 import type { Direction, Frequency, MeasurementMode } from "@convex/lib/types";
 import { captureGrainForFrequency } from "@convex/lib/periods";
 import { suggestActivityTitle } from "@/lib/evidence-suggestions";
@@ -354,9 +354,11 @@ export default function ActivitiesPage() {
                   <Badge variant="muted">weight {selected.weight}</Badge>
                   <Badge variant="info">
                     target{" "}
-                    {selected.targetType === "percentage"
-                      ? formatPercent(selected.target)
-                      : selected.target}
+                    {selected.measurementMode === "reduction"
+                      ? formatPercent(normalizeReductionTarget(selected.target))
+                      : selected.targetType === "percentage"
+                        ? formatPercent(selected.target)
+                        : selected.target}
                   </Badge>
                   {selected.evidenceRequired && (
                     <Badge variant="warning">evidence required</Badge>
@@ -680,7 +682,8 @@ function modeHint(a: Assignment): React.ReactNode {
           Count the <strong>same thing</strong> in both boxes — e.g. QA errors found.{" "}
           <strong>Baseline</strong> = how many there were in the agreed reference period
           (e.g. same month last year); <strong>current</strong> = how many this period.
-          Worked example with the {formatPercent(a.target)} reduction target: baseline 50
+          Worked example with the {formatPercent(normalizeReductionTarget(a.target))}{" "}
+          reduction target: baseline 50
           → current 40 is a 20% drop = <strong>target met (100%)</strong>; current 45 is
           only a 10% drop = 50% attainment. Use whole counts, keep the baseline fixed all
           year, and state both numbers in your notes.

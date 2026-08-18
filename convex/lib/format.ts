@@ -39,6 +39,31 @@ export function formatTargetValue(
     : formatNumber(value, fractionDigits);
 }
 
+/**
+ * A reduction target is a fraction of the baseline, so it can never legitimately
+ * exceed 1. A value above 1 is a percent-encoded workbook artefact (e.g. 20
+ * meaning "reduce by 20%") and is normalized to its decimal form.
+ */
+export function normalizeReductionTarget(target: number): number {
+  return target > 1 ? target / 100 : target;
+}
+
+/**
+ * Mode-aware target formatting: reduction targets always render as percentages
+ * (normalized), regardless of how the source workbook typed them.
+ */
+export function formatKpiTarget(
+  value: number | null | undefined,
+  targetType: TargetType,
+  measurementMode: string,
+  fractionDigits = 0,
+): string {
+  if (measurementMode === "reduction" && value !== null && value !== undefined) {
+    return formatPercent(normalizeReductionTarget(value), fractionDigits);
+  }
+  return formatTargetValue(value, targetType, fractionDigits);
+}
+
 /** Split an honorific from a person's display name, if practical. */
 const HONORIFICS = ["Mr.", "Mr", "Mrs.", "Mrs", "Ms.", "Ms", "Dr.", "Dr", "Miss"];
 

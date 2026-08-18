@@ -18,7 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatNumber, formatPercent, formatTargetValue } from "@convex/lib/format";
+import { formatKpiTarget, formatNumber, formatPercent } from "@convex/lib/format";
 import { ArrowLeft, History, Lock, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AppRole } from "@convex/lib/types";
@@ -144,7 +144,7 @@ export default function IndividualPage() {
                     </div>
                   </TableCell>
                   <TableCell className="tabular">
-                    {formatTargetValue(k.target, k.targetType)}
+                    {formatKpiTarget(k.target, k.targetType, k.measurementMode)}
                   </TableCell>
                   <TableCell className="tabular text-right">{k.weight}</TableCell>
                   <TableCell className="tabular text-right">
