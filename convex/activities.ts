@@ -89,7 +89,7 @@ function lagosDateLabel(epochMs: number): string {
 }
 
 /**
- * Capture opens at the year's configured go-live (1 June 2026 for the baseline):
+ * Capture opens at the year's configured go-live (1 July 2026 for the baseline):
  * a period that ended before it is read-only, and no activity may be dated
  * before it. Quarters/years that CONTAIN the go-live stay capturable — the
  * activity-date rule keeps their entries inside the open window.

@@ -7,8 +7,8 @@ import { PERFORMANCE_TIMEZONE, type Frequency, type PeriodGrain } from "./types"
 /** Lagos is a fixed UTC+1 offset (no daylight saving). */
 export const LAGOS_OFFSET_MS = 60 * 60 * 1000;
 
-/** 1 June 2026, 00:00 Africa/Lagos — the agreed KPI capture go-live moment. */
-export const CAPTURE_START_2026 = Date.UTC(2026, 5, 1) - LAGOS_OFFSET_MS;
+/** 1 July 2026, 00:00 Africa/Lagos — the agreed KPI capture go-live moment. */
+export const CAPTURE_START_2026 = Date.UTC(2026, 6, 1) - LAGOS_OFFSET_MS;
 
 export { PERFORMANCE_TIMEZONE };
 

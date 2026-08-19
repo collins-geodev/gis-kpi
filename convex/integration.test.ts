@@ -1661,10 +1661,10 @@ describe("employee-level reset", () => {
   });
 });
 
-describe("capture window — employees start capturing from June 2026", () => {
+describe("capture window — employees start capturing from July 2026", () => {
   const MARCH_2026 = Date.UTC(2026, 2, 15);
   const AUGUST_2026 = Date.UTC(2026, 7, 15);
-  const CAPTURE_START = Date.UTC(2026, 5, 1) - 60 * 60 * 1000; // 1 Jun, Lagos
+  const CAPTURE_START = Date.UTC(2026, 6, 1) - 60 * 60 * 1000; // 1 Jul, Lagos
 
   async function setup() {
     const t = harness();
@@ -1726,16 +1726,17 @@ describe("capture window — employees start capturing from June 2026", () => {
     });
   });
 
-  test("the period list hides pre-June months but keeps Q2 and the year", async () => {
+  test("the period list hides pre-July periods but keeps Q3 and the year", async () => {
     const { emp } = await setup();
     const keys = (await emp.query(api.activities.periods, {})).map(
       (p: { periodKey: string }) => p.periodKey,
     );
     expect(keys).not.toContain("2026-M03");
-    expect(keys).not.toContain("2026-M05");
+    expect(keys).not.toContain("2026-M06");
     expect(keys).not.toContain("2026-Q1");
-    expect(keys).toContain("2026-M06");
-    expect(keys).toContain("2026-Q2"); // June work lands here for quarterly KPIs
+    expect(keys).not.toContain("2026-Q2");
+    expect(keys).toContain("2026-M07");
+    expect(keys).toContain("2026-Q3"); // July work lands here for quarterly KPIs
     expect(keys).toContain("2026");
   });
 });

@@ -794,10 +794,10 @@ export const addNonCoreKpis = internalMutation({
 
 /**
  * Set (or clear) the performance year's capture go-live. Defaults to
- * 1 June 2026 00:00 Africa/Lagos. Idempotent — safe to re-run.
+ * 1 July 2026 00:00 Africa/Lagos. Idempotent — safe to re-run.
  *
- *   npx convex run migrations:setCaptureStart           # 2026-06-01
- *   npx convex run migrations:setCaptureStart '{"dateIso":"2026-07-01"}'
+ *   npx convex run migrations:setCaptureStart           # 2026-07-01
+ *   npx convex run migrations:setCaptureStart '{"dateIso":"2026-08-01"}'
  *   npx convex run migrations:setCaptureStart '{"clear":true}'
  */
 export const setCaptureStart = internalMutation({
@@ -815,7 +815,7 @@ export const setCaptureStart = internalMutation({
       captureStartAt = null;
       await ctx.db.patch(year._id, { captureStartAt: undefined });
     } else {
-      const iso = dateIso ?? "2026-06-01";
+      const iso = dateIso ?? "2026-07-01";
       const ms = Date.parse(`${iso}T00:00:00+01:00`); // Africa/Lagos midnight
       if (Number.isNaN(ms)) throw new Error(`Invalid dateIso: ${iso}`);
       captureStartAt = ms;
@@ -827,7 +827,7 @@ export const setCaptureStart = internalMutation({
       action: "set_capture_start",
       reason: clear
         ? "Capture window opened for the whole year"
-        : `KPI capture opens ${dateIso ?? "2026-06-01"} (Africa/Lagos)`,
+        : `KPI capture opens ${dateIso ?? "2026-07-01"} (Africa/Lagos)`,
       before: { captureStartAt: year.captureStartAt ?? null },
       after: { captureStartAt },
     });
