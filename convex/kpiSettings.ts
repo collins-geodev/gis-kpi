@@ -62,6 +62,7 @@ export const yearSettings = query({
       normalizationEnabled: year.normalizationEnabled,
       officialAttainmentCap: year.officialAttainmentCap,
       stretchAttainmentCap: year.stretchAttainmentCap,
+      captureStartAt: year.captureStartAt ?? null,
       employees: rows,
     };
   },
@@ -72,6 +73,8 @@ export const updateYearSettings = mutation({
     normalizationEnabled: v.optional(v.boolean()),
     officialAttainmentCap: v.optional(v.number()),
     stretchAttainmentCap: v.optional(v.number()),
+    /** Epoch ms capture go-live; pass null to open capture for the whole year. */
+    captureStartAt: v.optional(v.union(v.number(), v.null())),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -95,6 +98,9 @@ export const updateYearSettings = mutation({
       }
       patch.stretchAttainmentCap = args.stretchAttainmentCap;
     }
+    if (args.captureStartAt !== undefined) {
+      patch.captureStartAt = args.captureStartAt ?? undefined;
+    }
     await ctx.db.patch(year._id, patch);
     await recordAudit(ctx, {
       entityType: "performanceYear",
@@ -105,6 +111,7 @@ export const updateYearSettings = mutation({
         normalizationEnabled: year.normalizationEnabled,
         officialAttainmentCap: year.officialAttainmentCap,
         stretchAttainmentCap: year.stretchAttainmentCap,
+        captureStartAt: year.captureStartAt ?? null,
       },
       after: patch,
     });

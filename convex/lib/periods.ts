@@ -7,6 +7,9 @@ import { PERFORMANCE_TIMEZONE, type Frequency, type PeriodGrain } from "./types"
 /** Lagos is a fixed UTC+1 offset (no daylight saving). */
 export const LAGOS_OFFSET_MS = 60 * 60 * 1000;
 
+/** 1 June 2026, 00:00 Africa/Lagos — the agreed KPI capture go-live moment. */
+export const CAPTURE_START_2026 = Date.UTC(2026, 5, 1) - LAGOS_OFFSET_MS;
+
 export { PERFORMANCE_TIMEZONE };
 
 /** Local-Lagos wall-clock time -> epoch ms. */
@@ -175,7 +178,11 @@ export function lagosWeekKeyOf(epochMs: number): string {
   thursday.setUTCDate(thursday.getUTCDate() + 3);
   const isoYear = thursday.getUTCFullYear();
   const jan1 = Date.UTC(isoYear, 0, 1);
-  const week = Math.floor((Date.UTC(isoYear, thursday.getUTCMonth(), thursday.getUTCDate()) - jan1) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  const week =
+    Math.floor(
+      (Date.UTC(isoYear, thursday.getUTCMonth(), thursday.getUTCDate()) - jan1) /
+        (7 * 24 * 60 * 60 * 1000),
+    ) + 1;
   return weekKey(isoYear, week);
 }
 

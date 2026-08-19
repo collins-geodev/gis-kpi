@@ -5,11 +5,7 @@
 import { internalMutation, internalQuery } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { NON_CORE_TEMPLATES } from "./lib/catalogue";
-import {
-  BASELINE_PERFORMANCE_YEAR,
-  FULL_WEIGHT_TOTAL,
-  JOB_ROLES,
-} from "./lib/types";
+import { BASELINE_PERFORMANCE_YEAR, FULL_WEIGHT_TOTAL, JOB_ROLES } from "./lib/types";
 import { v } from "convex/values";
 import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
@@ -665,7 +661,9 @@ export const addNonCoreKpis = internalMutation({
         const mapKey = `${role}::${t.key}`;
         const existing = await ctx.db
           .query("kpiDefinitions")
-          .withIndex("by_role_key", (q) => q.eq("jobRole", role).eq("canonicalKey", t.key))
+          .withIndex("by_role_key", (q) =>
+            q.eq("jobRole", role).eq("canonicalKey", t.key),
+          )
           .first();
         if (existing) {
           defIdByRoleKey.set(mapKey, existing._id);
@@ -791,5 +789,48 @@ export const addNonCoreKpis = internalMutation({
       });
     }
     return { definitions, assignments, weightIssuesResolved };
+  },
+});
+
+/**
+ * Set (or clear) the performance year's capture go-live. Defaults to
+ * 1 June 2026 00:00 Africa/Lagos. Idempotent — safe to re-run.
+ *
+ *   npx convex run migrations:setCaptureStart           # 2026-06-01
+ *   npx convex run migrations:setCaptureStart '{"dateIso":"2026-07-01"}'
+ *   npx convex run migrations:setCaptureStart '{"clear":true}'
+ */
+export const setCaptureStart = internalMutation({
+  args: { dateIso: v.optional(v.string()), clear: v.optional(v.boolean()) },
+  returns: v.object({ captureStartAt: v.union(v.number(), v.null()) }),
+  handler: async (ctx, { dateIso, clear }) => {
+    const year = await ctx.db
+      .query("performanceYears")
+      .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+      .first();
+    if (!year) throw new Error("Performance year not seeded");
+
+    let captureStartAt: number | null;
+    if (clear) {
+      captureStartAt = null;
+      await ctx.db.patch(year._id, { captureStartAt: undefined });
+    } else {
+      const iso = dateIso ?? "2026-06-01";
+      const ms = Date.parse(`${iso}T00:00:00+01:00`); // Africa/Lagos midnight
+      if (Number.isNaN(ms)) throw new Error(`Invalid dateIso: ${iso}`);
+      captureStartAt = ms;
+      await ctx.db.patch(year._id, { captureStartAt: ms });
+    }
+    await recordAudit(ctx, {
+      entityType: "performanceYear",
+      entityId: year._id,
+      action: "set_capture_start",
+      reason: clear
+        ? "Capture window opened for the whole year"
+        : `KPI capture opens ${dateIso ?? "2026-06-01"} (Africa/Lagos)`,
+      before: { captureStartAt: year.captureStartAt ?? null },
+      after: { captureStartAt },
+    });
+    return { captureStartAt };
   },
 });

@@ -9,7 +9,7 @@
 import { mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { AuthError, getAuthContext, requireRole, requireUser } from "./authz";
 import { recordAudit } from "./audit";
@@ -66,6 +66,54 @@ async function assertActivityDateInPeriod(
   if (activityAt < period.startAt || activityAt > period.endAt) {
     throw new Error(
       `Activity date must fall inside ${period.label} — pick the day the work actually happened, or switch the period.`,
+    );
+  }
+}
+
+/** The performance year's capture go-live (null = capture open all year). */
+async function captureStartFor(ctx: QueryCtx): Promise<number | null> {
+  const year = await ctx.db
+    .query("performanceYears")
+    .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+    .first();
+  return year?.captureStartAt ?? null;
+}
+
+function lagosDateLabel(epochMs: number): string {
+  return new Date(epochMs).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Africa/Lagos",
+  });
+}
+
+/**
+ * Capture opens at the year's configured go-live (1 June 2026 for the baseline):
+ * a period that ended before it is read-only, and no activity may be dated
+ * before it. Quarters/years that CONTAIN the go-live stay capturable — the
+ * activity-date rule keeps their entries inside the open window.
+ */
+async function assertWithinCaptureWindow(
+  ctx: QueryCtx,
+  periodKey: string,
+  activityAt: number,
+): Promise<void> {
+  const captureStart = await captureStartFor(ctx);
+  if (captureStart === null) return;
+  const opens = lagosDateLabel(captureStart);
+  const period = await ctx.db
+    .query("trackingPeriods")
+    .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
+    .first();
+  if (period && period.endAt < captureStart) {
+    throw new ConvexError(
+      `KPI capture opened on ${opens} — ${period.label} ended before then and is read-only.`,
+    );
+  }
+  if (activityAt < captureStart) {
+    throw new ConvexError(
+      `KPI capture opened on ${opens} — the activity date must be on or after that day.`,
     );
   }
 }
@@ -161,6 +209,7 @@ export const create = mutation({
       isAdmin,
     });
     await assertActivityDateInPeriod(ctx, args.periodKey, args.activityAt);
+    await assertWithinCaptureWindow(ctx, args.periodKey, args.activityAt);
 
     // Period-total modes: one entry IS the period's summary — block duplicates.
     if (isPeriodTotal(assignment.measurementMode, assignment.canonicalKey)) {
@@ -503,6 +552,7 @@ export const update = mutation({
     });
     const activityAt = args.activityAt ?? activity.activityAt;
     await assertActivityDateInPeriod(ctx, args.periodKey, activityAt);
+    await assertWithinCaptureWindow(ctx, args.periodKey, activityAt);
 
     const before = { ...activity };
     const oldPeriodKey = activity.periodKey;
@@ -550,16 +600,22 @@ export const periods = query({
   args: {},
   handler: async (ctx) => {
     await requireUser(ctx);
+    const captureStart = await captureStartFor(ctx);
     const rows = await ctx.db.query("trackingPeriods").take(500);
-    return rows
-      .sort((a, b) => a.startAt - b.startAt)
-      .map((p) => ({
-        periodKey: p.periodKey,
-        label: p.label,
-        grain: p.grain,
-        startAt: p.startAt,
-        endAt: p.endAt,
-      }));
+    return (
+      rows
+        // Periods that ended before the capture go-live are read-only history —
+        // buckets containing the go-live (e.g. Q2, the year) remain capturable.
+        .filter((p) => captureStart === null || p.endAt >= captureStart)
+        .sort((a, b) => a.startAt - b.startAt)
+        .map((p) => ({
+          periodKey: p.periodKey,
+          label: p.label,
+          grain: p.grain,
+          startAt: p.startAt,
+          endAt: p.endAt,
+        }))
+    );
   },
 });
 

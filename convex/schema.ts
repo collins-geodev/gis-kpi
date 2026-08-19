@@ -139,6 +139,12 @@ export default defineSchema({
     /** Whether 80->100 normalization display is explicitly enabled. */
     normalizationEnabled: v.boolean(),
     officialAttainmentCap: v.number(), // decimal, default 1.0
+    /**
+     * Epoch ms (Africa/Lagos) from which KPI capture is open. Periods that end
+     * before this moment — and activity dates before it — are read-only.
+     * Unset = capture open for the whole year.
+     */
+    captureStartAt: v.optional(v.number()),
     stretchAttainmentCap: v.number(), // decimal, default 1.2
   }).index("by_year", ["year"]),
 

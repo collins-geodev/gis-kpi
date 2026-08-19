@@ -68,6 +68,7 @@ type Settings = {
   normalizationEnabled: boolean;
   officialAttainmentCap: number;
   stretchAttainmentCap: number;
+  captureStartAt: number | null;
   employees: {
     id: string;
     employeeId: string;
@@ -103,10 +104,15 @@ function YearSettingsCard({ settings }: { settings: Settings | null | undefined 
             setBusy(true);
             setSaved(false);
             try {
+              const captureDate = String(form.get("captureStart") ?? "");
               await update({
                 normalizationEnabled: form.get("norm") === "on",
                 officialAttainmentCap: Number(form.get("official")),
                 stretchAttainmentCap: Number(form.get("stretch")),
+                // Midnight Africa/Lagos on the chosen day; empty = open all year.
+                captureStartAt: captureDate
+                  ? Date.parse(`${captureDate}T00:00:00+01:00`)
+                  : null,
               });
               setSaved(true);
             } finally {
@@ -143,6 +149,23 @@ function YearSettingsCard({ settings }: { settings: Settings | null | undefined 
               name="stretch"
               defaultValue={settings.stretchAttainmentCap}
               className="h-9 w-28 rounded-md border border-input bg-background px-2 text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-muted-foreground">
+              Capture opens (empty = all year)
+            </span>
+            <input
+              type="date"
+              name="captureStart"
+              defaultValue={
+                settings.captureStartAt
+                  ? new Date(settings.captureStartAt + 60 * 60 * 1000)
+                      .toISOString()
+                      .slice(0, 10)
+                  : ""
+              }
+              className="h-9 w-40 rounded-md border border-input bg-background px-2 text-sm"
             />
           </label>
           <Button type="submit" disabled={busy}>

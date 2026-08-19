@@ -1660,3 +1660,82 @@ describe("employee-level reset", () => {
     expect(left).toBe(0);
   });
 });
+
+describe("capture window — employees start capturing from June 2026", () => {
+  const MARCH_2026 = Date.UTC(2026, 2, 15);
+  const AUGUST_2026 = Date.UTC(2026, 7, 15);
+  const CAPTURE_START = Date.UTC(2026, 5, 1) - 60 * 60 * 1000; // 1 Jun, Lagos
+
+  async function setup() {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    await t.run(async (ctx) => {
+      const year = await ctx.db
+        .query("performanceYears")
+        .withIndex("by_year", (q) => q.eq("year", 2026))
+        .first();
+      await ctx.db.patch(year!._id, { captureStartAt: CAPTURE_START });
+    });
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "junegate@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const year = await ctx.db
+        .query("performanceYears")
+        .withIndex("by_year", (q) => q.eq("year", 2026))
+        .first();
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", empId).eq("performanceYearId", year!._id),
+        )
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    return { t, emp, assignmentId };
+  }
+
+  test("capture into a pre-June period is rejected", async () => {
+    const { emp, assignmentId } = await setup();
+    await expect(
+      emp.mutation(api.activities.create, {
+        kpiAssignmentId: assignmentId,
+        periodKey: "2026-M03",
+        activityAt: MARCH_2026,
+        title: "Backdated work",
+        description: "should not be allowed",
+        numerator: 1,
+        denominator: 2,
+      }),
+    ).rejects.toThrow(/capture opened/i);
+  });
+
+  test("capture from June onward succeeds", async () => {
+    const { emp, assignmentId } = await setup();
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUGUST_2026,
+      title: "August work",
+      description: "inside the window",
+      numerator: 9,
+      denominator: 10,
+    });
+  });
+
+  test("the period list hides pre-June months but keeps Q2 and the year", async () => {
+    const { emp } = await setup();
+    const keys = (await emp.query(api.activities.periods, {})).map(
+      (p: { periodKey: string }) => p.periodKey,
+    );
+    expect(keys).not.toContain("2026-M03");
+    expect(keys).not.toContain("2026-M05");
+    expect(keys).not.toContain("2026-Q1");
+    expect(keys).toContain("2026-M06");
+    expect(keys).toContain("2026-Q2"); // June work lands here for quarterly KPIs
+    expect(keys).toContain("2026");
+  });
+});
