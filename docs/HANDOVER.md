@@ -31,7 +31,7 @@ role-based access control, cron reminders, an audit trail, and CI.
 | 12 | Responsive + WCAG AA core flows | ✅ responsive; a11y labels/focus/reduced-motion; formal AA audit recommended |
 | 13 | Loading/empty/error/permission-denied/offline states | ✅ (offline/reconnect is Convex-native) |
 | 14 | CI: lint, typecheck, unit, integration, e2e, build | ✅ GitHub Actions green (format+lint+110 unit/integration tests, typecheck, production build); Playwright job opt-in via RUN_E2E |
-| 15 | PR → isolated preview; merge → prod | ◐ configured (CI + Vercel Git + Convex preview); requires repo/Vercel secrets wired |
+| 15 | PR → isolated preview; merge → prod | ✅ proven live with PR #1: PR-triggered CI checks + isolated Vercel preview deployment (branch alias, PR-tagged), squash merge → green main CI → production deploy READY |
 
 ## Known assumptions & follow-ups
 
