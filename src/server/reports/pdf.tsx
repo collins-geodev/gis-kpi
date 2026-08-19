@@ -189,6 +189,89 @@ function statusColor(status: string): string {
   return C.muted;
 }
 
+/** Colour for a 0–1 attainment fraction using the default status bands. */
+function bandColor(frac: number | null): string {
+  if (frac === null) return C.muted;
+  if (frac >= 1) return C.green;
+  if (frac >= 0.9) return C.teal;
+  if (frac >= 0.75) return C.amber;
+  return C.red;
+}
+
+const cs = StyleSheet.create({
+  chartRow: { flexDirection: "row", alignItems: "center", marginBottom: 3 },
+  chartLabel: { width: "30%", fontSize: 7.5, paddingRight: 4, color: C.slate },
+  chartTrack: {
+    flexGrow: 1,
+    height: 7,
+    backgroundColor: C.light,
+    borderRadius: 3.5,
+    overflow: "hidden",
+  },
+  chartFill: { height: 7, borderRadius: 3.5 },
+  chartValue: {
+    width: "13%",
+    fontSize: 7.5,
+    textAlign: "right",
+    paddingLeft: 4,
+    color: C.slate,
+  },
+  chartLegend: { flexDirection: "row", gap: 10, marginTop: 4, marginBottom: 2 },
+  chartLegendItem: { flexDirection: "row", alignItems: "center", gap: 3 },
+  chartLegendSwatch: { width: 6, height: 6, borderRadius: 3 },
+  chartLegendText: { fontSize: 6.5, color: C.muted },
+});
+
+/**
+ * Deterministic horizontal bar chart rendered with plain Views — every width
+ * comes straight from engine-computed numbers (no drawing library involved).
+ */
+function PdfBarChart({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { label: string; frac: number | null; valueLabel: string }[];
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <View>
+      <Text style={s.h2}>{title}</Text>
+      <View style={cs.chartLegend}>
+        {[
+          ["≥100%", C.green],
+          ["90–99%", C.teal],
+          ["75–89%", C.amber],
+          ["<75%", C.red],
+          ["No data", C.muted],
+        ].map(([label, color]) => (
+          <View key={label} style={cs.chartLegendItem}>
+            <View style={[cs.chartLegendSwatch, { backgroundColor: color }]} />
+            <Text style={cs.chartLegendText}>{label}</Text>
+          </View>
+        ))}
+      </View>
+      {rows.map((r, i) => (
+        <View key={i} style={cs.chartRow} wrap={false}>
+          <Text style={cs.chartLabel}>{r.label}</Text>
+          <View style={cs.chartTrack}>
+            <View
+              style={[
+                cs.chartFill,
+                {
+                  width: `${Math.min(Math.max((r.frac ?? 0) * 100, 0), 100)}%`,
+                  backgroundColor: bandColor(r.frac),
+                },
+              ]}
+            />
+          </View>
+          <Text style={cs.chartValue}>{r.valueLabel}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function Section({ title, items }: { title: string; items: string[] }) {
   if (!items || items.length === 0) return null;
   return (
@@ -296,6 +379,20 @@ export async function buildReportPdf(
           ]}
           rows={ds.employees}
         />
+        <PdfBarChart
+          title="Weighted score vs configured maximum"
+          rows={ds.employees.map((e) => ({
+            label: e.name,
+            frac:
+              e.itemsWithData === 0 || e.configuredWeight === 0
+                ? null
+                : e.assignedWeightScore / e.configuredWeight,
+            valueLabel:
+              e.itemsWithData === 0
+                ? "no data"
+                : `${e.assignedWeightScore}/${e.configuredWeight}`,
+          }))}
+        />
         <Footer ds={ds} stampMs={stampMs} />
       </Page>
 
@@ -322,6 +419,18 @@ export async function buildReportPdf(
             },
           ]}
           rows={ds.kpis.slice(0, 120)}
+        />
+        <PdfBarChart
+          title="Attainment by KPI (measured KPIs, top 16 by weight)"
+          rows={ds.kpis
+            .filter((k) => k.cappedAttainment !== null)
+            .sort((a, b) => b.weight - a.weight)
+            .slice(0, 16)
+            .map((k) => ({
+              label: `${k.employeeName.split(" ")[0]} · ${k.objective.slice(0, 34)}`,
+              frac: k.cappedAttainment,
+              valueLabel: fmtPct(k.cappedAttainment),
+            }))}
         />
         <Footer ds={ds} stampMs={stampMs} />
       </Page>

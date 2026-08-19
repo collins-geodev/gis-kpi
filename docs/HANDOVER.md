@@ -26,7 +26,7 @@ role-based access control, cron reminders, an audit trail, and CI.
 | 7 | No approval without required approved evidence | ✅ approval gate + evidence review |
 | 8 | Employee can't read others' restricted evidence; scoped managers/reviewers | ✅ centralized server-side authz |
 | 9 | Approved scores reproducible from frozen inputs + calc version | ✅ `scoreSnapshots` + `CALC_VERSION` |
-| 10 | PDF: deterministic numbers, evidence refs, methodology, version, AI/human approval | ✅ (charts rendered as deterministic tables/stat tiles; chart-image embedding is a follow-up) |
+| 10 | PDF: deterministic numbers, charts, evidence refs, methodology, version, AI/human approval | ✅ (deterministic bar charts: team weighted-score + per-KPI attainment, colored by status band) |
 | 11 | Excel polished, scope-filtered, typed, injection-safe, opens clean | ✅ builder + 5 tests + validated sample |
 | 12 | Responsive + WCAG AA core flows | ✅ responsive; a11y labels/focus/reduced-motion; formal AA audit recommended |
 | 13 | Loading/empty/error/permission-denied/offline states | ✅ (offline/reconnect is Convex-native) |
@@ -36,7 +36,7 @@ role-based access control, cron reminders, an audit trail, and CI.
 ## Known assumptions & follow-ups
 
 - `convex/_generated/*` is produced by your first `npx convex dev`; full `tsc`/`next build` run in CI after codegen. Pure domain logic is type-checked and unit-tested here.
-- Follow-ups (not blocking): Convex function-level integration tests (`convex-test`); embedding deterministic chart **images** in the PDF (currently tables + stat tiles); trend / period-over-period charts from snapshots; rate limiting on AI/report endpoints; a live malware scanner behind the `scanStatus` integration point; authenticated in-app download of stored evidence files (metadata + external links shown now; secure streaming route already exists server-side).
+- Follow-ups (not blocking): Convex function-level integration tests (`convex-test`); trend / period-over-period charts from snapshots; rate limiting on AI/report endpoints; a live malware scanner behind the `scanStatus` integration point; authenticated in-app download of stored evidence files (metadata + external links shown now; secure streaming route already exists server-side).
 
 ## Unresolved source-data decisions (preserved, flagged `Needs Admin Review` — never guessed)
 
