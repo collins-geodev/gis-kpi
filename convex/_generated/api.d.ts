@@ -40,6 +40,7 @@ import type * as migrations from "../migrations.js";
 import type * as notifications from "../notifications.js";
 import type * as overrides from "../overrides.js";
 import type * as overview from "../overview.js";
+import type * as passwords from "../passwords.js";
 import type * as profile from "../profile.js";
 import type * as reminders from "../reminders.js";
 import type * as reports from "../reports.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   overrides: typeof overrides;
   overview: typeof overview;
+  passwords: typeof passwords;
   profile: typeof profile;
   reminders: typeof reminders;
   reports: typeof reports;

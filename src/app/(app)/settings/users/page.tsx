@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { PageHeader } from "@/components/page-header";
@@ -18,7 +18,15 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AccessDenied } from "@/components/access-denied";
 import { APP_ROLES, APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
-import { Link2Off, RotateCcw, Trash2, UserRoundCheck, UserRoundX, X } from "lucide-react";
+import {
+  Link2Off,
+  LogOut,
+  RotateCcw,
+  Trash2,
+  UserRoundCheck,
+  UserRoundX,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 
 export default function UsersPage() {
@@ -33,6 +41,7 @@ export default function UsersPage() {
   const setUserActive = useMutation(api.access.setUserActive);
   const resetUserData = useMutation(api.access.resetUserData);
   const deleteUser = useMutation(api.access.deleteUser);
+  const forceSignOut = useAction(api.passwords.adminForceSignOut);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -202,6 +211,30 @@ export default function UsersPage() {
                       </select>
                     </TableCell>
                     <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-warning"
+                        disabled={u.id === me?.userId}
+                        title={
+                          u.id === me?.userId
+                            ? "Use your profile page to sign yourself out"
+                            : "Terminate every session of this account right now (security kill switch)"
+                        }
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Force sign-out for ${u.name ?? u.email}?\n\nEvery active session is terminated immediately; they must sign in again. Use this if a password change or activity looks suspicious.`,
+                            )
+                          )
+                            return;
+                          void run(() =>
+                            forceSignOut({ targetUserId: u.id as Id<"users"> }),
+                          );
+                        }}
+                      >
+                        <LogOut className="h-4 w-4" /> Sign out
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"

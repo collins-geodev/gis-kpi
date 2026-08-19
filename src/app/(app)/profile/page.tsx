@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useRouter } from "next/navigation";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { PageHeader } from "@/components/page-header";
@@ -24,8 +26,10 @@ import {
   CheckCircle2,
   Download,
   FileText,
+  KeyRound,
   Loader2,
   MapPin,
+  ShieldAlert,
   Presentation,
   RefreshCcw,
   Save,
@@ -375,6 +379,9 @@ export default function ProfilePage() {
         </Card>
       </div>
 
+      {/* Security — self-service password change (admins notified). */}
+      <SecurityCard email={profile.email} />
+
       {/* Documentation downloads — the deck for everyone signed in; the full
           guide only for management roles (also enforced server-side). */}
       <Card className="card-lift sheen">
@@ -425,6 +432,161 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Change password: requires the current password, applies instantly, signs the
+ * user out everywhere, and notifies every System Admin + the user (in-app +
+ * email) with an audit trail — oversight without lockouts.
+ */
+function SecurityCard({ email }: { email: string | null }) {
+  const router = useRouter();
+  const { signOut } = useAuthActions();
+  const changePassword = useAction(api.passwords.changePassword);
+
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (next.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    if (next !== confirm) {
+      setError("New password and confirmation do not match.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await changePassword({ currentPassword: current, newPassword: next });
+      setDone(true);
+      // Sessions are already invalidated server-side; clear local state and
+      // hand the user to the sign-in page for their new password.
+      setTimeout(async () => {
+        try {
+          await signOut();
+        } catch {
+          /* session already gone */
+        }
+        router.push("/signin");
+      }, 1800);
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message.replace(/^.*Uncaught ConvexError:?\s*/i, "").split("\n")[0]
+          : "Could not change the password.";
+      setError(msg || "Could not change the password.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="card-lift sheen">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <span className="icon-chip icon-chip--brand">
+            <KeyRound className="h-4 w-4" />
+          </span>
+          Security — change password
+        </CardTitle>
+        <CardDescription>
+          Your current password is required. The change applies immediately, signs you out
+          of every session, and the System Admin is notified of every change.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {done ? (
+          <div className="flex items-center gap-2 rounded-lg border border-success/40 bg-success/10 p-4 text-sm text-success">
+            <CheckCircle2 className="h-5 w-5 shrink-0" />
+            Password changed — signing you out. Sign in again with your new password.
+          </div>
+        ) : (
+          <form onSubmit={submit} className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <PasswordField
+                label="Current password"
+                value={current}
+                onChange={setCurrent}
+                autoComplete="current-password"
+              />
+              <PasswordField
+                label="New password (min 8)"
+                value={next}
+                onChange={setNext}
+                autoComplete="new-password"
+              />
+              <PasswordField
+                label="Confirm new password"
+                value={confirm}
+                onChange={setConfirm}
+                autoComplete="new-password"
+              />
+            </div>
+            {error && (
+              <p className="flex items-center gap-1.5 text-sm text-critical" role="alert">
+                <ShieldAlert className="h-4 w-4 shrink-0" /> {error}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="submit"
+                variant="brand"
+                size="sm"
+                className="hover-wiggle"
+                disabled={busy || !current || !next || !confirm}
+              >
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <KeyRound className="h-4 w-4" />
+                )}
+                Change password
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Signed in as {email ?? "—"} · every change is audit-logged
+              </span>
+            </div>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PasswordField({
+  label,
+  value,
+  onChange,
+  autoComplete,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete: string;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <input
+        type="password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        minLength={label.startsWith("Current") ? undefined : 8}
+        required
+        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        placeholder="••••••••"
+      />
+    </label>
   );
 }
 
