@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import { ConvexError } from "convex/values";
+import { errorMessage } from "@/lib/errors";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { PageHeader } from "@/components/page-header";
@@ -17,14 +17,6 @@ import { AccessDenied } from "@/components/access-denied";
 import { formatPercent } from "@convex/lib/format";
 import { CheckCircle2, FileCheck2, Inbox, Lock, Trash2, XCircle } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
-
-/** Convex redacts plain Error messages in prod — surface ConvexError data. */
-function errorMessage(e: unknown, fallback: string): string {
-  if (e instanceof ConvexError) {
-    return typeof e.data === "string" ? e.data : fallback;
-  }
-  return e instanceof Error ? e.message : fallback;
-}
 
 export default function ReviewPage() {
   const me = useQuery(api.access.currentUser);

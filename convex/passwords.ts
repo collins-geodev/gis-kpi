@@ -102,7 +102,7 @@ export const changePassword = action({
         provider: "password",
         account: { id: info.email, secret: currentPassword },
       });
-      if (!found) throw new Error("no account");
+      if (!found) throw new ConvexError("no account");
     } catch {
       throw new ConvexError("Current password is incorrect.");
     }

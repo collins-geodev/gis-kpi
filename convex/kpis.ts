@@ -3,14 +3,14 @@
  * measurements, evidence lineage and the data-quality issues attached to the row.
  */
 import { query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { assertEmployeeReadScope } from "./authz";
 
 export const getAssignment = query({
   args: { assignmentId: v.id("kpiAssignments") },
   handler: async (ctx, { assignmentId }) => {
     const assignment = await ctx.db.get(assignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
     await assertEmployeeReadScope(ctx, assignment.employeeId);
 
     const employee = await ctx.db.get(assignment.employeeId);

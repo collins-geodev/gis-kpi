@@ -5,7 +5,7 @@
  * `cadenceCompliant` flag; this module aggregates and gates.
  */
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { readableEmployeeIds, requireRole } from "./authz";
 import { recordAudit } from "./audit";
 import { cadencePeriodKey } from "./lib/periods";
@@ -98,8 +98,8 @@ export const closePeriod = mutation({
       .query("trackingPeriods")
       .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
       .first();
-    if (!period) throw new Error("Period not found");
-    if (period.status === "locked") throw new Error("Period is locked.");
+    if (!period) throw new ConvexError("Period not found");
+    if (period.status === "locked") throw new ConvexError("Period is locked.");
     await ctx.db.patch(period._id, { status: "closed" });
     await recordAudit(ctx, {
       entityType: "trackingPeriod",
@@ -120,12 +120,12 @@ export const reopenPeriod = mutation({
   returns: v.null(),
   handler: async (ctx, { periodKey, reason }) => {
     const { user } = await requireRole(ctx, ["kpi_admin", "system_admin"]);
-    if (!reason.trim()) throw new Error("A reason is required to reopen a period.");
+    if (!reason.trim()) throw new ConvexError("A reason is required to reopen a period.");
     const period = await ctx.db
       .query("trackingPeriods")
       .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
       .first();
-    if (!period) throw new Error("Period not found");
+    if (!period) throw new ConvexError("Period not found");
     // Past-due periods reopen into grace (capture allowed, flagged late).
     const next = period.dueAt < Date.now() ? "grace" : "open";
     await ctx.db.patch(period._id, { status: next });

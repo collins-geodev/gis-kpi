@@ -3,6 +3,7 @@
  * scope-checked dataset, optionally generates a schema-validated AI narrative,
  * renders a deterministic PDF, and logs generation provenance.
  */
+import { errorMessage } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
       periodKey,
     })) as ReportDataset;
   } catch (e) {
-    return new NextResponse(e instanceof Error ? e.message : "Report failed", {
+    return new NextResponse(errorMessage(e, "Report failed"), {
       status: 403,
     });
   }

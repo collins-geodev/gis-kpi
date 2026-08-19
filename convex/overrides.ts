@@ -7,7 +7,7 @@
  */
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { assertEmployeeReadScope, requireRole } from "./authz";
 import { recordAudit } from "./audit";
 import { recomputeMeasurement } from "./measurementsModel";
@@ -19,7 +19,7 @@ export const listForAssignment = query({
   args: { kpiAssignmentId: v.id("kpiAssignments") },
   handler: async (ctx, { kpiAssignmentId }) => {
     const assignment = await ctx.db.get(kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
     await assertEmployeeReadScope(ctx, assignment.employeeId);
     const rows = await ctx.db
       .query("scoreOverrides")
@@ -55,11 +55,11 @@ export const apply = mutation({
   handler: async (ctx, args) => {
     const { user } = await requireRole(ctx, ["kpi_admin", "system_admin"]);
     const assignment = await ctx.db.get(args.kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
     const reason = args.reason.trim();
-    if (!reason) throw new Error("A reason is required for a score override.");
+    if (!reason) throw new ConvexError("A reason is required for a score override.");
     if (args.overrideValue < 0 || args.overrideValue > assignment.stretchCap) {
-      throw new Error(
+      throw new ConvexError(
         `Override must be between 0% and the stretch cap (${formatPercent(assignment.stretchCap)}).`,
       );
     }
@@ -71,7 +71,7 @@ export const apply = mutation({
       )
       .first();
     if (measurement && !measurement.isProvisional) {
-      throw new Error(
+      throw new ConvexError(
         "This period is already approved and frozen — reopen it before overriding.",
       );
     }
@@ -160,7 +160,7 @@ export const remove = mutation({
   handler: async (ctx, { overrideId }) => {
     const { user } = await requireRole(ctx, ["kpi_admin", "system_admin"]);
     const override = await ctx.db.get(overrideId);
-    if (!override) throw new Error("Override not found");
+    if (!override) throw new ConvexError("Override not found");
     const assignment = await ctx.db.get(override.kpiAssignmentId);
     await ctx.db.delete(overrideId);
     if (assignment) await recomputeMeasurement(ctx, assignment, override.periodKey);

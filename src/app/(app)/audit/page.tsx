@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import { useState } from "react";
 import { usePaginatedQuery, useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
@@ -50,7 +51,7 @@ export default function AuditPage() {
       }
       window.alert(`Cleared ${total} audit entr${total === 1 ? "y" : "ies"}.`);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Clearing failed.");
+      window.alert(errorMessage(e, "Clearing failed."));
     } finally {
       setClearing(false);
     }

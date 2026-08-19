@@ -5,7 +5,7 @@
  * audit-logged with before/after.
  */
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { requireRole } from "./authz";
 import { recordAudit } from "./audit";
@@ -80,7 +80,7 @@ export const updateYearSettings = mutation({
   handler: async (ctx, args) => {
     const { user } = await requireRole(ctx, [...KPI_ADMIN_ROLES]);
     const year = await baselineYear(ctx);
-    if (!year) throw new Error("Performance year not seeded");
+    if (!year) throw new ConvexError("Performance year not seeded");
 
     const patch: Partial<Doc<"performanceYears">> = {};
     if (args.normalizationEnabled !== undefined) {
@@ -88,13 +88,13 @@ export const updateYearSettings = mutation({
     }
     if (args.officialAttainmentCap !== undefined) {
       if (args.officialAttainmentCap <= 0 || args.officialAttainmentCap > 3) {
-        throw new Error("Official cap must be a decimal between 0 and 3.");
+        throw new ConvexError("Official cap must be a decimal between 0 and 3.");
       }
       patch.officialAttainmentCap = args.officialAttainmentCap;
     }
     if (args.stretchAttainmentCap !== undefined) {
       if (args.stretchAttainmentCap <= 0 || args.stretchAttainmentCap > 3) {
-        throw new Error("Stretch cap must be a decimal between 0 and 3.");
+        throw new ConvexError("Stretch cap must be a decimal between 0 and 3.");
       }
       patch.stretchAttainmentCap = args.stretchAttainmentCap;
     }
@@ -182,15 +182,16 @@ export const updateAssignment = mutation({
   handler: async (ctx, args) => {
     const { user } = await requireRole(ctx, [...KPI_ADMIN_ROLES]);
     const a = await ctx.db.get(args.assignmentId);
-    if (!a) throw new Error("KPI assignment not found");
+    if (!a) throw new ConvexError("KPI assignment not found");
 
     const patch: Partial<Doc<"kpiAssignments">> = {};
     if (args.weight !== undefined) {
-      if (args.weight < 0 || args.weight > 100) throw new Error("Weight must be 0–100.");
+      if (args.weight < 0 || args.weight > 100)
+        throw new ConvexError("Weight must be 0–100.");
       patch.weight = args.weight;
     }
     if (args.target !== undefined) {
-      if (args.target < 0) throw new Error("Target must be ≥ 0.");
+      if (args.target < 0) throw new ConvexError("Target must be ≥ 0.");
       patch.target = args.target;
     }
     if (args.targetType !== undefined) patch.targetType = args.targetType;
@@ -198,19 +199,20 @@ export const updateAssignment = mutation({
     if (args.direction !== undefined) patch.direction = args.direction;
     if (args.measurementMode !== undefined) patch.measurementMode = args.measurementMode;
     if (args.scoreCap !== undefined) {
-      if (args.scoreCap <= 0 || args.scoreCap > 3) throw new Error("Cap must be 0–3.");
+      if (args.scoreCap <= 0 || args.scoreCap > 3)
+        throw new ConvexError("Cap must be 0–3.");
       patch.scoreCap = args.scoreCap;
     }
     if (args.stretchCap !== undefined) {
       if (args.stretchCap <= 0 || args.stretchCap > 3)
-        throw new Error("Cap must be 0–3.");
+        throw new ConvexError("Cap must be 0–3.");
       patch.stretchCap = args.stretchCap;
     }
     if (args.evidenceRequired !== undefined)
       patch.evidenceRequired = args.evidenceRequired;
     if (args.pinnedBaseline !== undefined) {
       if (args.pinnedBaseline !== null && args.pinnedBaseline < 0) {
-        throw new Error("Pinned baseline must be ≥ 0.");
+        throw new ConvexError("Pinned baseline must be ≥ 0.");
       }
       patch.pinnedBaseline = args.pinnedBaseline ?? undefined;
     }

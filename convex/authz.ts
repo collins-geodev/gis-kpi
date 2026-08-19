@@ -6,11 +6,14 @@
  * Scope is enforced by employee / reviewer-assignment / role / location.
  */
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { ConvexError } from "convex/values";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { AppRole } from "./lib/types";
 
-export class AuthError extends Error {
+// Extends ConvexError so the message survives prod redaction (plain Error
+// reaches clients as an unusable "Server Error").
+export class AuthError extends ConvexError<string> {
   constructor(
     message: string,
     readonly status = 403,

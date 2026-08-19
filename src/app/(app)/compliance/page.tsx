@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
@@ -125,7 +126,7 @@ export default function CompliancePage() {
                   if (!reason?.trim()) return;
                   setActionError(null);
                   void reopenPeriod({ periodKey, reason: reason.trim() }).catch((e) =>
-                    setActionError(e instanceof Error ? e.message : "Failed."),
+                    setActionError(errorMessage(e, "Failed.")),
                   );
                 }}
               >
@@ -145,7 +146,7 @@ export default function CompliancePage() {
                     return;
                   setActionError(null);
                   void closePeriod({ periodKey }).catch((e) =>
-                    setActionError(e instanceof Error ? e.message : "Failed."),
+                    setActionError(errorMessage(e, "Failed.")),
                   );
                 }}
               >

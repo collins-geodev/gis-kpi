@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { useState } from "react";
@@ -78,9 +79,7 @@ export default function OverviewPage() {
                   try {
                     await bootstrap({});
                   } catch (e) {
-                    setClaimError(
-                      e instanceof Error ? e.message : "Could not claim admin role.",
-                    );
+                    setClaimError(errorMessage(e, "Could not claim admin role."));
                   } finally {
                     setClaiming(false);
                   }

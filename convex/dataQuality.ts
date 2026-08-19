@@ -4,7 +4,7 @@
  * no blocking issues remain. Every resolution is audit-logged.
  */
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -130,9 +130,9 @@ export const resolveIssue = mutation({
   handler: async (ctx, { issueId, decision, note }) => {
     const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
     const issue = await ctx.db.get(issueId);
-    if (!issue) throw new Error("Issue not found");
+    if (!issue) throw new ConvexError("Issue not found");
     if (decision === "reject" && !note) {
-      throw new Error("A reason is required to reject a data-quality proposal.");
+      throw new ConvexError("A reason is required to reject a data-quality proposal.");
     }
 
     const status: "approved" | "rejected" | "resolved" =
@@ -204,9 +204,9 @@ export const reopenIssue = mutation({
   handler: async (ctx, { issueId, note }) => {
     const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
     const issue = await ctx.db.get(issueId);
-    if (!issue) throw new Error("Issue not found");
+    if (!issue) throw new ConvexError("Issue not found");
     if (!RESOLVED_STATES.includes(issue.status)) {
-      throw new Error("Issue is already open.");
+      throw new ConvexError("Issue is already open.");
     }
 
     await ctx.db.patch(issueId, {
@@ -269,7 +269,7 @@ export const bulkResolve = mutation({
   handler: async (ctx, { category, decision, note }) => {
     const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
     if (decision === "reject" && !note?.trim()) {
-      throw new Error("A reason is required to bulk-reject.");
+      throw new ConvexError("A reason is required to bulk-reject.");
     }
 
     const issues = category

@@ -86,7 +86,7 @@ export const deleteSubmission = mutation({
   handler: async (ctx, { kpiAssignmentId, periodKey, reason }) => {
     const { user } = await requireRole(ctx, ["system_admin", "kpi_admin"]);
     const assignment = await ctx.db.get(kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
     await assertEmployeeReadScope(ctx, assignment.employeeId);
     const cleanReason = reason.trim();
     if (!cleanReason)
@@ -212,7 +212,7 @@ export const rejectSubmission = mutation({
   handler: async (ctx, { kpiAssignmentId, periodKey, reason }) => {
     const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
     const assignment = await ctx.db.get(kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
     await assertEmployeeReadScope(ctx, assignment.employeeId);
     const cleanReason = reason.trim();
     if (!cleanReason)
@@ -322,7 +322,7 @@ export const recallRejection = mutation({
   handler: async (ctx, { kpiAssignmentId, periodKey }) => {
     const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
     const assignment = await ctx.db.get(kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
     await assertEmployeeReadScope(ctx, assignment.employeeId);
 
     const activities = await ctx.db
@@ -414,7 +414,7 @@ export const recallPeriodApproval = mutation({
       .query("performanceYears")
       .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
       .first();
-    if (!year) throw new Error("Performance year not seeded");
+    if (!year) throw new ConvexError("Performance year not seeded");
 
     const snapshots = await ctx.db
       .query("scoreSnapshots")
@@ -546,7 +546,7 @@ export const approveEmployeePeriod = mutation({
       .query("performanceYears")
       .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
       .first();
-    if (!year) throw new Error("Performance year not seeded");
+    if (!year) throw new ConvexError("Performance year not seeded");
 
     const assignments = await ctx.db
       .query("kpiAssignments")

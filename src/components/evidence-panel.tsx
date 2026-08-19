@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
@@ -78,7 +79,7 @@ export function EvidencePanel({
       });
       setTitle("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not attach file.");
+      setError(errorMessage(e, "Could not attach file."));
     } finally {
       setBusy(false);
     }
@@ -101,7 +102,7 @@ export function EvidencePanel({
       setLinkUrl("");
       setTitle("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not attach link.");
+      setError(errorMessage(e, "Could not attach link."));
     } finally {
       setBusy(false);
     }
@@ -256,9 +257,7 @@ export function EvidencePanel({
                         )
                           return;
                         void removeEvidence({ evidenceId: e.id }).catch((err) =>
-                          setError(
-                            err instanceof Error ? err.message : "Could not delete.",
-                          ),
+                          setError(errorMessage(err, "Could not delete.")),
                         );
                       }}
                     >

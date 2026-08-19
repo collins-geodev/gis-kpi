@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
@@ -73,9 +74,7 @@ export default function IndividualPage() {
                       `Reset complete: ${c.activities ?? 0} activities, ${c.evidence ?? 0} evidence items, ${c.measurements ?? 0} measurements removed.`,
                     ),
                   )
-                  .catch((e) =>
-                    window.alert(e instanceof Error ? e.message : "Reset failed."),
-                  );
+                  .catch((e) => window.alert(errorMessage(e, "Reset failed.")));
               }}
             >
               <RotateCcw className="h-4 w-4" /> Reset captured data

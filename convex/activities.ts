@@ -35,14 +35,14 @@ async function assertPeriodMatchesCadence(
   if (!period) return; // unknown keys simply produce no measurement period
   const expected = captureGrainForFrequency(frequency as Frequency);
   if (period.grain !== expected) {
-    throw new Error(
+    throw new ConvexError(
       `This KPI is tracked ${frequency.toLowerCase()} — choose the ${expected} period so entries add up against the full target.`,
     );
   }
   // Gate: once a period's grace window has elapsed it is closed for
   // self-service capture. KPI/System Admins bypass (they own reopening).
   if (!opts.isAdmin && ["closed", "locked"].includes(period.status)) {
-    throw new Error(
+    throw new ConvexError(
       `${period.label} is closed for capture — ask an admin to reopen it from the Compliance page.`,
     );
   }
@@ -64,7 +64,7 @@ async function assertActivityDateInPeriod(
     .first();
   if (!period) return;
   if (activityAt < period.startAt || activityAt > period.endAt) {
-    throw new Error(
+    throw new ConvexError(
       `Activity date must fall inside ${period.label} — pick the day the work actually happened, or switch the period.`,
     );
   }
@@ -153,11 +153,11 @@ function assertCompleteCapture(
     [key: string]: string | number | boolean | undefined;
   },
 ): void {
-  if (!fields.title.trim()) throw new Error("Title is required.");
-  if (!fields.description.trim()) throw new Error("Notes are required.");
+  if (!fields.title.trim()) throw new ConvexError("Title is required.");
+  if (!fields.description.trim()) throw new ConvexError("Notes are required.");
   for (const key of REQUIRED_INPUTS[measurementMode] ?? []) {
     if (fields[key] === undefined || fields[key] === null) {
-      throw new Error(
+      throw new ConvexError(
         `${INPUT_LABELS[key] ?? key} is required for this KPI (${measurementMode} measurement).`,
       );
     }
@@ -191,7 +191,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const { user, roles } = await getAuthContext(ctx);
     const assignment = await ctx.db.get(args.kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
 
     const isOwner = user.employeeId && user.employeeId === assignment.employeeId;
     const isAdmin = roles.some((r) => ["system_admin", "kpi_admin"].includes(r));
@@ -222,7 +222,7 @@ export const create = mutation({
           .take(20)
       ).filter((a) => DUPLICATE_BLOCKING_STATES.includes(a.status));
       if (existing.length > 0) {
-        throw new Error(
+        throw new ConvexError(
           `This KPI has already been captured for ${args.periodKey} (“${existing[0]!.title.slice(0, 80)}”). A ${assignment.measurementMode} entry is the period's single summary — edit the existing entry (pencil icon under Recent activities) instead of logging it again.`,
         );
       }
@@ -421,9 +421,9 @@ export const remove = mutation({
   handler: async (ctx, { activityId }) => {
     const { user, roles } = await getAuthContext(ctx);
     const activity = await ctx.db.get(activityId);
-    if (!activity) throw new Error("Activity not found");
+    if (!activity) throw new ConvexError("Activity not found");
     const assignment = await ctx.db.get(activity.kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
 
     const isOwner = user.employeeId && user.employeeId === activity.employeeId;
     const isAdmin = roles.some((r) => ["system_admin", "kpi_admin"].includes(r));
@@ -520,9 +520,9 @@ export const update = mutation({
   handler: async (ctx, args) => {
     const { user, roles } = await getAuthContext(ctx);
     const activity = await ctx.db.get(args.activityId);
-    if (!activity) throw new Error("Activity not found");
+    if (!activity) throw new ConvexError("Activity not found");
     const assignment = await ctx.db.get(activity.kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
 
     const isOwner = user.employeeId && user.employeeId === activity.employeeId;
     const isAdmin = roles.some((r) => ["system_admin", "kpi_admin"].includes(r));

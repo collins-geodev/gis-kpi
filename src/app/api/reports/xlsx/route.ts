@@ -2,6 +2,7 @@
  * Excel export endpoint (Node runtime). Authenticates via the Convex Auth token,
  * fetches the scope-checked report dataset, and streams a genuine .xlsx.
  */
+import { errorMessage } from "@/lib/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
       periodKey,
     })) as ReportDataset;
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Report failed";
+    const message = errorMessage(e, "Report failed");
     return new NextResponse(message, { status: 403 });
   }
 

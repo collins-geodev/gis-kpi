@@ -10,7 +10,7 @@
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { vAppRole } from "./validators";
 import { getCurrentUser, getUserRoles, requireRole, requireUser } from "./authz";
 import { recordAudit } from "./audit";
@@ -85,11 +85,13 @@ export const bootstrapFirstAdmin = mutation({
       .withIndex("by_role", (q) => q.eq("role", "system_admin"))
       .first();
     if (existingAdmin) {
-      throw new Error("A System Admin already exists. Ask an admin to grant your role.");
+      throw new ConvexError(
+        "A System Admin already exists. Ask an admin to grant your role.",
+      );
     }
     const allowlist = process.env.ADMIN_BOOTSTRAP_EMAIL;
     if (allowlist && user.email && user.email.toLowerCase() !== allowlist.toLowerCase()) {
-      throw new Error("This account is not the configured bootstrap admin.");
+      throw new ConvexError("This account is not the configured bootstrap admin.");
     }
     await ctx.db.insert("userRoleAssignments", {
       userId: user._id,
@@ -121,7 +123,7 @@ export const grantRole = mutation({
   handler: async (ctx, args) => {
     const { user: actor } = await requireRole(ctx, ["system_admin"]);
     const target = await ctx.db.get(args.userId);
-    if (!target) throw new Error("User not found");
+    if (!target) throw new ConvexError("User not found");
     const id = await ctx.db.insert("userRoleAssignments", {
       userId: args.userId,
       role: args.role,
@@ -172,7 +174,7 @@ export const revokeRole = mutation({
     if (args.role === "system_admin") {
       const stillCovered = await anotherActiveAdminExists(ctx, args.userId);
       if (!stillCovered) {
-        throw new Error(
+        throw new ConvexError(
           "Cannot revoke the last active System Admin — grant the role to someone else first.",
         );
       }
@@ -206,16 +208,16 @@ export const setUserActive = mutation({
   handler: async (ctx, args) => {
     const { user: actor } = await requireRole(ctx, ["system_admin"]);
     const target = await ctx.db.get(args.userId);
-    if (!target) throw new Error("User not found");
+    if (!target) throw new ConvexError("User not found");
     if (!args.isActive) {
       if (target._id === actor._id) {
-        throw new Error("You cannot deactivate your own account.");
+        throw new ConvexError("You cannot deactivate your own account.");
       }
       const targetRoles = await getUserRoles(ctx, target._id);
       if (targetRoles.includes("system_admin")) {
         const stillCovered = await anotherActiveAdminExists(ctx, target._id);
         if (!stillCovered) {
-          throw new Error("Cannot deactivate the last active System Admin.");
+          throw new ConvexError("Cannot deactivate the last active System Admin.");
         }
       }
     }
@@ -379,9 +381,9 @@ export const resetUserData = mutation({
   handler: async (ctx, { userId }) => {
     const { user: actor } = await requireRole(ctx, ["system_admin"]);
     const target = await ctx.db.get(userId);
-    if (!target) throw new Error("User not found");
+    if (!target) throw new ConvexError("User not found");
     if (!target.employeeId) {
-      throw new Error(
+      throw new ConvexError(
         "This account has no linked employee, so there is no captured KPI data to reset. To wipe a roster employee's data (e.g. entries an admin logged for them), open that employee's page and use “Reset captured data” there.",
       );
     }
@@ -409,7 +411,7 @@ export const resetEmployeeData = mutation({
   handler: async (ctx, { employeeId }) => {
     const { user: actor } = await requireRole(ctx, ["system_admin"]);
     const employee = await ctx.db.get(employeeId);
-    if (!employee) throw new Error("Employee not found");
+    if (!employee) throw new ConvexError("Employee not found");
     const counts = await wipeEmployeeData(ctx, employeeId);
     await recordAudit(ctx, {
       entityType: "employee",
@@ -435,15 +437,15 @@ export const deleteUser = mutation({
   handler: async (ctx, args) => {
     const { user: actor } = await requireRole(ctx, ["system_admin"]);
     if (args.userId === actor._id) {
-      throw new Error("You cannot delete your own account.");
+      throw new ConvexError("You cannot delete your own account.");
     }
     const target = await ctx.db.get(args.userId);
-    if (!target) throw new Error("User not found");
+    if (!target) throw new ConvexError("User not found");
     const targetRoles = await getUserRoles(ctx, target._id);
     if (targetRoles.includes("system_admin")) {
       const stillCovered = await anotherActiveAdminExists(ctx, target._id);
       if (!stillCovered) {
-        throw new Error("Cannot delete the last active System Admin.");
+        throw new ConvexError("Cannot delete the last active System Admin.");
       }
     }
 
@@ -504,7 +506,7 @@ export const unlinkUserFromEmployee = mutation({
   handler: async (ctx, args) => {
     const { user: actor } = await requireRole(ctx, ["system_admin"]);
     const before = await ctx.db.get(args.userId);
-    if (!before) throw new Error("User not found");
+    if (!before) throw new ConvexError("User not found");
     if (!before.employeeId) return null; // already unlinked
     const employeeId = before.employeeId;
     await ctx.db.patch(args.userId, { employeeId: undefined });

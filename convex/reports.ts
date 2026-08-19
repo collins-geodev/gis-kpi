@@ -4,7 +4,7 @@
  * explains this payload.
  */
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   getAuthContext,
@@ -74,7 +74,7 @@ export const dataset = query({
       .query("performanceYears")
       .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
       .first();
-    if (!year) throw new Error("Performance year not seeded");
+    if (!year) throw new ConvexError("Performance year not seeded");
 
     // Resolve the readable employee set for the requested scope.
     let employees: Doc<"employees">[];

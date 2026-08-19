@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
@@ -427,7 +428,7 @@ export default function ActivitiesPage() {
       }
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save activity.");
+      setError(errorMessage(err, "Could not save activity."));
     } finally {
       setSubmitting(false);
     }

@@ -4,7 +4,7 @@
  * storage; the query hands back a short-lived URL.
  */
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { getUserRoles, requireUser } from "./authz";
 import { recordAudit } from "./audit";
 import { vAppRole } from "./validators";
@@ -75,12 +75,12 @@ export const setAvatar = mutation({
   handler: async (ctx, { storageId }) => {
     const user = await requireUser(ctx);
     const meta = await ctx.db.system.get(storageId);
-    if (!meta) throw new Error("Uploaded file not found.");
+    if (!meta) throw new ConvexError("Uploaded file not found.");
     if (meta.size > MAX_AVATAR_BYTES) {
-      throw new Error("Profile photo must be 6 MB or smaller.");
+      throw new ConvexError("Profile photo must be 6 MB or smaller.");
     }
     if (meta.contentType && !meta.contentType.startsWith("image/")) {
-      throw new Error("Profile photo must be an image.");
+      throw new ConvexError("Profile photo must be an image.");
     }
     const old = user.avatarStorageId;
     await ctx.db.patch(user._id, { avatarStorageId: storageId });
@@ -114,7 +114,7 @@ export const updateName = mutation({
   handler: async (ctx, { name }) => {
     const user = await requireUser(ctx);
     const clean = name.trim().slice(0, 120);
-    if (!clean) throw new Error("Name cannot be empty.");
+    if (!clean) throw new ConvexError("Name cannot be empty.");
     await ctx.db.patch(user._id, { name: clean });
     return null;
   },

@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
@@ -62,7 +63,7 @@ export function ScoreOverridePanel({
       setPct("");
       setReason("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not apply override.");
+      setError(errorMessage(err, "Could not apply override."));
     } finally {
       setBusy(false);
     }

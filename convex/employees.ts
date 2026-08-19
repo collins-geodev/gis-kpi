@@ -5,7 +5,7 @@
  * (no measurements yet) every KPI correctly reads "No Data".
  */
 import { query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertEmployeeReadScope, getAuthContext, readableEmployeeIds } from "./authz";
 import { scoreScorecard, type ScorecardItem } from "./lib/scoring";
@@ -89,7 +89,7 @@ export const getDetail = query({
   handler: async (ctx, { employeeId }) => {
     await assertEmployeeReadScope(ctx, employeeId);
     const employee = await ctx.db.get(employeeId);
-    if (!employee) throw new Error("Employee not found");
+    if (!employee) throw new ConvexError("Employee not found");
 
     const yearId = await baselineYearId(ctx);
     const assignments = yearId

@@ -1,5 +1,6 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
@@ -346,7 +347,7 @@ function KpiEditorCard({ a }: { a: Assignment }) {
       });
       setSaved(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed.");
+      setError(errorMessage(e, "Save failed."));
     } finally {
       setBusy(false);
     }

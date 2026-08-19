@@ -5,7 +5,7 @@
  */
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { adminUsers, resolveDisplayName } from "./emails";
 import {
   assertEmployeeReadScope,
@@ -124,7 +124,7 @@ export const saveEvidence = mutation({
   handler: async (ctx, args) => {
     const { user, roles } = await getAuthContext(ctx);
     const assignment = await ctx.db.get(args.kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
 
     const isOwner = user.employeeId && user.employeeId === assignment.employeeId;
     const isAdmin = roles.some((r) => ["system_admin", "kpi_admin"].includes(r));
@@ -132,16 +132,16 @@ export const saveEvidence = mutation({
       throw new AuthError("You can only attach evidence to your own KPIs");
     }
     if (!args.storageId && !args.externalUrl) {
-      throw new Error("Provide either an uploaded file or an external URL.");
+      throw new ConvexError("Provide either an uploaded file or an external URL.");
     }
     if (args.fileSize > MAX_EVIDENCE_BYTES) {
-      throw new Error("File exceeds the 25 MB evidence limit.");
+      throw new ConvexError("File exceeds the 25 MB evidence limit.");
     }
     if (
       args.storageId &&
       !ALLOWED_MIME_PREFIXES.some((p) => args.mimeType.startsWith(p))
     ) {
-      throw new Error(`Unsupported file type: ${args.mimeType}`);
+      throw new ConvexError(`Unsupported file type: ${args.mimeType}`);
     }
 
     const evidenceId = await ctx.db.insert("evidenceFiles", {
@@ -245,7 +245,7 @@ export const approveAllForAssignment = mutation({
       "system_admin",
     ]);
     const assignment = await ctx.db.get(kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
     await assertEmployeeReadScope(ctx, assignment.employeeId);
 
     const evidence = await ctx.db
@@ -335,10 +335,10 @@ export const reviewEvidence = mutation({
       "system_admin",
     ]);
     const evidence = await ctx.db.get(evidenceId);
-    if (!evidence) throw new Error("Evidence not found");
+    if (!evidence) throw new ConvexError("Evidence not found");
     await assertEmployeeReadScope(ctx, evidence.employeeId);
     if (decision === "reject" && !comment) {
-      throw new Error("A comment is required to reject evidence.");
+      throw new ConvexError("A comment is required to reject evidence.");
     }
 
     const reviewStatus =
@@ -471,7 +471,7 @@ export const removeEvidence = mutation({
   handler: async (ctx, { evidenceId }) => {
     const { user, roles } = await getAuthContext(ctx);
     const evidence = await ctx.db.get(evidenceId);
-    if (!evidence) throw new Error("Evidence not found");
+    if (!evidence) throw new ConvexError("Evidence not found");
     if (evidence.retentionState === "deleted") return null;
     if (evidence.retentionState === "legal_hold") {
       throw new AuthError("This item is under legal hold and cannot be deleted.");
@@ -584,7 +584,7 @@ export const listForAssignment = query({
   args: { kpiAssignmentId: v.id("kpiAssignments") },
   handler: async (ctx, { kpiAssignmentId }) => {
     const assignment = await ctx.db.get(kpiAssignmentId);
-    if (!assignment) throw new Error("KPI assignment not found");
+    if (!assignment) throw new ConvexError("KPI assignment not found");
     const { user, roles } = await assertEmployeeReadScope(ctx, assignment.employeeId);
     const rows = await ctx.db
       .query("evidenceFiles")

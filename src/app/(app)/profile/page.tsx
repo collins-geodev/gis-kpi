@@ -7,6 +7,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { PageHeader } from "@/components/page-header";
+import { errorMessage } from "@/lib/errors";
 import {
   Card,
   CardContent,
@@ -125,7 +126,7 @@ export default function ProfilePage() {
       const { storageId } = (await res.json()) as { storageId: string };
       await setAvatar({ storageId: storageId as Id<"_storage"> });
     } catch (e) {
-      setError(e instanceof Error ? e.message : `Could not save ${filename}.`);
+      setError(errorMessage(e, `Could not save ${filename}.`));
     } finally {
       setBusy(false);
     }
@@ -478,11 +479,7 @@ function SecurityCard({ email }: { email: string | null }) {
         router.push("/signin");
       }, 1800);
     } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message.replace(/^.*Uncaught ConvexError:?\s*/i, "").split("\n")[0]
-          : "Could not change the password.";
-      setError(msg || "Could not change the password.");
+      setError(errorMessage(err, "Could not change the password."));
       setBusy(false);
     }
   }
