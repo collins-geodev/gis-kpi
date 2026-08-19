@@ -30,7 +30,7 @@ role-based access control, cron reminders, an audit trail, and CI.
 | 11 | Excel polished, scope-filtered, typed, injection-safe, opens clean | ✅ builder + 5 tests + validated sample |
 | 12 | Responsive + WCAG AA core flows | ✅ responsive; a11y labels/focus/reduced-motion; formal AA audit recommended |
 | 13 | Loading/empty/error/permission-denied/offline states | ✅ (offline/reconnect is Convex-native) |
-| 14 | CI: lint, typecheck, unit, integration, e2e, build | ◐ CI configured; unit ✅ local; typecheck/build/e2e run in CI after codegen; Convex function integration tests are a follow-up |
+| 14 | CI: lint, typecheck, unit, integration, e2e, build | ✅ GitHub Actions green (format+lint+110 unit/integration tests, typecheck, production build); Playwright job opt-in via RUN_E2E |
 | 15 | PR → isolated preview; merge → prod | ◐ configured (CI + Vercel Git + Convex preview); requires repo/Vercel secrets wired |
 
 ## Known assumptions & follow-ups
