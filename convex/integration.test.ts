@@ -6,7 +6,7 @@
  * #8 and #9 at the function level.
  */
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -1779,5 +1779,158 @@ describe("rate limiting", () => {
     await expect(
       t.mutation(api.rateLimit.hit, { endpoint: "report_pdf" }),
     ).rejects.toThrow();
+  });
+});
+
+describe("malware scan integration point", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** Seed, then upload a real stored file as evidence for one KPI. */
+  async function uploadedEvidence(t: T) {
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "scan-emp@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const year = await ctx.db
+        .query("performanceYears")
+        .withIndex("by_year", (q) => q.eq("year", 2026))
+        .first();
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", empId).eq("performanceYearId", year!._id),
+        )
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    const storageId = await t.run(async (ctx) =>
+      ctx.storage.store(new Blob(["%PDF fake bytes"])),
+    );
+    const evidenceId = await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      storageId,
+      originalFilename: "integration-report.pdf",
+      mimeType: "application/pdf",
+      fileSize: 15,
+      category: "supporting_document",
+      title: "Integration report",
+    });
+    return { emp, empId, assignmentId, evidenceId };
+  }
+
+  async function scanStatusOf(t: T, evidenceId: Id<"evidenceFiles">) {
+    return await t.run(async (ctx) => (await ctx.db.get(evidenceId))!.scanStatus);
+  }
+
+  test("unconfigured scanner: files stay pending, links are never scannable", async () => {
+    const t = harness();
+    const { emp, assignmentId, evidenceId } = await uploadedEvidence(t);
+
+    expect(await scanStatusOf(t, evidenceId)).toBe("pending");
+    // Running the scan without MALWARE_SCAN_WEBHOOK_URL is a graceful no-op.
+    await t.action(internal.evidenceScan.scanEvidence, { evidenceId });
+    expect(await scanStatusOf(t, evidenceId)).toBe("pending");
+
+    const linkId = await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/log",
+      originalFilename: "log",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "qa_log",
+      title: "Link evidence",
+    });
+    expect((await scanStatusOf(t, linkId)) ?? null).toBeNull();
+
+    // Pending never blocks downloads (scanner absence must not stall work).
+    const auth = await emp.query(internal.evidence.authorizeDownload, { evidenceId });
+    expect(auth.allowed).toBe(true);
+  });
+
+  test("a flagged verdict blocks downloads, audits, and queues admin notices", async () => {
+    const t = harness();
+    const { emp, evidenceId } = await uploadedEvidence(t);
+    await makeUser(t, { email: "scan-admin@x.com", roles: ["system_admin"] });
+
+    vi.stubEnv("MALWARE_SCAN_WEBHOOK_URL", "https://scanner.example/scan");
+    vi.stubEnv("MALWARE_SCAN_WEBHOOK_TOKEN", "secret-token");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ verdict: "flagged", detail: "EICAR-Test" }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await t.action(internal.evidenceScan.scanEvidence, { evidenceId });
+
+    // The scanner received the bytes with filename + bearer auth.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://scanner.example/scan");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Filename"]).toBe("integration-report.pdf");
+    expect(headers["Authorization"]).toBe("Bearer secret-token");
+
+    expect(await scanStatusOf(t, evidenceId)).toBe("flagged");
+
+    // Downloads blocked — even for the owner.
+    const auth = await emp.query(internal.evidence.authorizeDownload, { evidenceId });
+    expect(auth.allowed).toBe(false);
+    expect(auth.status).toBe(403);
+
+    // Audited, and admin notices queued via the shared pipeline.
+    const flaggedAudits = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).filter(
+        (a) => a.action === "malware_flagged",
+      ),
+    );
+    expect(flaggedAudits.length).toBe(1);
+  });
+
+  test("a clean verdict marks the file clean and keeps downloads open", async () => {
+    const t = harness();
+    const { emp, evidenceId } = await uploadedEvidence(t);
+
+    vi.stubEnv("MALWARE_SCAN_WEBHOOK_URL", "https://scanner.example/scan");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(JSON.stringify({ verdict: "clean" }), { status: 200 }),
+      ),
+    );
+
+    await t.action(internal.evidenceScan.scanEvidence, { evidenceId });
+    expect(await scanStatusOf(t, evidenceId)).toBe("clean");
+    const auth = await emp.query(internal.evidence.authorizeDownload, { evidenceId });
+    expect(auth.allowed).toBe(true);
+  });
+
+  test("scanner failure never fakes a verdict — file stays pending, error audited", async () => {
+    const t = harness();
+    const { evidenceId } = await uploadedEvidence(t);
+
+    vi.stubEnv("MALWARE_SCAN_WEBHOOK_URL", "https://scanner.example/scan");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("upstream down", { status: 503 })),
+    );
+
+    await t.action(internal.evidenceScan.scanEvidence, { evidenceId });
+    expect(await scanStatusOf(t, evidenceId)).toBe("pending");
+
+    const errorAudits = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).filter(
+        (a) => a.action === "malware_scan_error",
+      ),
+    );
+    expect(errorAudits.length).toBe(1);
   });
 });

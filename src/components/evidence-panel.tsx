@@ -189,6 +189,14 @@ export function EvidencePanel({
                       {e.reviewStatus}
                     </Badge>
                     <Badge variant="muted">{e.category}</Badge>
+                    {e.scanStatus === "flagged" && (
+                      <Badge
+                        variant="critical"
+                        title="The malware scanner flagged this file — downloads are blocked"
+                      >
+                        ⚠ malware flagged
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {e.originalFilename}

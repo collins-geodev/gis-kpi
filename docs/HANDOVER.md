@@ -36,7 +36,7 @@ role-based access control, cron reminders, an audit trail, and CI.
 ## Known assumptions & follow-ups
 
 - `convex/_generated/*` is produced by your first `npx convex dev`; full `tsc`/`next build` run in CI after codegen. Pure domain logic is type-checked and unit-tested here.
-- Follow-ups (not blocking): Convex function-level integration tests (`convex-test`); a live malware scanner behind the `scanStatus` integration point; authenticated in-app download of stored evidence files (metadata + external links shown now; secure streaming route already exists server-side).
+- All earlier follow-ups are now built: `convex-test` integration suite (114 tests), authenticated evidence download/streaming, and the malware-scan pipeline behind `scanStatus` (`convex/evidenceScan.ts`). Scanning is dormant until you set `MALWARE_SCAN_WEBHOOK_URL` (+ optional `MALWARE_SCAN_WEBHOOK_TOKEN`) on the Convex deployment — contract documented in `.env.example`. Unconfigured, files stay `pending` and nothing blocks; a `flagged` verdict blocks downloads and alerts every System Admin.
 
 ## Unresolved source-data decisions (preserved, flagged `Needs Admin Review` — never guessed)
 

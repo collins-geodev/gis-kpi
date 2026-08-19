@@ -54,6 +54,13 @@ export const authorizeDownload = internalQuery({
     if (evidence.retentionState === "deleted") {
       return { allowed: false, status: 410, message: "Evidence deleted" };
     }
+    if (evidence.scanStatus === "flagged") {
+      return {
+        allowed: false,
+        status: 403,
+        message: "Blocked — the malware scanner flagged this file.",
+      };
+    }
     try {
       const { user } = await assertEvidenceAccess(ctx, evidence, "content");
       return {
@@ -157,8 +164,16 @@ export const saveEvidence = mutation({
       confidentiality: args.confidentiality ?? "internal",
       reviewStatus: "submitted",
       retentionState: "active",
-      scanStatus: "pending",
+      // Files await the scanner; links have nothing to scan.
+      scanStatus: args.storageId ? "pending" : undefined,
     });
+
+    // Malware scan (integration point) — dormant until a scanner is configured.
+    if (args.storageId) {
+      await ctx.scheduler.runAfter(0, internal.evidenceScan.scanEvidence, {
+        evidenceId,
+      });
+    }
 
     await recordAudit(ctx, {
       entityType: "evidenceFile",
@@ -587,6 +602,7 @@ export const listForAssignment = query({
         fileSize: e.fileSize,
         reviewStatus: e.reviewStatus,
         confidentiality: e.confidentiality,
+        scanStatus: e.scanStatus ?? null,
         hasFile: e.storageId !== undefined,
         externalUrl: e.externalUrl ?? null,
         uploadedAt: e.uploadedAt,

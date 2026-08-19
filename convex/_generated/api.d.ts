@@ -22,6 +22,7 @@ import type * as emails from "../emails.js";
 import type * as employees from "../employees.js";
 import type * as evidence from "../evidence.js";
 import type * as evidenceHttp from "../evidenceHttp.js";
+import type * as evidenceScan from "../evidenceScan.js";
 import type * as http from "../http.js";
 import type * as kpiSettings from "../kpiSettings.js";
 import type * as kpis from "../kpis.js";
@@ -71,6 +72,7 @@ declare const fullApi: ApiFromModules<{
   employees: typeof employees;
   evidence: typeof evidence;
   evidenceHttp: typeof evidenceHttp;
+  evidenceScan: typeof evidenceScan;
   http: typeof http;
   kpiSettings: typeof kpiSettings;
   kpis: typeof kpis;
