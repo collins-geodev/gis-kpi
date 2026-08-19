@@ -575,6 +575,14 @@ export default defineSchema({
     .index("by_employee", ["employeeId"]),
 
   // --- Audit ---------------------------------------------------------------
+  // --- Rate limiting (fixed window; one row per key, reset in place) --------
+  rateLimits: defineTable({
+    /** e.g. "password_change:<userId>" or "report_pdf:<userId>". */
+    key: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+  }).index("by_key", ["key"]),
+
   auditLogs: defineTable({
     entityType: v.string(),
     entityId: v.string(),

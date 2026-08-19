@@ -29,6 +29,19 @@ export async function GET(req: NextRequest) {
   const client = new ConvexHttpClient(convexUrl);
   client.setAuth(token);
 
+  // Per-user rate limit on this heavy render (policy lives server-side).
+  try {
+    const gate = await client.mutation(api.rateLimit.hit, { endpoint: "report_xlsx" });
+    if (!gate.ok) {
+      return new NextResponse(
+        "Too many report requests — please try again in a few minutes.",
+        { status: 429, headers: { "Retry-After": String(gate.retryAfterSeconds) } },
+      );
+    }
+  } catch {
+    return new NextResponse("Unauthorized", { status: 401 });
+  }
+
   let dataset: ReportDataset;
   try {
     dataset = (await client.query(api.reports.dataset, {

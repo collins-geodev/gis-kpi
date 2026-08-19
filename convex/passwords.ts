@@ -73,6 +73,17 @@ export const changePassword = action({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError("You must be signed in.");
 
+    // Brute-force guard: 5 attempts per 15 minutes, counted per user.
+    const gate = await ctx.runMutation(internal.rateLimit.hitForUser, {
+      endpoint: "password_change",
+      userId,
+    });
+    if (!gate.ok) {
+      throw new ConvexError(
+        `Too many password attempts — try again in ${Math.ceil(gate.retryAfterSeconds / 60)} minute(s).`,
+      );
+    }
+
     const info = await ctx.runQuery(internal.passwords.getChangeContext, { userId });
     if (!info) throw new ConvexError("This account has no password credential.");
 

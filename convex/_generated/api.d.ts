@@ -42,6 +42,7 @@ import type * as overrides from "../overrides.js";
 import type * as overview from "../overview.js";
 import type * as passwords from "../passwords.js";
 import type * as profile from "../profile.js";
+import type * as rateLimit from "../rateLimit.js";
 import type * as reminders from "../reminders.js";
 import type * as reports from "../reports.js";
 import type * as seed from "../seed.js";
@@ -89,6 +90,7 @@ declare const fullApi: ApiFromModules<{
   overview: typeof overview;
   passwords: typeof passwords;
   profile: typeof profile;
+  rateLimit: typeof rateLimit;
   reminders: typeof reminders;
   reports: typeof reports;
   seed: typeof seed;

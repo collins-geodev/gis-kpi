@@ -1740,3 +1740,44 @@ describe("capture window — employees start capturing from July 2026", () => {
     expect(keys).toContain("2026");
   });
 });
+
+describe("rate limiting", () => {
+  test("report exports allow 10 per window, then block with a retry hint", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: user } = await makeUser(t, {
+      email: "limits@x.com",
+      roles: ["employee"],
+    });
+    for (let i = 0; i < 10; i++) {
+      const r = await user.mutation(api.rateLimit.hit, { endpoint: "report_xlsx" });
+      expect(r.ok).toBe(true);
+    }
+    const blocked = await user.mutation(api.rateLimit.hit, { endpoint: "report_xlsx" });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
+    // Endpoints are limited independently.
+    const other = await user.mutation(api.rateLimit.hit, { endpoint: "report_pdf" });
+    expect(other.ok).toBe(true);
+  });
+
+  test("limits are per user, and the signed-out are rejected outright", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: a } = await makeUser(t, { email: "a-lim@x.com", roles: ["employee"] });
+    const { as: b } = await makeUser(t, { email: "b-lim@x.com", roles: ["employee"] });
+    for (let i = 0; i < 5; i++) {
+      await a.mutation(api.rateLimit.hit, { endpoint: "password_change" });
+    }
+    expect(
+      (await a.mutation(api.rateLimit.hit, { endpoint: "password_change" })).ok,
+    ).toBe(false);
+    // A different user still has a fresh window.
+    expect(
+      (await b.mutation(api.rateLimit.hit, { endpoint: "password_change" })).ok,
+    ).toBe(true);
+    await expect(
+      t.mutation(api.rateLimit.hit, { endpoint: "report_pdf" }),
+    ).rejects.toThrow();
+  });
+});
