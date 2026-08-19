@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BarChartCard } from "@/components/charts/bar-chart-card";
 import { DonutChartCard } from "@/components/charts/donut-chart-card";
 import { RadialGauge } from "@/components/charts/radial-gauge";
+import { TrendChartCard } from "@/components/charts/trend-chart-card";
 import { CountUp } from "@/components/count-up";
 import { AlertTriangle, ClipboardCheck, Lightbulb, Lock, Users } from "lucide-react";
 import { STATUS_BAND_LABELS, type StatusBand } from "@convex/lib/types";
@@ -126,6 +127,13 @@ export default function AnalyticsPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Approved-score trend from frozen snapshots (spec §12). */}
+      <TrendChartCard
+        title="Approved score trend"
+        description="Average official (approved) score across employees per period — read from frozen snapshots, never provisional numbers. The dashed line tracks evidence completeness."
+        data={data.scoreTrend}
+      />
 
       {/* Per-employee analytics: moderators pick anyone; employees see themselves. */}
       <EmployeeAnalytics />

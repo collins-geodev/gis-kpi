@@ -36,7 +36,7 @@ role-based access control, cron reminders, an audit trail, and CI.
 ## Known assumptions & follow-ups
 
 - `convex/_generated/*` is produced by your first `npx convex dev`; full `tsc`/`next build` run in CI after codegen. Pure domain logic is type-checked and unit-tested here.
-- Follow-ups (not blocking): Convex function-level integration tests (`convex-test`); trend / period-over-period charts from snapshots; a live malware scanner behind the `scanStatus` integration point; authenticated in-app download of stored evidence files (metadata + external links shown now; secure streaming route already exists server-side).
+- Follow-ups (not blocking): Convex function-level integration tests (`convex-test`); a live malware scanner behind the `scanStatus` integration point; authenticated in-app download of stored evidence files (metadata + external links shown now; secure streaming route already exists server-side).
 
 ## Unresolved source-data decisions (preserved, flagged `Needs Admin Review` — never guessed)
 

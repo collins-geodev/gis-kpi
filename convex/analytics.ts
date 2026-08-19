@@ -4,6 +4,7 @@
  * seeded configuration even before measurements exist.
  */
 import { query } from "./_generated/server";
+import { buildScoreTrend } from "./lib/trend";
 import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -61,6 +62,20 @@ export const dashboard = query({
       (i) => i.blocksScoring && !RESOLVED.includes(i.status),
     ).length;
 
+    // Approved-score trend across employees (dormant until periods approve).
+    const snapshots = await ctx.db.query("scoreSnapshots").take(2000);
+    const scoreTrend = buildScoreTrend(
+      snapshots
+        .filter((s) => s.scope === "individual" && s.approvalState === "approved")
+        .map((s) => ({
+          scopeRef: s.scopeRef,
+          periodKey: s.periodKey,
+          normalizedScore: s.normalizedScore,
+          evidenceCompletionPct: s.evidenceCompletionPct,
+          createdAt: s.createdAt,
+        })),
+    );
+
     // Measurement / score posture (may be sparse pre-capture).
     const byStatus = toRows(countBy(measurements, (m) => m.status));
     const withData = measurements.filter((m) => m.hasData).length;
@@ -83,6 +98,7 @@ export const dashboard = query({
       byFrequency,
       dqByCategory,
       measurementStatus: byStatus,
+      scoreTrend,
       weightCompleteness: [
         { label: "80 / 100 (baseline)", value: incomplete },
         { label: "100 / 100", value: complete },
@@ -193,170 +209,170 @@ export async function computeEmployeeAnalytics(
   ctx: QueryCtx,
   employeeId: Id<"employees">,
 ) {
-    const employee = await ctx.db.get(employeeId);
-    if (!employee) return null;
+  const employee = await ctx.db.get(employeeId);
+  if (!employee) return null;
 
-    const year = await ctx.db
-      .query("performanceYears")
-      .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
-      .first();
-    if (!year) return null;
+  const year = await ctx.db
+    .query("performanceYears")
+    .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+    .first();
+  if (!year) return null;
 
-    const assignments = await ctx.db
-      .query("kpiAssignments")
-      .withIndex("by_employee_year", (q) =>
-        q.eq("employeeId", employeeId!).eq("performanceYearId", year._id),
+  const assignments = await ctx.db
+    .query("kpiAssignments")
+    .withIndex("by_employee_year", (q) =>
+      q.eq("employeeId", employeeId!).eq("performanceYearId", year._id),
+    )
+    .collect();
+
+  const nowLagos = new Date(Date.now() + LAGOS_OFFSET_MS);
+  const currentMonthKey = monthKey(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth());
+
+  const measurementAt = async (assignmentId: Id<"kpiAssignments">, pk: string) =>
+    await ctx.db
+      .query("kpiMeasurements")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", assignmentId).eq("periodKey", pk),
       )
-      .collect();
+      .first();
 
-    const nowLagos = new Date(Date.now() + LAGOS_OFFSET_MS);
-    const currentMonthKey = monthKey(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth());
-
-    const measurementAt = async (assignmentId: Id<"kpiAssignments">, pk: string) =>
-      await ctx.db
-        .query("kpiMeasurements")
-        .withIndex("by_assignment_period", (q) =>
-          q.eq("kpiAssignmentId", assignmentId).eq("periodKey", pk),
+  // Same-role peers for context averages (excluding the subject).
+  const peers = (await ctx.db.query("employees").take(2000)).filter(
+    (e) => e.jobRole === employee.jobRole && e._id !== employeeId,
+  );
+  const peerAssignments: Doc<"kpiAssignments">[] = [];
+  for (const p of peers) {
+    peerAssignments.push(
+      ...(await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", p._id).eq("performanceYearId", year._id),
         )
-        .first();
-
-    // Same-role peers for context averages (excluding the subject).
-    const peers = (await ctx.db.query("employees").take(2000)).filter(
-      (e) => e.jobRole === employee.jobRole && e._id !== employeeId,
+        .collect()),
     );
-    const peerAssignments: Doc<"kpiAssignments">[] = [];
-    for (const p of peers) {
-      peerAssignments.push(
-        ...(await ctx.db
-          .query("kpiAssignments")
-          .withIndex("by_employee_year", (q) =>
-            q.eq("employeeId", p._id).eq("performanceYearId", year._id),
-          )
-          .collect()),
-      );
-    }
+  }
 
-    // Per-KPI attainment (current cadence bucket) + peer average.
-    const scorecardItems: ScorecardItem[] = [];
-    const kpis = [];
-    for (const a of assignments.sort((x, y) => x.displayOrder - y.displayOrder)) {
-      const pk = cadencePeriodKey(a.frequency as Frequency, currentMonthKey);
-      const m = await measurementAt(a._id, pk);
-      const peerValues: number[] = [];
-      for (const pa of peerAssignments) {
-        if (pa.canonicalKey !== a.canonicalKey) continue;
-        const ppk = cadencePeriodKey(pa.frequency as Frequency, currentMonthKey);
-        const pm = await measurementAt(pa._id, ppk);
-        if (pm?.hasData && pm.cappedAttainment !== null) {
-          peerValues.push(pm.cappedAttainment);
-        }
+  // Per-KPI attainment (current cadence bucket) + peer average.
+  const scorecardItems: ScorecardItem[] = [];
+  const kpis = [];
+  for (const a of assignments.sort((x, y) => x.displayOrder - y.displayOrder)) {
+    const pk = cadencePeriodKey(a.frequency as Frequency, currentMonthKey);
+    const m = await measurementAt(a._id, pk);
+    const peerValues: number[] = [];
+    for (const pa of peerAssignments) {
+      if (pa.canonicalKey !== a.canonicalKey) continue;
+      const ppk = cadencePeriodKey(pa.frequency as Frequency, currentMonthKey);
+      const pm = await measurementAt(pa._id, ppk);
+      if (pm?.hasData && pm.cappedAttainment !== null) {
+        peerValues.push(pm.cappedAttainment);
       }
-      scorecardItems.push({
-        weight: a.weight,
-        cappedAttainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
-        evidenceComplete: m?.evidenceComplete ?? false,
-        cadenceCompliant: m?.cadenceCompliant ?? false,
-      });
-      kpis.push({
-        assignmentId: a._id,
-        canonicalKey: a.canonicalKey,
-        objective: a.objective,
-        measurementMode: a.measurementMode,
-        kpiCategory: a.kpiCategory ?? "core",
-        weight: a.weight,
-        periodKey: pk,
-        attainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
-        status: m?.hasData ? m.status : "no_data",
-        weightedContribution: m?.weightedContribution ?? 0,
-        isProvisional: m?.isProvisional ?? true,
-        peerAvg:
-          peerValues.length > 0
-            ? peerValues.reduce((s, x) => s + x, 0) / peerValues.length
-            : null,
-        peerCount: peerValues.length,
-      });
     }
-    const scorecard = scoreScorecard(scorecardItems);
+    scorecardItems.push({
+      weight: a.weight,
+      cappedAttainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
+      evidenceComplete: m?.evidenceComplete ?? false,
+      cadenceCompliant: m?.cadenceCompliant ?? false,
+    });
+    kpis.push({
+      assignmentId: a._id,
+      canonicalKey: a.canonicalKey,
+      objective: a.objective,
+      measurementMode: a.measurementMode,
+      kpiCategory: a.kpiCategory ?? "core",
+      weight: a.weight,
+      periodKey: pk,
+      attainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
+      status: m?.hasData ? m.status : "no_data",
+      weightedContribution: m?.weightedContribution ?? 0,
+      isProvisional: m?.isProvisional ?? true,
+      peerAvg:
+        peerValues.length > 0
+          ? peerValues.reduce((s, x) => s + x, 0) / peerValues.length
+          : null,
+      peerCount: peerValues.length,
+    });
+  }
+  const scorecard = scoreScorecard(scorecardItems);
 
-    // Monthly trend across monthly-tracked KPIs (month-grain measurements).
-    const weightByAssignment = new Map(assignments.map((a) => [a._id, a.weight]));
-    const trend = [];
-    for (let mIdx = 0; mIdx < 12; mIdx++) {
-      const pk = monthKey(BASELINE_PERFORMANCE_YEAR, mIdx);
-      let weight = 0;
-      let scoreSum = 0;
-      let withData = 0;
-      for (const a of assignments) {
-        const m2 = await measurementAt(a._id, pk);
-        if (m2?.hasData && m2.cappedAttainment !== null) {
-          const w = weightByAssignment.get(a._id) ?? 0;
-          weight += w;
-          scoreSum += m2.cappedAttainment * w;
-          withData++;
-        }
+  // Monthly trend across monthly-tracked KPIs (month-grain measurements).
+  const weightByAssignment = new Map(assignments.map((a) => [a._id, a.weight]));
+  const trend = [];
+  for (let mIdx = 0; mIdx < 12; mIdx++) {
+    const pk = monthKey(BASELINE_PERFORMANCE_YEAR, mIdx);
+    let weight = 0;
+    let scoreSum = 0;
+    let withData = 0;
+    for (const a of assignments) {
+      const m2 = await measurementAt(a._id, pk);
+      if (m2?.hasData && m2.cappedAttainment !== null) {
+        const w = weightByAssignment.get(a._id) ?? 0;
+        weight += w;
+        scoreSum += m2.cappedAttainment * w;
+        withData++;
       }
-      trend.push({
-        periodKey: pk,
-        monthIndex: mIdx,
-        scoreOnMeasured: weight > 0 ? scoreSum / weight : null,
-        kpisWithData: withData,
-      });
     }
+    trend.push({
+      periodKey: pk,
+      monthIndex: mIdx,
+      scoreOnMeasured: weight > 0 ? scoreSum / weight : null,
+      kpisWithData: withData,
+    });
+  }
 
-    // Activity log (newest first, capped).
-    const assignmentById = new Map(assignments.map((a) => [a._id, a]));
-    const rawActivities = await ctx.db
-      .query("activities")
-      .withIndex("by_employee_period", (q) => q.eq("employeeId", employeeId!))
-      .take(500);
-    const activities = rawActivities
-      .sort((x, y) => y.activityAt - x.activityAt)
-      .slice(0, 30)
-      .map((act) => {
-        const a = assignmentById.get(act.kpiAssignmentId);
-        return {
-          id: act._id,
-          activityAt: act.activityAt,
-          periodKey: act.periodKey,
-          title: act.title,
-          status: act.status,
-          canonicalKey: a?.canonicalKey ?? "",
-          objective: a?.objective ?? "",
-          detail: a ? activityDetail(a.measurementMode, act) : "",
-        };
-      });
+  // Activity log (newest first, capped).
+  const assignmentById = new Map(assignments.map((a) => [a._id, a]));
+  const rawActivities = await ctx.db
+    .query("activities")
+    .withIndex("by_employee_period", (q) => q.eq("employeeId", employeeId!))
+    .take(500);
+  const activities = rawActivities
+    .sort((x, y) => y.activityAt - x.activityAt)
+    .slice(0, 30)
+    .map((act) => {
+      const a = assignmentById.get(act.kpiAssignmentId);
+      return {
+        id: act._id,
+        activityAt: act.activityAt,
+        periodKey: act.periodKey,
+        title: act.title,
+        status: act.status,
+        canonicalKey: a?.canonicalKey ?? "",
+        objective: a?.objective ?? "",
+        detail: a ? activityDetail(a.measurementMode, act) : "",
+      };
+    });
 
-    // Current-month activity count uses the real work-dates.
-    const monthStart =
-      Date.UTC(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth(), 1) - LAGOS_OFFSET_MS;
-    const monthEnd =
-      Date.UTC(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth() + 1, 1) - LAGOS_OFFSET_MS;
-    const COUNTED = ["submitted", "verified", "approved", "locked"];
-    const activitiesThisMonth = rawActivities.filter(
-      (act) =>
-        COUNTED.includes(act.status) &&
-        act.activityAt >= monthStart &&
-        act.activityAt < monthEnd,
-    ).length;
+  // Current-month activity count uses the real work-dates.
+  const monthStart =
+    Date.UTC(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth(), 1) - LAGOS_OFFSET_MS;
+  const monthEnd =
+    Date.UTC(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth() + 1, 1) - LAGOS_OFFSET_MS;
+  const COUNTED = ["submitted", "verified", "approved", "locked"];
+  const activitiesThisMonth = rawActivities.filter(
+    (act) =>
+      COUNTED.includes(act.status) &&
+      act.activityAt >= monthStart &&
+      act.activityAt < monthEnd,
+  ).length;
 
-    return {
-      employee: {
-        id: employee._id,
-        displayName: employee.displayName,
-        jobRole: employee.jobRole,
-        location: employee.canonicalLocation,
-      },
-      currentPeriodKey: currentMonthKey,
-      tiles: {
-        scoreOnMeasured: scorecard.scoreOnMeasured,
-        evidenceCompletionPct: scorecard.evidenceCompletionPct,
-        cadenceCompliancePct: scorecard.cadenceCompliancePct,
-        activitiesThisMonth,
-        kpisWithData: scorecard.itemsWithData,
-        kpiCount: scorecard.itemCount,
-      },
-      kpis,
-      trend,
-      activities,
-    };
+  return {
+    employee: {
+      id: employee._id,
+      displayName: employee.displayName,
+      jobRole: employee.jobRole,
+      location: employee.canonicalLocation,
+    },
+    currentPeriodKey: currentMonthKey,
+    tiles: {
+      scoreOnMeasured: scorecard.scoreOnMeasured,
+      evidenceCompletionPct: scorecard.evidenceCompletionPct,
+      cadenceCompliancePct: scorecard.cadenceCompliancePct,
+      activitiesThisMonth,
+      kpisWithData: scorecard.itemsWithData,
+      kpiCount: scorecard.itemCount,
+    },
+    kpis,
+    trend,
+    activities,
+  };
 }
