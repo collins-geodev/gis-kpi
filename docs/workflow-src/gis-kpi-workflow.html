@@ -192,7 +192,7 @@
     <div class="cell"><div class="label">DOCUMENT</div><div class="value">Operational Workflow Guide</div></div>
     <div class="cell"><div class="label">PLATFORM</div><div class="value">GIS KPI Dashboard</div></div>
     <div class="cell"><div class="label">SURFACES</div><div class="value">Management Dashboard · Employee Workspace · Reports &amp; Exports</div></div>
-    <div class="cell"><div class="label">VERSION</div><div class="value">1.0</div></div>
+    <div class="cell"><div class="label">VERSION</div><div class="value">2.0</div></div>
     <div class="cell wide"><div class="label">CLASSIFICATION</div><div class="value">Internal Use</div></div>
   </div>
 
@@ -236,8 +236,9 @@
   <div class="sec"><span class="chip">01</span><span class="name">PLATFORM OVERVIEW</span></div>
   <h2>One dashboard, every score reproducible</h2>
   <p class="body">The GIS KPI Dashboard digitises how the GIS Team (Technical Services)
-  plans, measures and proves performance. Every employee carries a set of weighted KPIs
-  drawn from the approved 2026 performance workbook; every reported result is backed by
+  plans, measures and proves performance. Every employee carries five core KPIs from the
+  approved 2026 performance workbook plus four shared non-core KPIs — 100 weighted points
+  in all; every reported result is backed by
   captured activity and reviewable evidence; and every official score is frozen as a
   reproducible snapshot an auditor can trace back to its inputs.</p>
   <p class="body">One web application serves three ways of working, all against a single backend:</p>
@@ -340,7 +341,10 @@
   <h2>Every account is granted, linked, then trusted</h2>
   <p class="body">Anyone can create an account, but a new account can do nothing until an
   administrator grants it a role. Employees are additionally <b>linked to their roster
-  record</b>, which is what puts their five KPIs in front of them.</p>
+  record</b>, which is what puts their KPIs in front of them. Unlinking is a clean break:
+  the account's captured activity and evidence are <b>wiped by default</b> (an explicit
+  keep-data option exists for genuine account moves), so a relink always starts clean —
+  and either path is audit-logged.</p>
 
   <div class="steps">
     <div class="step"><span class="sn">1</span><h4>Sign up</h4><p>Email + password at <b>/signin</b>. The account exists but holds no role.</p></div>
@@ -387,23 +391,24 @@
   it came from.</p>
 
   <div class="stats">
-    <div class="stat"><div class="big">75</div><div class="cap">KPI assignments</div></div>
+    <div class="stat"><div class="big">75</div><div class="cap">Core KPI assignments</div></div>
     <div class="stat"><div class="big">15</div><div class="cap">GIS Team employees</div></div>
     <div class="stat"><div class="big">4</div><div class="cap">Job-role templates</div></div>
-    <div class="stat"><div class="big">80</div><div class="cap">Configured weight per person</div></div>
+    <div class="stat"><div class="big">100</div><div class="cap">Points per person — 80 core + 20 non-core</div></div>
   </div>
 
-  <p class="body">Each employee carries <b>five KPIs</b> from their job-role template —
+  <p class="body">Each employee carries <b>five core KPIs</b> from their job-role template —
   Geographic Information Systems Lead, Geo Database Specialist, and the other 2026
-  role templates — each with a target, a measurement mode, a weight in points and an
-  evidence requirement.</p>
+  role templates — plus <b>four shared non-core KPIs</b>, each with a target, a measurement
+  mode, a weight in points and an evidence requirement.</p>
 
-  <div class="callout"><b class="lead">The 80 / 100 rule.</b> The workbook's five weights
-  total <b>80 points, not 100</b> — and the dashboard treats that as a fact to surface,
-  not a mistake to hide. Scores are presented against the true configured maximum
-  everywhere (overview, team views, exports), and are <b>never silently rebased to 100</b>.
-  Closing the gap is an explicit admin decision — add a KPI, adjust weights, or enable
-  labelled normalization on the performance year — and whichever path is taken is audit-logged.</div>
+  <div class="callout"><b class="lead">Core 80 + non-core 20 = 100.</b> The workbook's five
+  core weights total <b>80 points</b>, preserved verbatim and never silently rebased. The
+  remaining 20 points were closed by an explicit, audit-logged decision: four shared
+  non-core KPIs adopted from the 2025 workbook — <b>safety hazard reporting</b> (≥ 1/month),
+  <b>compliance recertification</b> (vs 80%, annual), <b>internal customer satisfaction</b>
+  (vs 85%, annual) and <b>training hours</b> (20 hrs/yr; 10 for GL4+) — at 5 points each,
+  for every role. Core and non-core are labelled apart on every scorecard.</div>
 
   <h3 class="sub">Versioned configuration</h3>
   <p class="body">KPI definitions are versioned: changing a target, weight, formula or
@@ -414,9 +419,11 @@
 
   <div class="callout cream"><b>Nothing is silently corrected.</b> Where the workbook is
   ambiguous — a blank frequency, a location spelled two ways, a unit mismatch — the anomaly
-  becomes a <b>data-quality issue</b> for an admin to resolve (§11). Until a blocking issue
-  is resolved, the affected KPI is marked <span class="pill">scoring blocked</span> and cannot
-  produce an official score.</div>
+  becomes a <b>data-quality issue</b> for an admin to resolve (§11). And where a source
+  encoding punished honest reporting, the fix was an explicit migration: QA data quality is
+  scored as a <b>coverage ratio</b> (errors corrected ÷ identified), the commercial-maintenance
+  KPI as a <b>monthly error budget</b> (≤ 24, lower is better), and deliverable-accuracy
+  reductions run against a <b>pinned baseline</b> the server enforces.</div>
 
   <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 5 of 13</span></div>
 </div>
@@ -440,19 +447,22 @@
   <h3 class="sub">Measurement modes</h3>
   <table class="matrix">
     <tr><th style="width:24%">Mode</th><th>What the employee enters</th><th style="width:33%">Example KPI</th></tr>
-    <tr><td>Ratio</td><td>Numerator (achieved) and denominator (planned / total)</td><td>Data integrations completed vs planned</td></tr>
+    <tr><td>Ratio</td><td>Numerator (achieved) and denominator (planned / total)</td><td>Integrations vs planned · QA coverage (corrected ÷ identified)</td></tr>
     <tr><td>Duration / SLA</td><td>Items inside the threshold and total eligible items</td><td>Requests turned around within 24 h / 2 business days</td></tr>
-    <tr><td>Count</td><td>The count achieved for the period</td><td>QA errors found in captured data</td></tr>
-    <tr><td>Reduction</td><td>Prior-year baseline and current value</td><td>Reduce digitisation errors by 20%</td></tr>
+    <tr><td>Count</td><td>The count achieved for the period</td><td>Safety hazard reports · monthly error budget (≤ 24, lower is better)</td></tr>
+    <tr><td>Reduction</td><td>The current value — the baseline is pinned and enforced server-side</td><td>Reduce digitisation errors by 20% vs the pinned baseline</td></tr>
     <tr><td>Milestone / Binary</td><td>Stage reached, or done / not done</td><td>Project phase delivery</td></tr>
     <tr><td>Rubric</td><td>Score and maximum against an approved rubric</td><td>Innovation initiative assessment</td></tr>
     <tr><td>Composite</td><td>Inputs of each component, weighted together</td><td>Database integrity (multi-check)</td></tr>
   </table>
 
-  <p class="body">Every activity keeps its title, notes, reporter and timestamp — the
-  measurement is an <i>aggregate of captured work</i>, not a typed-in result. Duplicate
-  submissions for the same KPI and period trigger a warning before anything is written,
-  and the activity feed gives managers a live view of updates as they land.</p>
+  <p class="body">Every activity keeps its title, notes, reporter, <b>work date</b> and
+  timestamp — the measurement is an <i>aggregate of captured work</i>, not a typed-in
+  result. Daily and weekly KPIs are captured <b>incrementally</b>: batch logs accumulate
+  through the period (QA coverage grows entry by entry), the form shows the running score
+  and a cadence breakdown as work lands, and duplicate summary entries trigger a warning
+  before anything is written. The activity feed gives managers a live view of updates as
+  they arrive.</p>
 
   <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 6 of 13</span></div>
 </div>
@@ -493,6 +503,9 @@
     <li><b>Restricted access</b> — employees see their own evidence; managers and reviewers
     see their scope; auditors see metadata without file contents; every download of a
     restricted file is logged.</li>
+    <li><b>Fast-track review</b> — reviewers approve evidence inline from the queue, with
+    per-KPI bulk approve; every item carries a three-state badge (pending · approved ·
+    rejected), and an admin submission delete sweeps the KPI's attached evidence with it.</li>
   </ul>
 
   <div class="callout"><b class="lead">Rejection is feedback, not punishment.</b> A rejected
@@ -524,11 +537,13 @@
   <b>score snapshot</b> — calculation version, inputs, caps and weights — so the same number
   can be recomputed and audited months later.</div>
 
-  <h3 class="sub">Overrides — allowed, but never quiet</h3>
+  <h3 class="sub">Overrides &amp; recalls — allowed, but never quiet</h3>
   <p class="body">A manager or system admin can override a score — but the override
   <b>requires a written reason</b>, keeps the engine's original number alongside the
-  overridden one, and writes both to the audit log. An override never edits history;
-  it adds to it.</p>
+  overridden one, and writes both to the audit log. Rejections and period approvals can
+  be recalled in the moment via a <b>post-action Undo</b>; a recall is just another
+  audited decision. Employees see their own approval outcomes on their performance page —
+  nothing about a decision is hidden from the person it concerns.</p>
 
   <h3 class="sub">Locking a period</h3>
   <p class="body">Once approvals are complete, the period can be <b>locked</b>: no further
@@ -556,7 +571,7 @@
     attainment&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="k">f</span>(mode, inputs, target, direction)&nbsp;&nbsp;<span class="c">// 1.0 = 100%</span><br>
     cappedAttainment&nbsp;&nbsp;&nbsp;&nbsp;= <span class="k">clamp</span>(attainment, 0, officialCap)<br>
     weightedContribution = cappedAttainment × weightPoints<br>
-    <span class="c">// employee score = Σ weightedContribution over their five KPIs (out of 80)</span>
+    <span class="c">// employee score = Σ weightedContribution over all KPIs — out of 100 (80 core + 20 non-core)</span>
   </div>
 
   <ul class="list">
@@ -565,7 +580,10 @@
     <li><b>Caps are policy</b> — attainment is capped at the official cap (default 100%),
     with a separate stretch cap (default 120%) available where the year's policy allows it.</li>
     <li><b>Weights are points</b> — a 20-point KPI at 90% attainment contributes 18 points;
-    the employee's score is the sum over their five KPIs, out of the true configured maximum.</li>
+    the employee's score is the sum over all their KPIs, core and non-core labelled apart.</li>
+    <li><b>Honest edge cases</b> — percent-encoded reduction targets self-normalize; a zero
+    baseline with zero errors counts as met; and a provisional measurement whose activities
+    are all deleted is removed rather than scored as a fake 0% or 100%.</li>
   </ul>
 
   <h3 class="sub">Status bands</h3>
@@ -598,23 +616,24 @@
   <p class="body">Oversight runs at three altitudes, each a click apart and each carrying
   the context that makes comparison fair:</p>
   <ul class="list">
-    <li><b>Executive Overview</b> — the approved team score, weight completeness
-    (the 80/100 gap made visible), evidence and cadence coverage, overdue periods, the
-    review backlog and the current score drivers.</li>
+    <li><b>Executive Overview</b> — the approved team score out of 100 (core and non-core
+    labelled apart), submission-workflow posture, evidence and cadence coverage, overdue
+    periods, the review backlog and the current score drivers.</li>
     <li><b>Team Performance</b> — sortable scorecards with role and location comparison.
     Every comparison shows job role and configured weight, so a Lead and a Specialist are
     never ranked as if they carried the same targets.</li>
-    <li><b>Individual Performance</b> — one employee's five KPIs with target, actual,
+    <li><b>Individual Performance</b> — one employee's KPIs with target, actual,
     attainment, weight and contribution; their activity timeline, evidence gallery, score
     history and report shortcuts.</li>
   </ul>
 
   <h3 class="sub">Analytics workbench</h3>
-  <p class="body">The Analytics page adds trends and target-vs-actual over time, a
-  contribution waterfall (which KPIs moved the score), a person-by-KPI heatmap, role and
-  location comparisons, review-backlog ageing, score distributions and data-quality
-  exception views. Every chart offers a <b>table alternative</b> for accessibility, and
-  filters are URL-encoded so any view can be shared as a link.</p>
+  <p class="body">The Analytics page adds coverage gauges, donut and comparison charts,
+  data-quality exception views — and a <b>per-employee analytics</b> section with peer
+  context: managers pick any employee in scope and see their attainment alongside the
+  peer distribution, while an employee opening the same page sees their own numbers in
+  context. Every chart offers a <b>table alternative</b> for accessibility, and filters
+  are URL-encoded so any view can be shared as a link.</p>
 
   <h3 class="sub">Live activity feed</h3>
   <p class="body">Managers and admins follow a live feed of KPI updates as employees save
@@ -639,9 +658,10 @@
   <ul class="list">
     <li><b>Excel workbook</b> — seven typed sheets (summary, per-employee scores,
     measurements, evidence index, data-quality ledger and more) with real cell types,
-    formula-injection-safe text and the 80-weight note on every relevant sheet.</li>
-    <li><b>PDF report</b> — a deterministic layout of the approved numbers: scorecards,
-    tables and status bands, generated from the same snapshots the dashboard shows.</li>
+    formula-injection-safe text and the configured-weight note on every relevant sheet.</li>
+    <li><b>PDF report</b> — a deterministic layout of the approved numbers with
+    <b>embedded engine-drawn charts</b> (weighted-score and per-KPI attainment bars,
+    coloured by status band), generated from the same frozen snapshots the dashboard shows.</li>
   </ul>
 
   <h3 class="sub">The optional AI narrative</h3>
@@ -657,9 +677,8 @@
   downloads are themselves access-logged.</div>
 
   <h3 class="sub">Evidence-grade exports</h3>
-  <p class="body">Because official scores come from frozen snapshots, an export re-run for
-  the same period reproduces the same numbers — a report is not a screenshot of a moving
-  dashboard, it is a document derived from the system of record.</p>
+  <p class="body">Official scores come from frozen snapshots, so a re-run export
+  reproduces the same numbers — a document derived from the system of record.</p>
 
   <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 11 of 13</span></div>
 </div>
@@ -754,7 +773,7 @@
     </div>
     <div class="docmeta">
       <span class="r">GIS KPI DASHBOARD</span><br>
-      APPLICATION &amp; PERFORMANCE WORKFLOW · V1.0<br>
+      APPLICATION &amp; PERFORMANCE WORKFLOW · V2.0<br>
       INTERNAL USE — © IKEJA ELECTRIC PLC
     </div>
   </div>

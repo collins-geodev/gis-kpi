@@ -14,11 +14,17 @@ import { api } from "@convex/_generated/api";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DOCS: Record<string, { contentType: string }> = {
-  "GIS-KPI-Dashboard-Workflow.pdf": { contentType: "application/pdf" },
+const DOCS: Record<string, { contentType: string; access: "management" | "all" }> = {
+  // The full workflow guide is management-facing: any role beyond plain Employee.
+  "GIS-KPI-Dashboard-Workflow.pdf": {
+    contentType: "application/pdf",
+    access: "management",
+  },
+  // The presentation deck is available to every signed-in user.
   "GIS-KPI-Dashboard-Workflow-Deck.pptx": {
     contentType:
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    access: "all",
   },
 };
 
@@ -36,12 +42,22 @@ export async function GET(
   const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
   if (!convexUrl) return new NextResponse("Server not configured", { status: 500 });
 
-  // Validate the token against the backend (a stale or forged cookie fails here).
+  // Validate the token against the backend (a stale or forged cookie fails here)
+  // and enforce the per-document access level server-side.
   const client = new ConvexHttpClient(convexUrl);
   client.setAuth(token);
   try {
     const me = await client.query(api.profile.getMine, {});
     if (me === null) return new NextResponse("Unauthorized", { status: 401 });
+    if (entry.access === "management") {
+      const managerial = me.roles.some((r) => r !== "employee");
+      if (!managerial) {
+        return new NextResponse(
+          "Forbidden — this document is available to management roles only.",
+          { status: 403 },
+        );
+      }
+    }
   } catch {
     return new NextResponse("Unauthorized", { status: 401 });
   }

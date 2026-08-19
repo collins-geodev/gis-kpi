@@ -104,7 +104,7 @@ function chip(s, x, y, w, text, color, fill) {
 {
   const s = contentSlide("Overview", "One dashboard, one backend — every score reproducible from activity and evidence.");
   s.addText(
-    "The GIS KPI Dashboard digitises how the GIS Team plans, measures and proves performance. Every employee carries five weighted KPIs from the approved 2026 workbook; every result is backed by captured activity and reviewable evidence; every official score is frozen as a reproducible snapshot.",
+    "The GIS KPI Dashboard digitises how the GIS Team plans, measures and proves performance. Every employee carries five core KPIs from the approved 2026 workbook plus four shared non-core KPIs — 100 weighted points in all; every result is backed by captured activity and reviewable evidence; every official score is frozen as a reproducible snapshot.",
     { x: 0.64, y: 1.95, w: 5.0, h: 1.75, fontFace: FONT, fontSize: 13.5, color: SLATE, align: "left", margin: 0, valign: "top", lineSpacingMultiple: 1.12 },
   );
   s.addText(
@@ -166,10 +166,10 @@ function chip(s, x, y, w, text, color, fill) {
 {
   const s = contentSlide("KPI Catalogue", "From the approved 2026 workbook to a living, versioned catalogue — nothing silently corrected.");
   const stats = [
-    ["75", "KPI assignments"],
+    ["75", "Core KPI assignments"],
     ["15", "GIS Team employees"],
     ["4", "Job-role templates"],
-    ["80", "Points configured weight"],
+    ["100", "Points per person (80 core + 20 non-core)"],
   ];
   stats.forEach((t, i) => {
     const x = 0.64 + i * 3.06;
@@ -188,12 +188,12 @@ function chip(s, x, y, w, text, color, fill) {
   s.addShape("roundRect", { x: 6.78, y: 3.85, w: 5.9, h: 1.85, fill: { color: RED_F }, line: { color: RED, width: 1.2 }, rectRadius: 0.08 });
   s.addText(
     [
-      { text: "The 80 / 100 rule", options: { bold: true, color: RED, breakLine: true } },
-      { text: "Each employee's five weights total 80 points, not 100. Scores are shown against the true configured maximum everywhere and are never silently rebased — closing the gap is an explicit, audit-logged admin decision.", options: { color: SLATE } },
+      { text: "Core 80 + non-core 20 = 100", options: { bold: true, color: RED, breakLine: true } },
+      { text: "The workbook's five core weights total 80 points, preserved verbatim. The remaining 20 points come from four shared non-core KPIs adopted from the 2025 workbook by an explicit, audit-logged decision — core and non-core labelled apart on every scorecard.", options: { color: SLATE } },
     ],
     { x: 6.99, y: 4.02, w: 5.5, h: 1.55, fontFace: FONT, fontSize: 11.8, align: "left", margin: 0, valign: "top", lineSpacingMultiple: 1.12 },
   );
-  s.addText("Five KPIs per employee — each with a target, measurement mode, weight in points and an evidence requirement. Definitions are versioned; old scores keep the rules they were approved under.",
+  s.addText("Five core KPIs per employee plus four shared non-core KPIs — safety hazard reporting, compliance recertification, internal customer satisfaction and training hours (5 points each). Definitions are versioned; old scores keep the rules they were approved under.",
     { x: 0.64, y: 5.95, w: 12.0, h: 0.6, fontFace: FONT, fontSize: 11.5, color: GRAY, align: "left", margin: 0, valign: "top", lineSpacingMultiple: 1.1 });
 }
 
@@ -238,7 +238,7 @@ function chip(s, x, y, w, text, color, fill) {
       { text: "   →   ", options: { color: GRAY } },
       { text: "× weight points", options: { color: DARK } },
       { text: "   →   ", options: { color: GRAY } },
-      { text: "Σ over 5 KPIs (out of 80)", options: { color: RED, bold: true } },
+      { text: "Σ over all KPIs (out of 100)", options: { color: RED, bold: true } },
     ],
     { x: 0.9, y: 3.8, w: 11.6, h: 0.72, fontFace: "Consolas", fontSize: 12, align: "left", margin: 0, valign: "middle" },
   );
@@ -252,8 +252,8 @@ function chip(s, x, y, w, text, color, fill) {
 
   s.addText(
     [
-      { text: "Overrides are allowed — never quiet.  ", options: { bold: true, color: RED } },
-      { text: "An override requires a written reason, keeps the engine's number alongside, and is audit-logged. Locked periods accept no further change.", options: { color: SLATE } },
+      { text: "Overrides & recalls — never quiet.  ", options: { bold: true, color: RED } },
+      { text: "An override requires a written reason and keeps the engine's number alongside; rejections and period approvals can be recalled via a post-action Undo. Everything is audit-logged, and locked periods accept no further change.", options: { color: SLATE } },
     ],
     { x: 0.64, y: 5.75, w: 11.8, h: 0.7, fontFace: FONT, fontSize: 11.5, align: "left", margin: 0, valign: "top", lineSpacingMultiple: 1.1 },
   );
@@ -263,9 +263,9 @@ function chip(s, x, y, w, text, color, fill) {
 {
   const s = contentSlide("Analytics & Reports", "Three altitudes of oversight — all reading from the same approved snapshots.");
   const cards = [
-    ["Executive Overview", "Approved team score, the 80/100 gap made visible, evidence coverage, overdue periods and the review backlog."],
+    ["Executive Overview", "Approved team score out of 100 (core + non-core labelled apart), workflow posture, evidence coverage, overdue periods and the review backlog."],
     ["Team Performance", "Sortable scorecards with role and location comparison — always labelled with job role and configured weight, so comparisons stay fair."],
-    ["Individual Performance", "One employee's five KPIs: target, actual, attainment, weight, contribution — plus timeline, evidence gallery and score history."],
+    ["Individual Performance", "One employee's KPIs: target, actual, attainment, weight, contribution — plus timeline, evidence gallery, score history and per-employee analytics with peer context."],
   ];
   cards.forEach((c, i) => {
     const x = 0.64 + i * 4.12;
@@ -289,7 +289,7 @@ function chip(s, x, y, w, text, color, fill) {
   s.addText(
     [
       { text: "Reports with provenance.  ", options: { bold: true, color: RED } },
-      { text: "A 7-sheet typed Excel workbook and a deterministic PDF — with an optional AI narrative that only explains the engine's numbers, ships with a disclaimer and approval status, and records provider, model and prompt version in the audit log.", options: { color: SLATE } },
+      { text: "A 7-sheet typed Excel workbook and a deterministic PDF with embedded engine-drawn charts (weighted-score and attainment bars by status band) — plus an optional AI narrative that only explains the engine's numbers, ships with a disclaimer and approval status, and records provider, model and prompt version in the audit log.", options: { color: SLATE } },
     ],
     { x: 0.9, y: 5.22, w: 11.6, h: 0.85, fontFace: FONT, fontSize: 12, align: "left", margin: 0, valign: "top", lineSpacingMultiple: 1.12 },
   );

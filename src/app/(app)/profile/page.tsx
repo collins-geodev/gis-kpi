@@ -40,17 +40,19 @@ const WORKFLOW_DOCS = [
     href: "/api/docs/GIS-KPI-Dashboard-Workflow.pdf",
     icon: FileText,
     title: "Workflow Guide (PDF)",
-    meta: "Application & Performance Workflow · 13 pages · 0.6 MB",
+    meta: "Application & Performance Workflow · v2.0 · 13 pages",
     description:
-      "The end-to-end operational guide — roles, KPI catalogue, capture, evidence, approval, scoring and audit.",
+      "The end-to-end operational guide — roles, KPI catalogue (core + non-core), capture, evidence, approval, scoring and audit.",
+    managementOnly: true, // also enforced server-side by /api/docs
   },
   {
     href: "/api/docs/GIS-KPI-Dashboard-Workflow-Deck.pptx",
     icon: Presentation,
     title: "Workflow Deck (PowerPoint)",
-    meta: "8-slide presentation · PPTX · 1.2 MB",
+    meta: "8-slide presentation · v2.0 · PPTX",
     description:
       "The same workflow as a presentation deck — ready for briefings, onboarding and stakeholder walkthroughs.",
+    managementOnly: false,
   },
 ] as const;
 
@@ -373,7 +375,8 @@ export default function ProfilePage() {
         </Card>
       </div>
 
-      {/* Documentation downloads — available to every role. */}
+      {/* Documentation downloads — the deck for everyone signed in; the full
+          guide only for management roles (also enforced server-side). */}
       <Card className="card-lift sheen">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -383,14 +386,16 @@ export default function ProfilePage() {
             Documentation
           </CardTitle>
           <CardDescription>
-            The official platform workflow — how capture, evidence, review, scoring
-            and reporting fit together. Available to admins and all signed-in users;
-            downloads are auth-gated.
+            The official platform workflow — how capture, evidence, review, scoring and
+            reporting fit together. The deck is available to every signed-in user; the
+            full guide is management-only. Downloads are auth-gated.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="stagger-children grid gap-4 sm:grid-cols-2">
-            {WORKFLOW_DOCS.map((doc) => (
+            {WORKFLOW_DOCS.filter(
+              (doc) => !doc.managementOnly || profile.roles.some((r) => r !== "employee"),
+            ).map((doc) => (
               <div
                 key={doc.href}
                 className="group flex flex-col justify-between gap-3 rounded-lg border border-border bg-muted/30 p-4 transition-colors hover:border-accent/50"

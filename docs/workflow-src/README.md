@@ -2,7 +2,9 @@
 
 Sources for the two downloadable documents served from `server-assets/docs/` through
 the auth-gated `/api/docs/[doc]` route and offered on the **/profile** page
-(Documentation card, visible to every signed-in role):
+(Documentation card). Access: the **deck** is available to every signed-in user; the
+**full guide (PDF) is management-only** — any role beyond plain Employee — enforced
+server-side in the route and mirrored in the card's visibility:
 
 | Deliverable | Source | Rebuild |
 |---|---|---|
@@ -34,6 +36,6 @@ npm install pptxgenjs
 node build-deck.js   # writes gis-kpi-workflow-deck.pptx next to the script
 ```
 
-After rebuilding, copy the outputs into `public/docs/` under their published names and
-update the size/page metadata in `src/app/(app)/profile/page.tsx` (`WORKFLOW_DOCS`)
-if they changed.
+After rebuilding, copy the outputs into `server-assets/docs/` under their published
+names and update the version/size/page metadata in
+`src/app/(app)/profile/page.tsx` (`WORKFLOW_DOCS`) if they changed.
