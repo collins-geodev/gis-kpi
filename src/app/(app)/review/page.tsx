@@ -18,7 +18,6 @@ import { formatPercent } from "@convex/lib/format";
 import { CheckCircle2, FileCheck2, Inbox, Lock, Trash2, XCircle } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 
-
 /** Convex redacts plain Error messages in prod — surface ConvexError data. */
 function errorMessage(e: unknown, fallback: string): string {
   if (e instanceof ConvexError) {
@@ -59,7 +58,9 @@ export default function ReviewPage() {
     setError(null);
     try {
       await notice.undo();
-      setNotice({ text: "Recalled — the decision has been reversed and the employee notified." });
+      setNotice({
+        text: "Recalled — the decision has been reversed and the employee notified.",
+      });
     } catch (e) {
       setError(errorMessage(e, "Recall failed."));
     } finally {
@@ -353,7 +354,6 @@ export default function ReviewPage() {
           })}
         </div>
       )}
-
     </div>
   );
 }

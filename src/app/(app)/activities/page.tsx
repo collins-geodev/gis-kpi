@@ -188,8 +188,7 @@ export default function ActivitiesPage() {
         : fld,
     )
     .map((fld) => {
-      const override =
-        selected && KEY_FIELD_LABELS[selected.canonicalKey]?.[fld.name];
+      const override = selected && KEY_FIELD_LABELS[selected.canonicalKey]?.[fld.name];
       return override ? { ...fld, label: override } : fld;
     });
 
@@ -255,7 +254,11 @@ export default function ActivitiesPage() {
   useEffect(() => {
     if (editingId) return;
     const bounded = selectedPeriod
-      ? clampTs(Date.now(), selectedPeriod.startAt, Math.min(selectedPeriod.endAt, Date.now()))
+      ? clampTs(
+          Date.now(),
+          selectedPeriod.startAt,
+          Math.min(selectedPeriod.endAt, Date.now()),
+        )
       : Date.now();
     setActivityDate(lagosDateString(bounded));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -546,8 +549,8 @@ export default function ActivitiesPage() {
                     className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
-                    The day the work actually happened — backfilling is fine, it just
-                    has to stay inside the selected period.
+                    The day the work actually happened — backfilling is fine, it just has
+                    to stay inside the selected period.
                   </p>
                 </Row>
               )}
@@ -847,10 +850,10 @@ function modeHint(a: Assignment): React.ReactNode {
         return (
           <>
             Enter how many were <strong>found</strong> this period (e.g. QA errors) — it
-            is scored against a budget of <strong>at most {a.target}</strong>. At or
-            below budget = 100%; going over degrades gradually (budget ÷ found), and
-            zero is perfect. Multiple entries in the same period add up, so log each
-            batch as it happens.
+            is scored against a budget of <strong>at most {a.target}</strong>. At or below
+            budget = 100%; going over degrades gradually (budget ÷ found), and zero is
+            perfect. Multiple entries in the same period add up, so log each batch as it
+            happens.
           </>
         );
       }
@@ -877,10 +880,10 @@ function modeHint(a: Assignment): React.ReactNode {
           <strong>Baseline</strong> = how many there were in the agreed reference period
           (e.g. same month last year); <strong>current</strong> = how many this period.
           Worked example with the {formatPercent(normalizeReductionTarget(a.target))}{" "}
-          reduction target: baseline 50
-          → current 40 is a 20% drop = <strong>target met (100%)</strong>; current 45 is
-          only a 10% drop = 50% attainment. Use whole counts, keep the baseline fixed all
-          year, and state both numbers in your notes.
+          reduction target: baseline 50 → current 40 is a 20% drop ={" "}
+          <strong>target met (100%)</strong>; current 45 is only a 10% drop = 50%
+          attainment. Use whole counts, keep the baseline fixed all year, and state both
+          numbers in your notes.
         </>
       );
     case "milestone":

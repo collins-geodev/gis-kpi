@@ -28,11 +28,7 @@ import { formatKpiTarget, formatNumber, formatPercent } from "@convex/lib/format
 import { aggregateActivityInputs } from "@convex/lib/measure";
 import { computeAttainment } from "@convex/lib/scoring";
 import type { Direction, MeasurementMode } from "@convex/lib/types";
-import {
-  lagosDayKeyOf,
-  lagosWeekKeyOf,
-  lagosWeekLabelOf,
-} from "@convex/lib/periods";
+import { lagosDayKeyOf, lagosWeekKeyOf, lagosWeekLabelOf } from "@convex/lib/periods";
 import { StatusBadge } from "@/components/status-badge";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { ScoreOverridePanel } from "@/components/score-override-panel";

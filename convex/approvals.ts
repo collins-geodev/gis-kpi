@@ -89,7 +89,8 @@ export const deleteSubmission = mutation({
     if (!assignment) throw new Error("KPI assignment not found");
     await assertEmployeeReadScope(ctx, assignment.employeeId);
     const cleanReason = reason.trim();
-    if (!cleanReason) throw new ConvexError("A reason is required to delete a submission.");
+    if (!cleanReason)
+      throw new ConvexError("A reason is required to delete a submission.");
 
     const activities = await ctx.db
       .query("activities")
@@ -146,9 +147,7 @@ export const deleteSubmission = mutation({
     // Evidence gates may change on every period of this KPI — recompute all.
     const measurements = await ctx.db
       .query("kpiMeasurements")
-      .withIndex("by_assignment_period", (q) =>
-        q.eq("kpiAssignmentId", kpiAssignmentId),
-      )
+      .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
       .take(500);
     const periods = new Set(measurements.map((m) => m.periodKey));
     periods.add(periodKey);
@@ -216,7 +215,8 @@ export const rejectSubmission = mutation({
     if (!assignment) throw new Error("KPI assignment not found");
     await assertEmployeeReadScope(ctx, assignment.employeeId);
     const cleanReason = reason.trim();
-    if (!cleanReason) throw new ConvexError("A reason is required to reject a submission.");
+    if (!cleanReason)
+      throw new ConvexError("A reason is required to reject a submission.");
 
     const activities = await ctx.db
       .query("activities")
@@ -342,7 +342,9 @@ export const recallRejection = mutation({
       restored++;
     }
     if (restored === 0) {
-      throw new ConvexError("Nothing to recall — no returned entries for this KPI and period.");
+      throw new ConvexError(
+        "Nothing to recall — no returned entries for this KPI and period.",
+      );
     }
     await recomputeMeasurement(ctx, assignment, periodKey);
 
@@ -422,7 +424,9 @@ export const recallPeriodApproval = mutation({
       .take(50);
     const latest = snapshots.sort((a, b) => b.createdAt - a.createdAt)[0];
     if (!latest) {
-      throw new ConvexError("No approved snapshot to recall for this employee and period.");
+      throw new ConvexError(
+        "No approved snapshot to recall for this employee and period.",
+      );
     }
     await ctx.db.delete(latest._id);
 

@@ -248,9 +248,7 @@ export const approveAllForAssignment = mutation({
 
     const measurements = await ctx.db
       .query("kpiMeasurements")
-      .withIndex("by_assignment_period", (q) =>
-        q.eq("kpiAssignmentId", kpiAssignmentId),
-      )
+      .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
       .take(500);
     const periods = new Set(measurements.map((m) => m.periodKey));
     for (const e of pending) if (e.periodKey) periods.add(e.periodKey);
@@ -263,7 +261,10 @@ export const approveAllForAssignment = mutation({
       entityId: kpiAssignmentId,
       action: "evidence_bulk_approve",
       actorUserId: user._id,
-      after: { approved: pending.length, titles: pending.map((e) => e.title.slice(0, 80)) },
+      after: {
+        approved: pending.length,
+        titles: pending.map((e) => e.title.slice(0, 80)),
+      },
     });
 
     const reviewerName = await resolveDisplayName(ctx, user);

@@ -1,785 +1,1770 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<title>GIS KPI Dashboard — Application &amp; Performance Workflow</title>
-<style>
-  @page { size: A4; margin: 0; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { background: #fff; }
-  body {
-    font-family: "Segoe UI", -apple-system, sans-serif;
-    color: #1D1A16;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .mono { font-family: Consolas, "Cascadia Mono", monospace; }
-  .serif { font-family: Cambria, Georgia, serif; }
-
-  .page {
-    width: 794px; height: 1123px;
-    position: relative;
-    page-break-after: always;
-    overflow: hidden;
-    padding: 52px 64px 70px 64px;
-  }
-  .page:last-child { page-break-after: auto; }
-
-  /* footer */
-  .foot {
-    position: absolute; left: 64px; right: 64px; bottom: 34px;
-    display: flex; justify-content: space-between; align-items: baseline;
-    font-size: 8.5px; color: #8A857D;
-  }
-  .foot .brand { color: #C00000; font-weight: 700; letter-spacing: 0.06em; }
-
-  /* cover */
-  .topbar { height: 6px; border-radius: 3px;
-    background: linear-gradient(90deg, #C00000 0%, #D63A00 55%, #F2A900 100%); margin-bottom: 18px; }
-  .kicker { font-weight: 800; font-size: 12.5px; letter-spacing: 0.22em; margin-bottom: 14px; }
-  .kicker .red { color: #C00000; }
-  .kicker .gray { color: #6E6A64; font-weight: 600; }
-  .cover-head { display: flex; gap: 26px; align-items: flex-start; }
-  .cover-head img { width: 96px; margin-top: 6px; }
-  h1 { font-family: Cambria, Georgia, serif; font-size: 34px; line-height: 1.18; font-weight: 700; }
-  .subtitle { color: #6E6A64; font-size: 14.5px; line-height: 1.55; margin-top: 12px; max-width: 560px; }
-
-  .metapanel {
-    margin-top: 26px; background: #FAF6F0; border-left: 4px solid #C00000;
-    border-radius: 0 10px 10px 0; padding: 18px 22px;
-    display: grid; grid-template-columns: 1.15fr 0.85fr 1.6fr; gap: 16px 20px;
-  }
-  .metapanel .cell.wide { grid-column: 2 / span 2; }
-  .label { font-family: Consolas, monospace; font-size: 9px; letter-spacing: 0.18em; color: #8A857D; margin-bottom: 4px; }
-  .value { font-weight: 700; font-size: 13px; }
-
-  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 24px; }
-  .card {
-    border: 1px solid #E4E0DA; border-radius: 12px; padding: 18px 20px;
-  }
-  .card .tag { display: flex; align-items: center; gap: 8px; font-family: Consolas, monospace; font-size: 10px; letter-spacing: 0.16em; color: #6E6A64; margin-bottom: 10px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .dot.red { background: #C00000; } .dot.orange { background: #E87722; }
-  .card h3 { font-size: 15.5px; margin-bottom: 4px; }
-  .card .url { font-family: Consolas, monospace; font-size: 12px; color: #C00000; margin-bottom: 8px; }
-  .card p { font-size: 12px; color: #6E6A64; line-height: 1.5; }
-  .card code, p code, li code { font-family: Consolas, monospace; font-size: 0.92em; background: #F4F1EC; border: 1px solid #E4E0DA; border-radius: 4px; padding: 0 5px; white-space: nowrap; }
-
-  .toc { display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; margin-top: 28px; }
-  .toc .item { display: flex; gap: 16px; align-items: baseline; padding: 9px 2px 8px; border-bottom: 1px dashed #D9D4CC; }
-  .toc .n { font-family: Consolas, monospace; font-weight: 700; font-size: 11px; color: #C00000; }
-  .toc .t { font-size: 13px; font-weight: 600; }
-
-  /* sections */
-  .sec { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-  .sec .chip { background: #C00000; color: #fff; font-family: Consolas, monospace; font-weight: 700; font-size: 11px; padding: 4px 8px; border-radius: 4px; }
-  .sec .name { font-family: Consolas, monospace; font-size: 11px; letter-spacing: 0.2em; color: #6E6A64; }
-  h2 { font-family: Cambria, Georgia, serif; font-size: 25px; font-weight: 700; margin-bottom: 16px; }
-  p.body { font-size: 13.5px; line-height: 1.68; margin-bottom: 13px; }
-  .muted { color: #6E6A64; }
-
-  ul.list { list-style: none; margin: 4px 0 14px; }
-  ul.list li { position: relative; padding-left: 22px; font-size: 13.5px; line-height: 1.6; margin-bottom: 9px; }
-  ul.list li::before { content: ""; position: absolute; left: 2px; top: 7px; width: 7px; height: 7px; border-radius: 2px; background: #E87722; }
-  ul.list li.red::before { background: #C00000; }
-
-  /* figure */
-  .fig { border: 1px solid #E4E0DA; border-radius: 12px; padding: 18px 20px 16px; margin: 14px 0 10px; }
-  .fig .figlabel { font-family: Consolas, monospace; font-size: 9.5px; letter-spacing: 0.2em; color: #8A857D; margin-bottom: 14px; }
-  .cols { display: grid; gap: 14px; }
-  .cols.c3 { grid-template-columns: 1fr 1fr 1fr; }
-  .node { border-radius: 8px; padding: 9px 10px; text-align: center; border: 1.5px solid; }
-  .node .nt { font-weight: 700; font-size: 11.5px; }
-  .node .ns { font-size: 9.5px; color: #6E6A64; margin-top: 2px; }
-  .node.plain { border-color: #C9C4BC; background: #fff; }
-  .node.orange { border-color: #E87722; background: #FDF3EA; }
-  .node.orange .mono-t { color: #B25412; }
-  .node.red { border-color: #C00000; background: #FBEDED; }
-  .node.red .mono-t { color: #C00000; }
-  .node.slate { border-color: #3C4A5A; background: #EFF2F6; }
-  .node.green { border-color: #2E7D5B; background: #EAF5EF; }
-  .node.green .mono-t { color: #256B4C; }
-  .node.amber { border-color: #C89B1D; background: #FFF7DF; }
-  .mono-t { font-family: Consolas, monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; }
-  .arrow { text-align: center; color: #9B958C; font-size: 12px; line-height: 1; padding: 6px 0; }
-  .arrow .lbl { font-family: Consolas, monospace; font-size: 9px; letter-spacing: 0.1em; color: #8A857D; display: block; margin-bottom: 2px; }
-  .legend { display: flex; gap: 18px; margin-top: 8px; flex-wrap: wrap; }
-  .legend .li { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: #55504A; }
-  .sw { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid; }
-  .sw.orange { border-color: #E87722; background: #FDF3EA; }
-  .sw.red { border-color: #C00000; background: #FBEDED; }
-  .sw.slate { border-color: #3C4A5A; background: #EFF2F6; }
-  .sw.green { border-color: #2E7D5B; background: #EAF5EF; }
-  .sw.amber { border-color: #C89B1D; background: #FFF7DF; }
-  .figcap { font-size: 11.5px; color: #55504A; line-height: 1.55; margin: 10px 2px 0; }
-  .figcap .fign { font-family: Consolas, monospace; font-weight: 700; color: #C00000; }
-
-  /* table */
-  table.matrix { width: 100%; border-collapse: collapse; margin: 14px 0 8px; font-size: 11.5px; }
-  table.matrix th { background: #2E3A47; color: #fff; text-align: left; font-size: 11px; padding: 10px 10px; font-weight: 700; }
-  table.matrix th:first-child { border-radius: 8px 0 0 0; } table.matrix th:last-child { border-radius: 0 8px 0 0; }
-  table.matrix td { padding: 9.5px 10px; border-bottom: 1px solid #EDEAE4; }
-  table.matrix tr:nth-child(even) td { background: #FAF8F5; }
-  table.matrix td:first-child { font-weight: 700; font-size: 11.5px; }
-  .yes { color: #2E7D5B; font-weight: 700; }
-  .no { color: #9B958C; }
-  .part { color: #C8850C; font-weight: 700; }
-  .fullv { color: #2E7D5B; font-weight: 700; }
-
-  /* callout */
-  .callout { background: #FBEDED; border-left: 4px solid #C00000; border-radius: 0 10px 10px 0; padding: 13px 18px; font-size: 12.5px; line-height: 1.6; margin: 14px 0; }
-  .callout b.lead { color: #C00000; }
-  .callout.cream { background: #FAF6F0; border-left-color: #E87722; }
-
-  .pill { font-family: Consolas, monospace; font-size: 11px; background: #F4F1EC; border: 1px solid #E0DCD4; border-radius: 5px; padding: 1px 7px; white-space: nowrap; }
-
-  /* stats */
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 16px 0; }
-  .stat { border: 1px solid #E4E0DA; border-radius: 12px; padding: 14px 10px; text-align: center; }
-  .stat .big { font-family: Cambria, Georgia, serif; font-size: 30px; font-weight: 700; color: #C00000; line-height: 1; }
-  .stat .cap { font-size: 10px; color: #6E6A64; margin-top: 6px; letter-spacing: 0.04em; }
-
-  /* steps */
-  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 14px 0; }
-  .step { border: 1px solid #E4E0DA; border-radius: 10px; padding: 12px 12px; }
-  .step .sn { font-family: Consolas, monospace; font-weight: 700; font-size: 11px; color: #fff; background: #C00000; border-radius: 4px; padding: 2px 7px; display: inline-block; margin-bottom: 8px; }
-  .step h4 { font-size: 12px; margin-bottom: 4px; }
-  .step p { font-size: 10.5px; color: #6E6A64; line-height: 1.5; }
-
-  h3.sub { font-size: 14px; margin: 16px 0 8px; }
-
-  /* code block */
-  .codeblock { font-family: Consolas, monospace; font-size: 11.5px; background: #FAF8F5; border: 1px solid #E4E0DA; border-radius: 10px; padding: 14px 18px; line-height: 1.8; margin: 12px 0; }
-  .codeblock .c { color: #8A857D; }
-  .codeblock .k { color: #C00000; font-weight: 700; }
-
-  /* closing */
-  .closing { border-top: 2px solid #E4E0DA; margin-top: 26px; padding-top: 22px; display: flex; justify-content: space-between; align-items: flex-start; }
-  .closing img { width: 54px; }
-  .prep { display: flex; gap: 16px; align-items: flex-start; }
-  .prep .who .lab { font-family: Consolas, monospace; font-size: 9px; letter-spacing: 0.2em; color: #8A857D; margin-bottom: 5px; }
-  .prep .who .nm { font-family: Cambria, Georgia, serif; font-size: 17px; font-weight: 700; }
-  .prep .who .rl { font-size: 11.5px; color: #6E6A64; margin-top: 2px; }
-  .docmeta { text-align: right; font-family: Consolas, monospace; font-size: 10px; letter-spacing: 0.14em; color: #8A857D; line-height: 2; }
-  .docmeta .r { color: #C00000; font-weight: 700; }
-
-  .bandrow { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; }
-  .band { font-size: 11px; font-weight: 700; border-radius: 6px; padding: 4px 10px; border: 1.5px solid; }
-  .band.g { color: #256B4C; border-color: #2E7D5B; background: #EAF5EF; }
-  .band.y { color: #C8850C; border-color: #C89B1D; background: #FFF7DF; }
-  .band.o { color: #B25412; border-color: #E87722; background: #FDF3EA; }
-  .band.r { color: #C00000; border-color: #C00000; background: #FBEDED; }
-  .band.n { color: #55504A; border-color: #C9C4BC; background: #F4F1EC; }
-</style>
-</head>
-<body>
-
-<!-- ============ PAGE 1 — COVER ============ -->
-<div class="page">
-  <div class="topbar"></div>
-  <div class="kicker"><span class="red">IKEJA ELECTRIC PLC</span> <span class="gray">&nbsp;·&nbsp; GIS TEAM</span></div>
-  <div class="cover-head">
-    <img src="ie-logo.png" alt="Ikeja Electric">
-    <div>
-      <h1>GIS KPI Dashboard — Application<br>&amp; Performance Workflow</h1>
-      <div class="subtitle">The end-to-end operational flow of the GIS Team KPI Performance
-      Dashboard — from account setup and KPI activity capture to evidence verification,
-      period approval, deterministic scoring and auditable reporting.</div>
-    </div>
-  </div>
-
-  <div class="metapanel">
-    <div class="cell"><div class="label">DOCUMENT</div><div class="value">Operational Workflow Guide</div></div>
-    <div class="cell"><div class="label">PLATFORM</div><div class="value">GIS KPI Dashboard</div></div>
-    <div class="cell"><div class="label">SURFACES</div><div class="value">Management Dashboard · Employee Workspace · Reports &amp; Exports</div></div>
-    <div class="cell"><div class="label">VERSION</div><div class="value">2.0</div></div>
-    <div class="cell wide"><div class="label">CLASSIFICATION</div><div class="value">Internal Use</div></div>
-  </div>
-
-  <div class="cards">
-    <div class="card">
-      <div class="tag"><span class="dot red"></span>MANAGEMENT&nbsp;DASHBOARD</div>
-      <h3>Team Performance &amp; Oversight</h3>
-      <div class="url">gis-kpi.vercel.app/overview</div>
-      <p>Executive overview, team scorecards, analytics, review queue, data quality
-      and the audit log — open in a browser and updated live.</p>
-    </div>
-    <div class="card">
-      <div class="tag"><span class="dot orange"></span>EMPLOYEE&nbsp;WORKSPACE</div>
-      <h3>Activity Capture &amp; Evidence</h3>
-      <div class="url">gis-kpi.vercel.app/activities</div>
-      <p>Each employee captures activity against their five KPIs, attaches evidence
-      and tracks their own attainment — same sign-in, scoped to self.</p>
-    </div>
-  </div>
-
-  <div class="toc">
-    <div class="item"><span class="n">01</span><span class="t">Platform overview &amp; architecture</span></div>
-    <div class="item"><span class="n">07</span><span class="t">Review &amp; period approval</span></div>
-    <div class="item"><span class="n">02</span><span class="t">Roles &amp; access model</span></div>
-    <div class="item"><span class="n">08</span><span class="t">Deterministic scoring engine</span></div>
-    <div class="item"><span class="n">03</span><span class="t">Account setup &amp; employee linking</span></div>
-    <div class="item"><span class="n">09</span><span class="t">Analytics &amp; team oversight</span></div>
-    <div class="item"><span class="n">04</span><span class="t">KPI catalogue &amp; source of truth</span></div>
-    <div class="item"><span class="n">10</span><span class="t">Reports, exports &amp; AI narrative</span></div>
-    <div class="item"><span class="n">05</span><span class="t">Activity capture &amp; measurement</span></div>
-    <div class="item"><span class="n">11</span><span class="t">Data quality, audit &amp; notifications</span></div>
-    <div class="item"><span class="n">06</span><span class="t">Evidence &amp; verification</span></div>
-    <div class="item" style="border-bottom-color:transparent"><span class="n">&nbsp;&nbsp;</span><span class="t">&nbsp;</span></div>
-  </div>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 1 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 2 — 01 PLATFORM OVERVIEW ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">01</span><span class="name">PLATFORM OVERVIEW</span></div>
-  <h2>One dashboard, every score reproducible</h2>
-  <p class="body">The GIS KPI Dashboard digitises how the GIS Team (Technical Services)
-  plans, measures and proves performance. Every employee carries five core KPIs from the
-  approved 2026 performance workbook plus four shared non-core KPIs — 100 weighted points
-  in all; every reported result is backed by
-  captured activity and reviewable evidence; and every official score is frozen as a
-  reproducible snapshot an auditor can trace back to its inputs.</p>
-  <p class="body">One web application serves three ways of working, all against a single backend:</p>
-  <ul class="list">
-    <li><b>The Management Dashboard</b> — for managers, admins and executives to monitor
-    team performance, run the review queue, resolve data-quality issues and export reports.</li>
-    <li><b>The Employee Workspace</b> — where each employee captures KPI activity with
-    mode-tailored forms, attaches evidence and follows their own attainment.</li>
-    <li><b>Reports &amp; Exports</b> — deterministic Excel and PDF outputs, with an optional
-    AI-written narrative that explains — but never produces — the numbers.</li>
-  </ul>
-
-  <div class="fig">
-    <div class="figlabel">SYSTEM ARCHITECTURE</div>
-    <div class="cols c3">
-      <div class="node orange"><div class="nt">Employees</div><div class="ns">Capture activity · attach evidence</div></div>
-      <div class="node plain"><div class="nt">Managers · Reviewers</div><div class="ns">Verify evidence · approve periods</div></div>
-      <div class="node red"><div class="nt">Admins · Auditors</div><div class="ns">Configure · resolve DQ · audit</div></div>
-    </div>
-    <div class="cols c3">
-      <div class="arrow"><span class="lbl">sign in</span>▼</div>
-      <div class="arrow"><span class="lbl">sign in</span>▼</div>
-      <div class="arrow"><span class="lbl">sign in</span>▼</div>
-    </div>
-    <div class="node slate" style="margin-bottom:0">
-      <div class="mono-t">WEB DASHBOARD — NEXT.JS ON VERCEL</div>
-      <div class="ns">Overview · Team · Activity Capture · Evidence · Review · Analytics · Reports · Settings · Audit</div>
-    </div>
-    <div class="arrow">▼</div>
-    <div class="node slate">
-      <div class="mono-t">CONVEX BACKEND — SINGLE SOURCE OF TRUTH</div>
-      <div class="ns">KPI catalogue · Auth &amp; roles · Activities &amp; measurements · Evidence storage · Approvals &amp; snapshots · Audit log · Scheduled jobs</div>
-    </div>
-    <div class="arrow">▼</div>
-    <div class="node amber" style="max-width:420px;margin:0 auto">
-      <div class="mono-t">NOTIFICATIONS — IN-APP · EMAIL</div>
-    </div>
-    <div class="legend">
-      <div class="li"><span class="sw orange"></span>Employee</div>
-      <div class="li"><span class="sw red"></span>Admin / management</div>
-      <div class="li"><span class="sw slate"></span>System / backend</div>
-      <div class="li"><span class="sw green"></span>Verified / approved</div>
-      <div class="li"><span class="sw amber"></span>Notification</div>
-    </div>
-  </div>
-  <p class="figcap"><span class="fign">FIG. 1</span> — Employees, reviewers and administrators
-  reach one backend through one dashboard. Every write is role-checked server-side, and the
-  backend fans out review and approval alerts in-app and by email.</p>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 2 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 3 — 02 ROLES ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">02</span><span class="name">ROLES &amp; ACCESS</span></div>
-  <h2>Seven roles, least-privilege by design</h2>
-  <p class="body">Access is granted by application role — kept strictly separate from an
-  employee's <i>job role</i> on the roster. Everyone signs in with their own email and
-  password; what they can see and do follows from the roles granted to them. Authorization
-  is enforced <b>server-side in every backend function</b> — hidden buttons are never the
-  security boundary — and managers and reviewers can additionally be <b>scoped</b> to
-  specific employees, job roles or locations.</p>
-
-  <table class="matrix">
-    <tr><th>Role</th><th>Dashboard</th><th>Capture activity</th><th>Verify &amp; approve</th><th>Reports &amp; exports</th><th>User management</th></tr>
-    <tr><td>System Admin</td><td class="fullv">Full</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
-    <tr><td>KPI Admin</td><td class="fullv">Full</td><td class="yes">Yes</td><td class="part">Verify only</td><td class="yes">Yes</td><td class="no">No</td></tr>
-    <tr><td>Manager</td><td class="part">Scoped</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
-    <tr><td>Reviewer</td><td class="part">Scoped</td><td class="no">No</td><td class="part">Verify</td><td class="no">No</td><td class="no">No</td></tr>
-    <tr><td>Employee</td><td class="part">Self</td><td class="yes">Yes — own KPIs</td><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
-    <tr><td>Executive Viewer</td><td class="part">Read-only</td><td class="no">No</td><td class="no">No</td><td class="part">Approved only</td><td class="no">No</td></tr>
-    <tr><td>Auditor</td><td class="part">Audit views</td><td class="no">No</td><td class="no">No</td><td class="part">Metadata</td><td class="no">No</td></tr>
-  </table>
-
-  <ul class="list">
-    <li class="red"><b>System Admin</b> — configures the organization: people, employee IDs,
-    app roles, locations, managers, thresholds and periods. The only role that manages
-    user accounts, and the only one that can lock a period or override with reason.</li>
-    <li class="red"><b>KPI Admin (GIS Team Admin)</b> — owns the KPI catalogue: templates,
-    assignments, targets, weights, formulas, evidence rules, imports and the data-quality
-    queue. Cannot manage user accounts.</li>
-    <li class="red"><b>Manager (GIS Lead)</b> — sees team performance within scope, verifies
-    evidence, recommends and approves scores, and approves periods for their people.</li>
-    <li class="red"><b>Reviewer</b> — verifies evidence and recommends scores for the
-    employees in their scope; never approves periods.</li>
-    <li class="red"><b>Employee</b> — captures activity against their own five KPIs,
-    attaches evidence and follows their own score. Sees only their own restricted evidence.</li>
-    <li class="red"><b>Executive Viewer</b> — read-only, and only <i>approved</i> results —
-    provisional numbers are never presented as final.</li>
-    <li class="red"><b>Auditor</b> — reads config history, score lineage and the audit log;
-    sees evidence metadata without opening restricted files.</li>
-  </ul>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 3 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 4 — 03 ACCOUNT SETUP ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">03</span><span class="name">ACCOUNT SETUP &amp; LINKING</span></div>
-  <h2>Every account is granted, linked, then trusted</h2>
-  <p class="body">Anyone can create an account, but a new account can do nothing until an
-  administrator grants it a role. Employees are additionally <b>linked to their roster
-  record</b>, which is what puts their KPIs in front of them. Unlinking is a clean break:
-  the account's captured activity and evidence are <b>wiped by default</b> (an explicit
-  keep-data option exists for genuine account moves), so a relink always starts clean —
-  and either path is audit-logged.</p>
-
-  <div class="steps">
-    <div class="step"><span class="sn">1</span><h4>Sign up</h4><p>Email + password at <b>/signin</b>. The account exists but holds no role.</p></div>
-    <div class="step"><span class="sn">2</span><h4>Awaiting access</h4><p>The profile shows <i>“Awaiting access — no role granted yet.”</i> No data is visible.</p></div>
-    <div class="step"><span class="sn">3</span><h4>Admin grants &amp; links</h4><p>In Users &amp; Organization, a System Admin grants roles and links the account to its employee record.</p></div>
-    <div class="step"><span class="sn">4</span><h4>Workspace live</h4><p>The employee's KPIs appear in Activity Capture and on their Individual Performance page.</p></div>
-  </div>
-
-  <div class="callout"><b class="lead">First-run bootstrap.</b> On a fresh deployment, the
-  first signed-in user can claim <b>System Admin</b> from the overview — the claim works
-  only while no admin exists, and can be locked to a specific address with
-  <code>ADMIN_BOOTSTRAP_EMAIL</code>. After that, every role passes through an admin's hands.</div>
-
-  <h3 class="sub">Profile &amp; identity</h3>
-  <p class="body">Each user manages their own profile: display name, a profile photo
-  (camera capture or upload, stored in Convex file storage), granted application roles,
-  and — once linked — their designated roster job role, location and employee ID. Profile
-  changes apply instantly across the dashboard and are audit-logged.</p>
-
-  <h3 class="sub">Scoped management</h3>
-  <p class="body">Managers and reviewers are granted their role <b>with a scope</b> — by
-  employee, job role or location. A reviewer scoped to <span class="pill">Geo Database
-  Specialist</span> sees exactly those people in the review queue and nothing more; team
-  views outside a manager's scope simply do not render. Scope is evaluated on the server
-  on every query.</p>
-
-  <div class="callout cream"><b>Separation of duties.</b> Application roles
-  (what you may do in the app) are deliberately separate from roster job roles (what your
-  KPIs measure). Granting someone Reviewer never changes their own KPI targets, and being
-  a GIS Lead on the roster grants no dashboard power by itself.</div>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 4 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 5 — 04 KPI CATALOGUE ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">04</span><span class="name">KPI CATALOGUE &amp; SOURCE OF TRUTH</span></div>
-  <h2>From the approved workbook to a living catalogue</h2>
-  <p class="body">The catalogue is seeded from the approved 2026 performance workbook
-  <span class="pill">GIS 2026 PO Settings</span> — the same sheet management signed off.
-  Every row is imported <b>verbatim</b> into a preserved source layer, then mapped to a
-  canonical definition the scoring engine can compute. The original wording is never
-  discarded: any screen that shows a canonicalised value can also show the source cell
-  it came from.</p>
-
-  <div class="stats">
-    <div class="stat"><div class="big">75</div><div class="cap">Core KPI assignments</div></div>
-    <div class="stat"><div class="big">15</div><div class="cap">GIS Team employees</div></div>
-    <div class="stat"><div class="big">4</div><div class="cap">Job-role templates</div></div>
-    <div class="stat"><div class="big">100</div><div class="cap">Points per person — 80 core + 20 non-core</div></div>
-  </div>
-
-  <p class="body">Each employee carries <b>five core KPIs</b> from their job-role template —
-  Geographic Information Systems Lead, Geo Database Specialist, and the other 2026
-  role templates — plus <b>four shared non-core KPIs</b>, each with a target, a measurement
-  mode, a weight in points and an evidence requirement.</p>
-
-  <div class="callout"><b class="lead">Core 80 + non-core 20 = 100.</b> The workbook's five
-  core weights total <b>80 points</b>, preserved verbatim and never silently rebased. The
-  remaining 20 points were closed by an explicit, audit-logged decision: four shared
-  non-core KPIs adopted from the 2025 workbook — <b>safety hazard reporting</b> (≥ 1/month),
-  <b>compliance recertification</b> (vs 80%, annual), <b>internal customer satisfaction</b>
-  (vs 85%, annual) and <b>training hours</b> (20 hrs/yr; 10 for GL4+) — at 5 points each,
-  for every role. Core and non-core are labelled apart on every scorecard.</div>
-
-  <h3 class="sub">Versioned configuration</h3>
-  <p class="body">KPI definitions are versioned: changing a target, weight, formula or
-  threshold creates a new version with an effective period, and past measurements keep
-  pointing at the version they were scored under. Assignments carry an immutable snapshot
-  of what was agreed, so a mid-year configuration change can never quietly rewrite an
-  old score.</p>
-
-  <div class="callout cream"><b>Nothing is silently corrected.</b> Where the workbook is
-  ambiguous — a blank frequency, a location spelled two ways, a unit mismatch — the anomaly
-  becomes a <b>data-quality issue</b> for an admin to resolve (§11). And where a source
-  encoding punished honest reporting, the fix was an explicit migration: QA data quality is
-  scored as a <b>coverage ratio</b> (errors corrected ÷ identified), the commercial-maintenance
-  KPI as a <b>monthly error budget</b> (≤ 24, lower is better), and deliverable-accuracy
-  reductions run against a <b>pinned baseline</b> the server enforces.</div>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 5 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 6 — 05 ACTIVITY CAPTURE ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">05</span><span class="name">ACTIVITY CAPTURE &amp; MEASUREMENT</span></div>
-  <h2>Forms that match how each KPI is measured</h2>
-  <p class="body">Employees report progress in <b>Activity Capture</b>. The form adapts to
-  the KPI's measurement mode, so an SLA KPI asks for items-within-threshold, a ratio KPI
-  asks for achieved-over-planned, and nobody ever types a percentage by hand. Saving an
-  activity recomputes the KPI's provisional measurement immediately.</p>
-
-  <div class="steps">
-    <div class="step"><span class="sn">1</span><h4>Pick the KPI</h4><p>Only the employee's own assignments are offered.</p></div>
-    <div class="step"><span class="sn">2</span><h4>Pick the period</h4><p>The tracking period being reported, e.g. August 2026.</p></div>
-    <div class="step"><span class="sn">3</span><h4>Enter the inputs</h4><p>The form asks exactly what the measurement mode needs.</p></div>
-    <div class="step"><span class="sn">4</span><h4>Save</h4><p>Autosaved, duplicate-warned, and the measurement recomputes.</p></div>
-  </div>
-
-  <h3 class="sub">Measurement modes</h3>
-  <table class="matrix">
-    <tr><th style="width:24%">Mode</th><th>What the employee enters</th><th style="width:33%">Example KPI</th></tr>
-    <tr><td>Ratio</td><td>Numerator (achieved) and denominator (planned / total)</td><td>Integrations vs planned · QA coverage (corrected ÷ identified)</td></tr>
-    <tr><td>Duration / SLA</td><td>Items inside the threshold and total eligible items</td><td>Requests turned around within 24 h / 2 business days</td></tr>
-    <tr><td>Count</td><td>The count achieved for the period</td><td>Safety hazard reports · monthly error budget (≤ 24, lower is better)</td></tr>
-    <tr><td>Reduction</td><td>The current value — the baseline is pinned and enforced server-side</td><td>Reduce digitisation errors by 20% vs the pinned baseline</td></tr>
-    <tr><td>Milestone / Binary</td><td>Stage reached, or done / not done</td><td>Project phase delivery</td></tr>
-    <tr><td>Rubric</td><td>Score and maximum against an approved rubric</td><td>Innovation initiative assessment</td></tr>
-    <tr><td>Composite</td><td>Inputs of each component, weighted together</td><td>Database integrity (multi-check)</td></tr>
-  </table>
-
-  <p class="body">Every activity keeps its title, notes, reporter, <b>work date</b> and
-  timestamp — the measurement is an <i>aggregate of captured work</i>, not a typed-in
-  result. Daily and weekly KPIs are captured <b>incrementally</b>: batch logs accumulate
-  through the period (QA coverage grows entry by entry), the form shows the running score
-  and a cadence breakdown as work lands, and duplicate summary entries trigger a warning
-  before anything is written. The activity feed gives managers a live view of updates as
-  they arrive.</p>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 6 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 7 — 06 EVIDENCE ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">06</span><span class="name">EVIDENCE &amp; VERIFICATION</span></div>
-  <h2>No official score without approved evidence</h2>
-  <p class="body">Results are claims; evidence makes them scores. From a KPI's detail page
-  (or the Evidence Centre) an employee uploads files — documents, screenshots, exports,
-  up to 25&nbsp;MB — or attaches links, categorises them and ties them to the measurement
-  they support. Files are stored in Convex storage and streamed back only through an
-  <b>authenticated, authorization-checked</b> endpoint: a URL alone never opens someone
-  else's restricted evidence.</p>
-
-  <div class="fig">
-    <div class="figlabel">EVIDENCE GATE</div>
-    <div class="cols c3" style="grid-template-columns:1fr 1fr 1fr;">
-      <div class="node orange"><div class="mono-t">CAPTURE</div><div class="ns">Activity saved → provisional measurement</div></div>
-      <div class="node orange"><div class="mono-t">ATTACH</div><div class="ns">Files ≤ 25 MB or links, categorised &amp; versioned</div></div>
-      <div class="node plain"><div class="mono-t">REVIEW</div><div class="ns">Reviewer approves or rejects — reason required</div></div>
-    </div>
-    <div class="arrow">▼</div>
-    <div class="cols" style="grid-template-columns:1fr 1fr;">
-      <div class="node green"><div class="mono-t">EVIDENCE APPROVED</div><div class="ns">KPI becomes eligible for an official score</div></div>
-      <div class="node red"><div class="mono-t">REJECTED</div><div class="ns">Back to the employee with the reviewer's reason</div></div>
-    </div>
-  </div>
-  <p class="figcap"><span class="fign">FIG. 2</span> — The evidence gate. A provisional
-  measurement can exist without evidence, but a KPI whose definition requires evidence
-  cannot be approved into an official score until a reviewer has approved that evidence.</p>
-
-  <ul class="list">
-    <li><b>Versioning</b> — replacing a file keeps the old version and its review history;
-    nothing is overwritten in place.</li>
-    <li><b>Lineage</b> — every evidence item shows what measurement and period it supports,
-    and every approved score can list the evidence behind it.</li>
-    <li><b>Restricted access</b> — employees see their own evidence; managers and reviewers
-    see their scope; auditors see metadata without file contents; every download of a
-    restricted file is logged.</li>
-    <li><b>Fast-track review</b> — reviewers approve evidence inline from the queue, with
-    per-KPI bulk approve; every item carries a three-state badge (pending · approved ·
-    rejected), and an admin submission delete sweeps the KPI's attached evidence with it.</li>
-  </ul>
-
-  <div class="callout"><b class="lead">Rejection is feedback, not punishment.</b> A rejected
-  item carries the reviewer's reason back to the employee, who can attach a corrected
-  version — the loop continues until the evidence stands or the claim is withdrawn.</div>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 7 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 8 — 07 REVIEW & APPROVAL ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">07</span><span class="name">REVIEW &amp; PERIOD APPROVAL</span></div>
-  <h2>Approval freezes a score you can reproduce</h2>
-  <p class="body">The <b>Review &amp; Approval queue</b> lists provisional measurements
-  grouped by employee and period, each with readiness flags: is required evidence approved?
-  is any data-quality issue blocking the KPI? Reviewers work side-by-side — the claim, the
-  activity behind it, the evidence — and verify or reject with a reason.</p>
-
-  <div class="steps">
-    <div class="step"><span class="sn">1</span><h4>Provisional</h4><p>Measurements recompute live as activity lands.</p></div>
-    <div class="step"><span class="sn">2</span><h4>Verify</h4><p>Reviewer checks evidence and recommends.</p></div>
-    <div class="step"><span class="sn">3</span><h4>Approve period</h4><p>Enabled only when every KPI is ready.</p></div>
-    <div class="step"><span class="sn">4</span><h4>Snapshot</h4><p>A reproducible score snapshot is frozen.</p></div>
-  </div>
-
-  <div class="callout"><b class="lead">Approve period is a gate, not a button.</b> It stays
-  disabled until every KPI in the group has its required evidence approved and no blocking
-  data-quality issue. Approving finalizes the measurements and freezes a
-  <b>score snapshot</b> — calculation version, inputs, caps and weights — so the same number
-  can be recomputed and audited months later.</div>
-
-  <h3 class="sub">Overrides &amp; recalls — allowed, but never quiet</h3>
-  <p class="body">A manager or system admin can override a score — but the override
-  <b>requires a written reason</b>, keeps the engine's original number alongside the
-  overridden one, and writes both to the audit log. Rejections and period approvals can
-  be recalled in the moment via a <b>post-action Undo</b>; a recall is just another
-  audited decision. Employees see their own approval outcomes on their performance page —
-  nothing about a decision is hidden from the person it concerns.</p>
-
-  <h3 class="sub">Locking a period</h3>
-  <p class="body">Once approvals are complete, the period can be <b>locked</b>: no further
-  activity, evidence or overrides may touch it. Reopening a locked period is a system-admin
-  action with a reason, and is itself audit-logged. Deadlines and period boundaries follow
-  <span class="pill">Africa/Lagos</span> time.</p>
-
-  <div class="callout cream"><b>Why it matters.</b> The approval workflow is what turns the
-  dashboard from a tracker into a system of record: a provisional number is a conversation;
-  an approved snapshot is a commitment with evidence attached.</div>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 8 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 9 — 08 SCORING ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">08</span><span class="name">DETERMINISTIC SCORING</span></div>
-  <h2>The engine scores; the AI only explains</h2>
-  <p class="body">Every score is produced by a deterministic engine — pure functions over
-  the measurement inputs, the KPI's target, its direction of improvement and its weight.
-  The same inputs always produce the same score, on any machine, with no model in the loop.</p>
-
-  <div class="codeblock">
-    <span class="c">// per KPI, per period</span><br>
-    attainment&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="k">f</span>(mode, inputs, target, direction)&nbsp;&nbsp;<span class="c">// 1.0 = 100%</span><br>
-    cappedAttainment&nbsp;&nbsp;&nbsp;&nbsp;= <span class="k">clamp</span>(attainment, 0, officialCap)<br>
-    weightedContribution = cappedAttainment × weightPoints<br>
-    <span class="c">// employee score = Σ weightedContribution over all KPIs — out of 100 (80 core + 20 non-core)</span>
-  </div>
-
-  <ul class="list">
-    <li><b>Direction is configuration, not guesswork</b> — <i>higher-is-better</i> or
-    <i>lower-is-better</i> is stored on each definition and never inferred at runtime.</li>
-    <li><b>Caps are policy</b> — attainment is capped at the official cap (default 100%),
-    with a separate stretch cap (default 120%) available where the year's policy allows it.</li>
-    <li><b>Weights are points</b> — a 20-point KPI at 90% attainment contributes 18 points;
-    the employee's score is the sum over all their KPIs, core and non-core labelled apart.</li>
-    <li><b>Honest edge cases</b> — percent-encoded reduction targets self-normalize; a zero
-    baseline with zero errors counts as met; and a provisional measurement whose activities
-    are all deleted is removed rather than scored as a fake 0% or 100%.</li>
-  </ul>
-
-  <h3 class="sub">Status bands</h3>
-  <p class="body">Attainment maps to admin-editable status bands used consistently across
-  every view, chart and export:</p>
-  <div class="bandrow">
-    <span class="band g">On / Above Target</span>
-    <span class="band y">Watch</span>
-    <span class="band o">At Risk</span>
-    <span class="band r">Critical</span>
-    <span class="band n">No Data</span>
-  </div>
-
-  <div class="callout"><b class="lead">The LLM never scores.</b> The optional AI narrative
-  in reports (§10) is generated <i>from</i> the engine's numbers and is labelled as
-  explanation. No official score, attainment or band is ever produced, adjusted or
-  rounded by a language model.</div>
-
-  <div class="callout cream"><b>Reproducibility.</b> Approved snapshots store the
-  calculation version with the inputs — if the engine's rules ever change, old scores
-  still recompute under the rules they were approved with.</div>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 9 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 10 — 09 ANALYTICS ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">09</span><span class="name">ANALYTICS &amp; OVERSIGHT</span></div>
-  <h2>From one employee's KPI to the whole team's trend</h2>
-  <p class="body">Oversight runs at three altitudes, each a click apart and each carrying
-  the context that makes comparison fair:</p>
-  <ul class="list">
-    <li><b>Executive Overview</b> — the approved team score out of 100 (core and non-core
-    labelled apart), submission-workflow posture, evidence and cadence coverage, overdue
-    periods, the review backlog and the current score drivers.</li>
-    <li><b>Team Performance</b> — sortable scorecards with role and location comparison.
-    Every comparison shows job role and configured weight, so a Lead and a Specialist are
-    never ranked as if they carried the same targets.</li>
-    <li><b>Individual Performance</b> — one employee's KPIs with target, actual,
-    attainment, weight and contribution; their activity timeline, evidence gallery, score
-    history and report shortcuts.</li>
-  </ul>
-
-  <h3 class="sub">Analytics workbench</h3>
-  <p class="body">The Analytics page adds coverage gauges, donut and comparison charts,
-  data-quality exception views — and a <b>per-employee analytics</b> section with peer
-  context: managers pick any employee in scope and see their attainment alongside the
-  peer distribution, while an employee opening the same page sees their own numbers in
-  context. Every chart offers a <b>table alternative</b> for accessibility, and filters
-  are URL-encoded so any view can be shared as a link.</p>
-
-  <h3 class="sub">Live activity feed</h3>
-  <p class="body">Managers and admins follow a live feed of KPI updates as employees save
-  activity — who reported what, against which KPI, moments after it happens. The same
-  event stream powers in-app notifications and the email alerts described in §11.</p>
-
-  <div class="callout cream"><b>Fair-comparison rule.</b> Nowhere does the dashboard rank
-  people on raw numbers alone — role, weight and scope ride along with every comparison
-  surface, and provisional figures are always labelled as provisional.</div>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 10 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 11 — 10 REPORTS ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">10</span><span class="name">REPORTS, EXPORTS &amp; AI NARRATIVE</span></div>
-  <h2>Deterministic documents, provenance included</h2>
-  <p class="body">The Reports page runs export jobs with visible status and progress,
-  preview, versioning and access logs. Two formats ship today, both rendered
-  server-side in the Node runtime:</p>
-
-  <ul class="list">
-    <li><b>Excel workbook</b> — seven typed sheets (summary, per-employee scores,
-    measurements, evidence index, data-quality ledger and more) with real cell types,
-    formula-injection-safe text and the configured-weight note on every relevant sheet.</li>
-    <li><b>PDF report</b> — a deterministic layout of the approved numbers with
-    <b>embedded engine-drawn charts</b> (weighted-score and per-KPI attainment bars,
-    coloured by status band), generated from the same frozen snapshots the dashboard shows.</li>
-  </ul>
-
-  <h3 class="sub">The optional AI narrative</h3>
-  <p class="body">A report can include a written narrative generated through the Vercel
-  AI&nbsp;Gateway with structured output. The narrative <b>only explains numbers the engine
-  already produced</b> — it summarises drivers, flags risks and drafts commentary — and it
-  ships with a disclaimer and a human-approval status. If the AI key is absent, reports
-  simply generate without the narrative; nothing else degrades.</p>
-
-  <div class="callout"><b class="lead">Provenance on every document.</b> Each generated
-  report records who ran it, the format, the AI provider, model, prompt and schema version
-  (when a narrative was included), and token usage — all written to the audit log. Report
-  downloads are themselves access-logged.</div>
-
-  <h3 class="sub">Evidence-grade exports</h3>
-  <p class="body">Official scores come from frozen snapshots, so a re-run export
-  reproduces the same numbers — a document derived from the system of record.</p>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 11 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 12 — 11 DQ / AUDIT / NOTIFICATIONS ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">11</span><span class="name">DATA QUALITY, AUDIT &amp; NOTIFICATIONS</span></div>
-  <h2>Anomalies become decisions, decisions become records</h2>
-  <p class="body">The workbook the catalogue was born from is imperfect — and the dashboard
-  treats every imperfection as a first-class object. Import validation raises a
-  <b>data-quality issue</b> for each anomaly: a blank frequency, a business unit spelled
-  two ways, a unit mismatch between target and formula, a truncated formula cell.</p>
-
-  <div class="fig">
-    <div class="figlabel">DATA-QUALITY LOOP</div>
-    <div class="cols c3">
-      <div class="node slate"><div class="mono-t">DETECT</div><div class="ns">Import validation raises an issue — nothing auto-corrected</div></div>
-      <div class="node red"><div class="mono-t">DECIDE</div><div class="ns">Admin approves the canonical value, resolves the ambiguity, or rejects with a reason</div></div>
-      <div class="node green"><div class="mono-t">UNBLOCK</div><div class="ns">Blocking issues clear → the KPI can score again</div></div>
-    </div>
-  </div>
-  <p class="figcap"><span class="fign">FIG. 3</span> — The data-quality loop. Source values
-  are preserved verbatim either way, and a KPI with a blocking issue stays
-  <span class="pill">scoring blocked</span> until a human decides.</p>
-
-  <h3 class="sub">The audit log</h3>
-  <p class="body">Every consequential action — configuration changes, imports, activity
-  submissions, evidence reviews, approvals, overrides, report generation and downloads —
-  writes an audit row: who, what, before/after, reason and timestamp, filterable by entity.
-  Auditors and system admins read it; nobody edits it.</p>
-
-  <h3 class="sub">Notifications &amp; scheduled jobs</h3>
-  <ul class="list">
-    <li><b>In-app + email</b> — KPI updates notify the right people in-app and by email;
-    if the email service is unconfigured the system degrades gracefully and the in-app
-    trail still lands.</li>
-    <li><b>Daily overdue flagging</b> — a scheduled job flags tracking periods past their
-    deadline (Africa/Lagos) so nothing quietly slips.</li>
-    <li><b>Review-backlog reminders</b> — managers with waiting approvals get nudged until
-    the queue is clear.</li>
-  </ul>
-
-  <div class="callout"><b class="lead">Nothing moves silently.</b> A number can change only
-  through captured activity, a human decision, or a versioned configuration change — and
-  each of the three leaves a record the audit log can replay.</div>
-
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 12 of 13</span></div>
-</div>
-
-<!-- ============ PAGE 13 — CLOSING ============ -->
-<div class="page">
-  <div class="sec"><span class="chip">12</span><span class="name">THE TRAIL, END TO END</span></div>
-  <h2>From a day's work to a defensible score</h2>
-  <p class="body">Put together, the workflow reads as one unbroken chain: an employee
-  captures real activity → the engine computes a provisional measurement → evidence is
-  attached and reviewed → the period is approved and a snapshot frozen → analytics,
-  reports and exports all read from that same snapshot → and every step along the way is
-  attributable, timestamped and audit-logged.</p>
-
-  <div class="cards" style="margin-top:18px">
-    <div class="card">
-      <div class="tag"><span class="dot red"></span>MANAGEMENT&nbsp;DASHBOARD</div>
-      <h3>gis-kpi.vercel.app</h3>
-      <p>Overview · Team · Review · Analytics · Reports · Data Quality · Audit</p>
-    </div>
-    <div class="card">
-      <div class="tag"><span class="dot orange"></span>EMPLOYEE&nbsp;WORKSPACE</div>
-      <h3>gis-kpi.vercel.app/activities</h3>
-      <p>Activity Capture · Evidence · Individual Performance · Profile</p>
-    </div>
-  </div>
-
-  <div class="bandrow" style="margin-top:20px">
-    <span class="band g">Evidence-backed</span>
-    <span class="band o">Deterministically scored</span>
-    <span class="band r">Audited &amp; exportable</span>
-  </div>
-
-  <p class="body" style="margin-top:16px">The dashboard's promise is simple: <b>every score
-  is reproducible from source activity and evidence</b>, every normalization of the source
-  workbook is a surfaced, approvable decision, and nothing about anyone's performance is
-  ever computed — or changed — in the dark.</p>
-
-  <div class="closing">
-    <div class="prep">
-      <img src="ie-logo.png" alt="Ikeja Electric">
-      <div class="who">
-        <div class="lab">PREPARED BY</div>
-        <div class="nm">Collins Anyanwu</div>
-        <div class="rl">GIS Team · Ikeja Electric Plc</div>
+  <head>
+    <meta charset="utf-8" />
+    <title>GIS KPI Dashboard — Application &amp; Performance Workflow</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 0;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        background: #fff;
+      }
+      body {
+        font-family:
+          "Segoe UI",
+          -apple-system,
+          sans-serif;
+        color: #1d1a16;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .mono {
+        font-family: Consolas, "Cascadia Mono", monospace;
+      }
+      .serif {
+        font-family: Cambria, Georgia, serif;
+      }
+
+      .page {
+        width: 794px;
+        height: 1123px;
+        position: relative;
+        page-break-after: always;
+        overflow: hidden;
+        padding: 52px 64px 70px 64px;
+      }
+      .page:last-child {
+        page-break-after: auto;
+      }
+
+      /* footer */
+      .foot {
+        position: absolute;
+        left: 64px;
+        right: 64px;
+        bottom: 34px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        font-size: 8.5px;
+        color: #8a857d;
+      }
+      .foot .brand {
+        color: #c00000;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+      }
+
+      /* cover */
+      .topbar {
+        height: 6px;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #c00000 0%, #d63a00 55%, #f2a900 100%);
+        margin-bottom: 18px;
+      }
+      .kicker {
+        font-weight: 800;
+        font-size: 12.5px;
+        letter-spacing: 0.22em;
+        margin-bottom: 14px;
+      }
+      .kicker .red {
+        color: #c00000;
+      }
+      .kicker .gray {
+        color: #6e6a64;
+        font-weight: 600;
+      }
+      .cover-head {
+        display: flex;
+        gap: 26px;
+        align-items: flex-start;
+      }
+      .cover-head img {
+        width: 96px;
+        margin-top: 6px;
+      }
+      h1 {
+        font-family: Cambria, Georgia, serif;
+        font-size: 34px;
+        line-height: 1.18;
+        font-weight: 700;
+      }
+      .subtitle {
+        color: #6e6a64;
+        font-size: 14.5px;
+        line-height: 1.55;
+        margin-top: 12px;
+        max-width: 560px;
+      }
+
+      .metapanel {
+        margin-top: 26px;
+        background: #faf6f0;
+        border-left: 4px solid #c00000;
+        border-radius: 0 10px 10px 0;
+        padding: 18px 22px;
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr 1.6fr;
+        gap: 16px 20px;
+      }
+      .metapanel .cell.wide {
+        grid-column: 2 / span 2;
+      }
+      .label {
+        font-family: Consolas, monospace;
+        font-size: 9px;
+        letter-spacing: 0.18em;
+        color: #8a857d;
+        margin-bottom: 4px;
+      }
+      .value {
+        font-weight: 700;
+        font-size: 13px;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 24px;
+      }
+      .card {
+        border: 1px solid #e4e0da;
+        border-radius: 12px;
+        padding: 18px 20px;
+      }
+      .card .tag {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: Consolas, monospace;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        color: #6e6a64;
+        margin-bottom: 10px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+      .dot.red {
+        background: #c00000;
+      }
+      .dot.orange {
+        background: #e87722;
+      }
+      .card h3 {
+        font-size: 15.5px;
+        margin-bottom: 4px;
+      }
+      .card .url {
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        color: #c00000;
+        margin-bottom: 8px;
+      }
+      .card p {
+        font-size: 12px;
+        color: #6e6a64;
+        line-height: 1.5;
+      }
+      .card code,
+      p code,
+      li code {
+        font-family: Consolas, monospace;
+        font-size: 0.92em;
+        background: #f4f1ec;
+        border: 1px solid #e4e0da;
+        border-radius: 4px;
+        padding: 0 5px;
+        white-space: nowrap;
+      }
+
+      .toc {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 40px;
+        margin-top: 28px;
+      }
+      .toc .item {
+        display: flex;
+        gap: 16px;
+        align-items: baseline;
+        padding: 9px 2px 8px;
+        border-bottom: 1px dashed #d9d4cc;
+      }
+      .toc .n {
+        font-family: Consolas, monospace;
+        font-weight: 700;
+        font-size: 11px;
+        color: #c00000;
+      }
+      .toc .t {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      /* sections */
+      .sec {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .sec .chip {
+        background: #c00000;
+        color: #fff;
+        font-family: Consolas, monospace;
+        font-weight: 700;
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+      .sec .name {
+        font-family: Consolas, monospace;
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        color: #6e6a64;
+      }
+      h2 {
+        font-family: Cambria, Georgia, serif;
+        font-size: 25px;
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+      p.body {
+        font-size: 13.5px;
+        line-height: 1.68;
+        margin-bottom: 13px;
+      }
+      .muted {
+        color: #6e6a64;
+      }
+
+      ul.list {
+        list-style: none;
+        margin: 4px 0 14px;
+      }
+      ul.list li {
+        position: relative;
+        padding-left: 22px;
+        font-size: 13.5px;
+        line-height: 1.6;
+        margin-bottom: 9px;
+      }
+      ul.list li::before {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 7px;
+        width: 7px;
+        height: 7px;
+        border-radius: 2px;
+        background: #e87722;
+      }
+      ul.list li.red::before {
+        background: #c00000;
+      }
+
+      /* figure */
+      .fig {
+        border: 1px solid #e4e0da;
+        border-radius: 12px;
+        padding: 18px 20px 16px;
+        margin: 14px 0 10px;
+      }
+      .fig .figlabel {
+        font-family: Consolas, monospace;
+        font-size: 9.5px;
+        letter-spacing: 0.2em;
+        color: #8a857d;
+        margin-bottom: 14px;
+      }
+      .cols {
+        display: grid;
+        gap: 14px;
+      }
+      .cols.c3 {
+        grid-template-columns: 1fr 1fr 1fr;
+      }
+      .node {
+        border-radius: 8px;
+        padding: 9px 10px;
+        text-align: center;
+        border: 1.5px solid;
+      }
+      .node .nt {
+        font-weight: 700;
+        font-size: 11.5px;
+      }
+      .node .ns {
+        font-size: 9.5px;
+        color: #6e6a64;
+        margin-top: 2px;
+      }
+      .node.plain {
+        border-color: #c9c4bc;
+        background: #fff;
+      }
+      .node.orange {
+        border-color: #e87722;
+        background: #fdf3ea;
+      }
+      .node.orange .mono-t {
+        color: #b25412;
+      }
+      .node.red {
+        border-color: #c00000;
+        background: #fbeded;
+      }
+      .node.red .mono-t {
+        color: #c00000;
+      }
+      .node.slate {
+        border-color: #3c4a5a;
+        background: #eff2f6;
+      }
+      .node.green {
+        border-color: #2e7d5b;
+        background: #eaf5ef;
+      }
+      .node.green .mono-t {
+        color: #256b4c;
+      }
+      .node.amber {
+        border-color: #c89b1d;
+        background: #fff7df;
+      }
+      .mono-t {
+        font-family: Consolas, monospace;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      .arrow {
+        text-align: center;
+        color: #9b958c;
+        font-size: 12px;
+        line-height: 1;
+        padding: 6px 0;
+      }
+      .arrow .lbl {
+        font-family: Consolas, monospace;
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        color: #8a857d;
+        display: block;
+        margin-bottom: 2px;
+      }
+      .legend {
+        display: flex;
+        gap: 18px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+      .legend .li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10.5px;
+        color: #55504a;
+      }
+      .sw {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        border: 1.5px solid;
+      }
+      .sw.orange {
+        border-color: #e87722;
+        background: #fdf3ea;
+      }
+      .sw.red {
+        border-color: #c00000;
+        background: #fbeded;
+      }
+      .sw.slate {
+        border-color: #3c4a5a;
+        background: #eff2f6;
+      }
+      .sw.green {
+        border-color: #2e7d5b;
+        background: #eaf5ef;
+      }
+      .sw.amber {
+        border-color: #c89b1d;
+        background: #fff7df;
+      }
+      .figcap {
+        font-size: 11.5px;
+        color: #55504a;
+        line-height: 1.55;
+        margin: 10px 2px 0;
+      }
+      .figcap .fign {
+        font-family: Consolas, monospace;
+        font-weight: 700;
+        color: #c00000;
+      }
+
+      /* table */
+      table.matrix {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 14px 0 8px;
+        font-size: 11.5px;
+      }
+      table.matrix th {
+        background: #2e3a47;
+        color: #fff;
+        text-align: left;
+        font-size: 11px;
+        padding: 10px 10px;
+        font-weight: 700;
+      }
+      table.matrix th:first-child {
+        border-radius: 8px 0 0 0;
+      }
+      table.matrix th:last-child {
+        border-radius: 0 8px 0 0;
+      }
+      table.matrix td {
+        padding: 9.5px 10px;
+        border-bottom: 1px solid #edeae4;
+      }
+      table.matrix tr:nth-child(even) td {
+        background: #faf8f5;
+      }
+      table.matrix td:first-child {
+        font-weight: 700;
+        font-size: 11.5px;
+      }
+      .yes {
+        color: #2e7d5b;
+        font-weight: 700;
+      }
+      .no {
+        color: #9b958c;
+      }
+      .part {
+        color: #c8850c;
+        font-weight: 700;
+      }
+      .fullv {
+        color: #2e7d5b;
+        font-weight: 700;
+      }
+
+      /* callout */
+      .callout {
+        background: #fbeded;
+        border-left: 4px solid #c00000;
+        border-radius: 0 10px 10px 0;
+        padding: 13px 18px;
+        font-size: 12.5px;
+        line-height: 1.6;
+        margin: 14px 0;
+      }
+      .callout b.lead {
+        color: #c00000;
+      }
+      .callout.cream {
+        background: #faf6f0;
+        border-left-color: #e87722;
+      }
+
+      .pill {
+        font-family: Consolas, monospace;
+        font-size: 11px;
+        background: #f4f1ec;
+        border: 1px solid #e0dcd4;
+        border-radius: 5px;
+        padding: 1px 7px;
+        white-space: nowrap;
+      }
+
+      /* stats */
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        margin: 16px 0;
+      }
+      .stat {
+        border: 1px solid #e4e0da;
+        border-radius: 12px;
+        padding: 14px 10px;
+        text-align: center;
+      }
+      .stat .big {
+        font-family: Cambria, Georgia, serif;
+        font-size: 30px;
+        font-weight: 700;
+        color: #c00000;
+        line-height: 1;
+      }
+      .stat .cap {
+        font-size: 10px;
+        color: #6e6a64;
+        margin-top: 6px;
+        letter-spacing: 0.04em;
+      }
+
+      /* steps */
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin: 14px 0;
+      }
+      .step {
+        border: 1px solid #e4e0da;
+        border-radius: 10px;
+        padding: 12px 12px;
+      }
+      .step .sn {
+        font-family: Consolas, monospace;
+        font-weight: 700;
+        font-size: 11px;
+        color: #fff;
+        background: #c00000;
+        border-radius: 4px;
+        padding: 2px 7px;
+        display: inline-block;
+        margin-bottom: 8px;
+      }
+      .step h4 {
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+      .step p {
+        font-size: 10.5px;
+        color: #6e6a64;
+        line-height: 1.5;
+      }
+
+      h3.sub {
+        font-size: 14px;
+        margin: 16px 0 8px;
+      }
+
+      /* code block */
+      .codeblock {
+        font-family: Consolas, monospace;
+        font-size: 11.5px;
+        background: #faf8f5;
+        border: 1px solid #e4e0da;
+        border-radius: 10px;
+        padding: 14px 18px;
+        line-height: 1.8;
+        margin: 12px 0;
+      }
+      .codeblock .c {
+        color: #8a857d;
+      }
+      .codeblock .k {
+        color: #c00000;
+        font-weight: 700;
+      }
+
+      /* closing */
+      .closing {
+        border-top: 2px solid #e4e0da;
+        margin-top: 26px;
+        padding-top: 22px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+      .closing img {
+        width: 54px;
+      }
+      .prep {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+      }
+      .prep .who .lab {
+        font-family: Consolas, monospace;
+        font-size: 9px;
+        letter-spacing: 0.2em;
+        color: #8a857d;
+        margin-bottom: 5px;
+      }
+      .prep .who .nm {
+        font-family: Cambria, Georgia, serif;
+        font-size: 17px;
+        font-weight: 700;
+      }
+      .prep .who .rl {
+        font-size: 11.5px;
+        color: #6e6a64;
+        margin-top: 2px;
+      }
+      .docmeta {
+        text-align: right;
+        font-family: Consolas, monospace;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        color: #8a857d;
+        line-height: 2;
+      }
+      .docmeta .r {
+        color: #c00000;
+        font-weight: 700;
+      }
+
+      .bandrow {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 10px 0 4px;
+      }
+      .band {
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 6px;
+        padding: 4px 10px;
+        border: 1.5px solid;
+      }
+      .band.g {
+        color: #256b4c;
+        border-color: #2e7d5b;
+        background: #eaf5ef;
+      }
+      .band.y {
+        color: #c8850c;
+        border-color: #c89b1d;
+        background: #fff7df;
+      }
+      .band.o {
+        color: #b25412;
+        border-color: #e87722;
+        background: #fdf3ea;
+      }
+      .band.r {
+        color: #c00000;
+        border-color: #c00000;
+        background: #fbeded;
+      }
+      .band.n {
+        color: #55504a;
+        border-color: #c9c4bc;
+        background: #f4f1ec;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ============ PAGE 1 — COVER ============ -->
+    <div class="page">
+      <div class="topbar"></div>
+      <div class="kicker">
+        <span class="red">IKEJA ELECTRIC PLC</span>
+        <span class="gray">&nbsp;·&nbsp; GIS TEAM</span>
+      </div>
+      <div class="cover-head">
+        <img src="ie-logo.png" alt="Ikeja Electric" />
+        <div>
+          <h1>GIS KPI Dashboard — Application<br />&amp; Performance Workflow</h1>
+          <div class="subtitle">
+            The end-to-end operational flow of the GIS Team KPI Performance Dashboard —
+            from account setup and KPI activity capture to evidence verification, period
+            approval, deterministic scoring and auditable reporting.
+          </div>
+        </div>
+      </div>
+
+      <div class="metapanel">
+        <div class="cell">
+          <div class="label">DOCUMENT</div>
+          <div class="value">Operational Workflow Guide</div>
+        </div>
+        <div class="cell">
+          <div class="label">PLATFORM</div>
+          <div class="value">GIS KPI Dashboard</div>
+        </div>
+        <div class="cell">
+          <div class="label">SURFACES</div>
+          <div class="value">
+            Management Dashboard · Employee Workspace · Reports &amp; Exports
+          </div>
+        </div>
+        <div class="cell">
+          <div class="label">VERSION</div>
+          <div class="value">2.0</div>
+        </div>
+        <div class="cell wide">
+          <div class="label">CLASSIFICATION</div>
+          <div class="value">Internal Use</div>
+        </div>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <div class="tag"><span class="dot red"></span>MANAGEMENT&nbsp;DASHBOARD</div>
+          <h3>Team Performance &amp; Oversight</h3>
+          <div class="url">gis-kpi.vercel.app/overview</div>
+          <p>
+            Executive overview, team scorecards, analytics, review queue, data quality and
+            the audit log — open in a browser and updated live.
+          </p>
+        </div>
+        <div class="card">
+          <div class="tag"><span class="dot orange"></span>EMPLOYEE&nbsp;WORKSPACE</div>
+          <h3>Activity Capture &amp; Evidence</h3>
+          <div class="url">gis-kpi.vercel.app/activities</div>
+          <p>
+            Each employee captures activity against their five KPIs, attaches evidence and
+            tracks their own attainment — same sign-in, scoped to self.
+          </p>
+        </div>
+      </div>
+
+      <div class="toc">
+        <div class="item">
+          <span class="n">01</span
+          ><span class="t">Platform overview &amp; architecture</span>
+        </div>
+        <div class="item">
+          <span class="n">07</span><span class="t">Review &amp; period approval</span>
+        </div>
+        <div class="item">
+          <span class="n">02</span><span class="t">Roles &amp; access model</span>
+        </div>
+        <div class="item">
+          <span class="n">08</span><span class="t">Deterministic scoring engine</span>
+        </div>
+        <div class="item">
+          <span class="n">03</span
+          ><span class="t">Account setup &amp; employee linking</span>
+        </div>
+        <div class="item">
+          <span class="n">09</span><span class="t">Analytics &amp; team oversight</span>
+        </div>
+        <div class="item">
+          <span class="n">04</span
+          ><span class="t">KPI catalogue &amp; source of truth</span>
+        </div>
+        <div class="item">
+          <span class="n">10</span
+          ><span class="t">Reports, exports &amp; AI narrative</span>
+        </div>
+        <div class="item">
+          <span class="n">05</span
+          ><span class="t">Activity capture &amp; measurement</span>
+        </div>
+        <div class="item">
+          <span class="n">11</span
+          ><span class="t">Data quality, audit &amp; notifications</span>
+        </div>
+        <div class="item">
+          <span class="n">06</span><span class="t">Evidence &amp; verification</span>
+        </div>
+        <div class="item" style="border-bottom-color: transparent">
+          <span class="n">&nbsp;&nbsp;</span><span class="t">&nbsp;</span>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 1 of 13</span>
       </div>
     </div>
-    <div class="docmeta">
-      <span class="r">GIS KPI DASHBOARD</span><br>
-      APPLICATION &amp; PERFORMANCE WORKFLOW · V2.0<br>
-      INTERNAL USE — © IKEJA ELECTRIC PLC
+
+    <!-- ============ PAGE 2 — 01 PLATFORM OVERVIEW ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">01</span><span class="name">PLATFORM OVERVIEW</span>
+      </div>
+      <h2>One dashboard, every score reproducible</h2>
+      <p class="body">
+        The GIS KPI Dashboard digitises how the GIS Team (Technical Services) plans,
+        measures and proves performance. Every employee carries five core KPIs from the
+        approved 2026 performance workbook plus four shared non-core KPIs — 100 weighted
+        points in all; every reported result is backed by captured activity and reviewable
+        evidence; and every official score is frozen as a reproducible snapshot an auditor
+        can trace back to its inputs.
+      </p>
+      <p class="body">
+        One web application serves three ways of working, all against a single backend:
+      </p>
+      <ul class="list">
+        <li>
+          <b>The Management Dashboard</b> — for managers, admins and executives to monitor
+          team performance, run the review queue, resolve data-quality issues and export
+          reports.
+        </li>
+        <li>
+          <b>The Employee Workspace</b> — where each employee captures KPI activity with
+          mode-tailored forms, attaches evidence and follows their own attainment.
+        </li>
+        <li>
+          <b>Reports &amp; Exports</b> — deterministic Excel and PDF outputs, with an
+          optional AI-written narrative that explains — but never produces — the numbers.
+        </li>
+      </ul>
+
+      <div class="fig">
+        <div class="figlabel">SYSTEM ARCHITECTURE</div>
+        <div class="cols c3">
+          <div class="node orange">
+            <div class="nt">Employees</div>
+            <div class="ns">Capture activity · attach evidence</div>
+          </div>
+          <div class="node plain">
+            <div class="nt">Managers · Reviewers</div>
+            <div class="ns">Verify evidence · approve periods</div>
+          </div>
+          <div class="node red">
+            <div class="nt">Admins · Auditors</div>
+            <div class="ns">Configure · resolve DQ · audit</div>
+          </div>
+        </div>
+        <div class="cols c3">
+          <div class="arrow"><span class="lbl">sign in</span>▼</div>
+          <div class="arrow"><span class="lbl">sign in</span>▼</div>
+          <div class="arrow"><span class="lbl">sign in</span>▼</div>
+        </div>
+        <div class="node slate" style="margin-bottom: 0">
+          <div class="mono-t">WEB DASHBOARD — NEXT.JS ON VERCEL</div>
+          <div class="ns">
+            Overview · Team · Activity Capture · Evidence · Review · Analytics · Reports ·
+            Settings · Audit
+          </div>
+        </div>
+        <div class="arrow">▼</div>
+        <div class="node slate">
+          <div class="mono-t">CONVEX BACKEND — SINGLE SOURCE OF TRUTH</div>
+          <div class="ns">
+            KPI catalogue · Auth &amp; roles · Activities &amp; measurements · Evidence
+            storage · Approvals &amp; snapshots · Audit log · Scheduled jobs
+          </div>
+        </div>
+        <div class="arrow">▼</div>
+        <div class="node amber" style="max-width: 420px; margin: 0 auto">
+          <div class="mono-t">NOTIFICATIONS — IN-APP · EMAIL</div>
+        </div>
+        <div class="legend">
+          <div class="li"><span class="sw orange"></span>Employee</div>
+          <div class="li"><span class="sw red"></span>Admin / management</div>
+          <div class="li"><span class="sw slate"></span>System / backend</div>
+          <div class="li"><span class="sw green"></span>Verified / approved</div>
+          <div class="li"><span class="sw amber"></span>Notification</div>
+        </div>
+      </div>
+      <p class="figcap">
+        <span class="fign">FIG. 1</span> — Employees, reviewers and administrators reach
+        one backend through one dashboard. Every write is role-checked server-side, and
+        the backend fans out review and approval alerts in-app and by email.
+      </p>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 2 of 13</span>
+      </div>
     </div>
-  </div>
 
-  <div class="foot"><span class="brand">GIS KPI DASHBOARD</span><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span><span>Page 13 of 13</span></div>
-</div>
+    <!-- ============ PAGE 3 — 02 ROLES ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">02</span><span class="name">ROLES &amp; ACCESS</span>
+      </div>
+      <h2>Seven roles, least-privilege by design</h2>
+      <p class="body">
+        Access is granted by application role — kept strictly separate from an employee's
+        <i>job role</i> on the roster. Everyone signs in with their own email and
+        password; what they can see and do follows from the roles granted to them.
+        Authorization is enforced <b>server-side in every backend function</b> — hidden
+        buttons are never the security boundary — and managers and reviewers can
+        additionally be <b>scoped</b> to specific employees, job roles or locations.
+      </p>
 
-</body>
+      <table class="matrix">
+        <tr>
+          <th>Role</th>
+          <th>Dashboard</th>
+          <th>Capture activity</th>
+          <th>Verify &amp; approve</th>
+          <th>Reports &amp; exports</th>
+          <th>User management</th>
+        </tr>
+        <tr>
+          <td>System Admin</td>
+          <td class="fullv">Full</td>
+          <td class="yes">Yes</td>
+          <td class="yes">Yes</td>
+          <td class="yes">Yes</td>
+          <td class="yes">Yes</td>
+        </tr>
+        <tr>
+          <td>KPI Admin</td>
+          <td class="fullv">Full</td>
+          <td class="yes">Yes</td>
+          <td class="part">Verify only</td>
+          <td class="yes">Yes</td>
+          <td class="no">No</td>
+        </tr>
+        <tr>
+          <td>Manager</td>
+          <td class="part">Scoped</td>
+          <td class="yes">Yes</td>
+          <td class="yes">Yes</td>
+          <td class="yes">Yes</td>
+          <td class="no">No</td>
+        </tr>
+        <tr>
+          <td>Reviewer</td>
+          <td class="part">Scoped</td>
+          <td class="no">No</td>
+          <td class="part">Verify</td>
+          <td class="no">No</td>
+          <td class="no">No</td>
+        </tr>
+        <tr>
+          <td>Employee</td>
+          <td class="part">Self</td>
+          <td class="yes">Yes — own KPIs</td>
+          <td class="no">No</td>
+          <td class="no">No</td>
+          <td class="no">No</td>
+        </tr>
+        <tr>
+          <td>Executive Viewer</td>
+          <td class="part">Read-only</td>
+          <td class="no">No</td>
+          <td class="no">No</td>
+          <td class="part">Approved only</td>
+          <td class="no">No</td>
+        </tr>
+        <tr>
+          <td>Auditor</td>
+          <td class="part">Audit views</td>
+          <td class="no">No</td>
+          <td class="no">No</td>
+          <td class="part">Metadata</td>
+          <td class="no">No</td>
+        </tr>
+      </table>
+
+      <ul class="list">
+        <li class="red">
+          <b>System Admin</b> — configures the organization: people, employee IDs, app
+          roles, locations, managers, thresholds and periods. The only role that manages
+          user accounts, and the only one that can lock a period or override with reason.
+        </li>
+        <li class="red">
+          <b>KPI Admin (GIS Team Admin)</b> — owns the KPI catalogue: templates,
+          assignments, targets, weights, formulas, evidence rules, imports and the
+          data-quality queue. Cannot manage user accounts.
+        </li>
+        <li class="red">
+          <b>Manager (GIS Lead)</b> — sees team performance within scope, verifies
+          evidence, recommends and approves scores, and approves periods for their people.
+        </li>
+        <li class="red">
+          <b>Reviewer</b> — verifies evidence and recommends scores for the employees in
+          their scope; never approves periods.
+        </li>
+        <li class="red">
+          <b>Employee</b> — captures activity against their own five KPIs, attaches
+          evidence and follows their own score. Sees only their own restricted evidence.
+        </li>
+        <li class="red">
+          <b>Executive Viewer</b> — read-only, and only <i>approved</i> results —
+          provisional numbers are never presented as final.
+        </li>
+        <li class="red">
+          <b>Auditor</b> — reads config history, score lineage and the audit log; sees
+          evidence metadata without opening restricted files.
+        </li>
+      </ul>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 3 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 4 — 03 ACCOUNT SETUP ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">03</span><span class="name">ACCOUNT SETUP &amp; LINKING</span>
+      </div>
+      <h2>Every account is granted, linked, then trusted</h2>
+      <p class="body">
+        Anyone can create an account, but a new account can do nothing until an
+        administrator grants it a role. Employees are additionally
+        <b>linked to their roster record</b>, which is what puts their KPIs in front of
+        them. Unlinking is a clean break: the account's captured activity and evidence are
+        <b>wiped by default</b> (an explicit keep-data option exists for genuine account
+        moves), so a relink always starts clean — and either path is audit-logged.
+      </p>
+
+      <div class="steps">
+        <div class="step">
+          <span class="sn">1</span>
+          <h4>Sign up</h4>
+          <p>Email + password at <b>/signin</b>. The account exists but holds no role.</p>
+        </div>
+        <div class="step">
+          <span class="sn">2</span>
+          <h4>Awaiting access</h4>
+          <p>
+            The profile shows <i>“Awaiting access — no role granted yet.”</i> No data is
+            visible.
+          </p>
+        </div>
+        <div class="step">
+          <span class="sn">3</span>
+          <h4>Admin grants &amp; links</h4>
+          <p>
+            In Users &amp; Organization, a System Admin grants roles and links the account
+            to its employee record.
+          </p>
+        </div>
+        <div class="step">
+          <span class="sn">4</span>
+          <h4>Workspace live</h4>
+          <p>
+            The employee's KPIs appear in Activity Capture and on their Individual
+            Performance page.
+          </p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <b class="lead">First-run bootstrap.</b> On a fresh deployment, the first
+        signed-in user can claim <b>System Admin</b> from the overview — the claim works
+        only while no admin exists, and can be locked to a specific address with
+        <code>ADMIN_BOOTSTRAP_EMAIL</code>. After that, every role passes through an
+        admin's hands.
+      </div>
+
+      <h3 class="sub">Profile &amp; identity</h3>
+      <p class="body">
+        Each user manages their own profile: display name, a profile photo (camera capture
+        or upload, stored in Convex file storage), granted application roles, and — once
+        linked — their designated roster job role, location and employee ID. Profile
+        changes apply instantly across the dashboard and are audit-logged.
+      </p>
+
+      <h3 class="sub">Scoped management</h3>
+      <p class="body">
+        Managers and reviewers are granted their role <b>with a scope</b> — by employee,
+        job role or location. A reviewer scoped to
+        <span class="pill">Geo Database Specialist</span> sees exactly those people in the
+        review queue and nothing more; team views outside a manager's scope simply do not
+        render. Scope is evaluated on the server on every query.
+      </p>
+
+      <div class="callout cream">
+        <b>Separation of duties.</b> Application roles (what you may do in the app) are
+        deliberately separate from roster job roles (what your KPIs measure). Granting
+        someone Reviewer never changes their own KPI targets, and being a GIS Lead on the
+        roster grants no dashboard power by itself.
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 4 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 5 — 04 KPI CATALOGUE ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">04</span
+        ><span class="name">KPI CATALOGUE &amp; SOURCE OF TRUTH</span>
+      </div>
+      <h2>From the approved workbook to a living catalogue</h2>
+      <p class="body">
+        The catalogue is seeded from the approved 2026 performance workbook
+        <span class="pill">GIS 2026 PO Settings</span> — the same sheet management signed
+        off. Every row is imported <b>verbatim</b> into a preserved source layer, then
+        mapped to a canonical definition the scoring engine can compute. The original
+        wording is never discarded: any screen that shows a canonicalised value can also
+        show the source cell it came from.
+      </p>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="big">75</div>
+          <div class="cap">Core KPI assignments</div>
+        </div>
+        <div class="stat">
+          <div class="big">15</div>
+          <div class="cap">GIS Team employees</div>
+        </div>
+        <div class="stat">
+          <div class="big">4</div>
+          <div class="cap">Job-role templates</div>
+        </div>
+        <div class="stat">
+          <div class="big">100</div>
+          <div class="cap">Points per person — 80 core + 20 non-core</div>
+        </div>
+      </div>
+
+      <p class="body">
+        Each employee carries <b>five core KPIs</b> from their job-role template —
+        Geographic Information Systems Lead, Geo Database Specialist, and the other 2026
+        role templates — plus <b>four shared non-core KPIs</b>, each with a target, a
+        measurement mode, a weight in points and an evidence requirement.
+      </p>
+
+      <div class="callout">
+        <b class="lead">Core 80 + non-core 20 = 100.</b> The workbook's five core weights
+        total <b>80 points</b>, preserved verbatim and never silently rebased. The
+        remaining 20 points were closed by an explicit, audit-logged decision: four shared
+        non-core KPIs adopted from the 2025 workbook — <b>safety hazard reporting</b> (≥
+        1/month), <b>compliance recertification</b> (vs 80%, annual),
+        <b>internal customer satisfaction</b> (vs 85%, annual) and
+        <b>training hours</b> (20 hrs/yr; 10 for GL4+) — at 5 points each, for every role.
+        Core and non-core are labelled apart on every scorecard.
+      </div>
+
+      <h3 class="sub">Versioned configuration</h3>
+      <p class="body">
+        KPI definitions are versioned: changing a target, weight, formula or threshold
+        creates a new version with an effective period, and past measurements keep
+        pointing at the version they were scored under. Assignments carry an immutable
+        snapshot of what was agreed, so a mid-year configuration change can never quietly
+        rewrite an old score.
+      </p>
+
+      <div class="callout cream">
+        <b>Nothing is silently corrected.</b> Where the workbook is ambiguous — a blank
+        frequency, a location spelled two ways, a unit mismatch — the anomaly becomes a
+        <b>data-quality issue</b> for an admin to resolve (§11). And where a source
+        encoding punished honest reporting, the fix was an explicit migration: QA data
+        quality is scored as a <b>coverage ratio</b> (errors corrected ÷ identified), the
+        commercial-maintenance KPI as a <b>monthly error budget</b> (≤ 24, lower is
+        better), and deliverable-accuracy reductions run against a
+        <b>pinned baseline</b> the server enforces.
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 5 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 6 — 05 ACTIVITY CAPTURE ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">05</span
+        ><span class="name">ACTIVITY CAPTURE &amp; MEASUREMENT</span>
+      </div>
+      <h2>Forms that match how each KPI is measured</h2>
+      <p class="body">
+        Employees report progress in <b>Activity Capture</b>. The form adapts to the KPI's
+        measurement mode, so an SLA KPI asks for items-within-threshold, a ratio KPI asks
+        for achieved-over-planned, and nobody ever types a percentage by hand. Saving an
+        activity recomputes the KPI's provisional measurement immediately.
+      </p>
+
+      <div class="steps">
+        <div class="step">
+          <span class="sn">1</span>
+          <h4>Pick the KPI</h4>
+          <p>Only the employee's own assignments are offered.</p>
+        </div>
+        <div class="step">
+          <span class="sn">2</span>
+          <h4>Pick the period</h4>
+          <p>The tracking period being reported, e.g. August 2026.</p>
+        </div>
+        <div class="step">
+          <span class="sn">3</span>
+          <h4>Enter the inputs</h4>
+          <p>The form asks exactly what the measurement mode needs.</p>
+        </div>
+        <div class="step">
+          <span class="sn">4</span>
+          <h4>Save</h4>
+          <p>Autosaved, duplicate-warned, and the measurement recomputes.</p>
+        </div>
+      </div>
+
+      <h3 class="sub">Measurement modes</h3>
+      <table class="matrix">
+        <tr>
+          <th style="width: 24%">Mode</th>
+          <th>What the employee enters</th>
+          <th style="width: 33%">Example KPI</th>
+        </tr>
+        <tr>
+          <td>Ratio</td>
+          <td>Numerator (achieved) and denominator (planned / total)</td>
+          <td>Integrations vs planned · QA coverage (corrected ÷ identified)</td>
+        </tr>
+        <tr>
+          <td>Duration / SLA</td>
+          <td>Items inside the threshold and total eligible items</td>
+          <td>Requests turned around within 24 h / 2 business days</td>
+        </tr>
+        <tr>
+          <td>Count</td>
+          <td>The count achieved for the period</td>
+          <td>Safety hazard reports · monthly error budget (≤ 24, lower is better)</td>
+        </tr>
+        <tr>
+          <td>Reduction</td>
+          <td>The current value — the baseline is pinned and enforced server-side</td>
+          <td>Reduce digitisation errors by 20% vs the pinned baseline</td>
+        </tr>
+        <tr>
+          <td>Milestone / Binary</td>
+          <td>Stage reached, or done / not done</td>
+          <td>Project phase delivery</td>
+        </tr>
+        <tr>
+          <td>Rubric</td>
+          <td>Score and maximum against an approved rubric</td>
+          <td>Innovation initiative assessment</td>
+        </tr>
+        <tr>
+          <td>Composite</td>
+          <td>Inputs of each component, weighted together</td>
+          <td>Database integrity (multi-check)</td>
+        </tr>
+      </table>
+
+      <p class="body">
+        Every activity keeps its title, notes, reporter, <b>work date</b> and timestamp —
+        the measurement is an <i>aggregate of captured work</i>, not a typed-in result.
+        Daily and weekly KPIs are captured <b>incrementally</b>: batch logs accumulate
+        through the period (QA coverage grows entry by entry), the form shows the running
+        score and a cadence breakdown as work lands, and duplicate summary entries trigger
+        a warning before anything is written. The activity feed gives managers a live view
+        of updates as they arrive.
+      </p>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 6 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 7 — 06 EVIDENCE ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">06</span><span class="name">EVIDENCE &amp; VERIFICATION</span>
+      </div>
+      <h2>No official score without approved evidence</h2>
+      <p class="body">
+        Results are claims; evidence makes them scores. From a KPI's detail page (or the
+        Evidence Centre) an employee uploads files — documents, screenshots, exports, up
+        to 25&nbsp;MB — or attaches links, categorises them and ties them to the
+        measurement they support. Files are stored in Convex storage and streamed back
+        only through an <b>authenticated, authorization-checked</b> endpoint: a URL alone
+        never opens someone else's restricted evidence.
+      </p>
+
+      <div class="fig">
+        <div class="figlabel">EVIDENCE GATE</div>
+        <div class="cols c3" style="grid-template-columns: 1fr 1fr 1fr">
+          <div class="node orange">
+            <div class="mono-t">CAPTURE</div>
+            <div class="ns">Activity saved → provisional measurement</div>
+          </div>
+          <div class="node orange">
+            <div class="mono-t">ATTACH</div>
+            <div class="ns">Files ≤ 25 MB or links, categorised &amp; versioned</div>
+          </div>
+          <div class="node plain">
+            <div class="mono-t">REVIEW</div>
+            <div class="ns">Reviewer approves or rejects — reason required</div>
+          </div>
+        </div>
+        <div class="arrow">▼</div>
+        <div class="cols" style="grid-template-columns: 1fr 1fr">
+          <div class="node green">
+            <div class="mono-t">EVIDENCE APPROVED</div>
+            <div class="ns">KPI becomes eligible for an official score</div>
+          </div>
+          <div class="node red">
+            <div class="mono-t">REJECTED</div>
+            <div class="ns">Back to the employee with the reviewer's reason</div>
+          </div>
+        </div>
+      </div>
+      <p class="figcap">
+        <span class="fign">FIG. 2</span> — The evidence gate. A provisional measurement
+        can exist without evidence, but a KPI whose definition requires evidence cannot be
+        approved into an official score until a reviewer has approved that evidence.
+      </p>
+
+      <ul class="list">
+        <li>
+          <b>Versioning</b> — replacing a file keeps the old version and its review
+          history; nothing is overwritten in place.
+        </li>
+        <li>
+          <b>Lineage</b> — every evidence item shows what measurement and period it
+          supports, and every approved score can list the evidence behind it.
+        </li>
+        <li>
+          <b>Restricted access</b> — employees see their own evidence; managers and
+          reviewers see their scope; auditors see metadata without file contents; every
+          download of a restricted file is logged.
+        </li>
+        <li>
+          <b>Fast-track review</b> — reviewers approve evidence inline from the queue,
+          with per-KPI bulk approve; every item carries a three-state badge (pending ·
+          approved · rejected), and an admin submission delete sweeps the KPI's attached
+          evidence with it.
+        </li>
+      </ul>
+
+      <div class="callout">
+        <b class="lead">Rejection is feedback, not punishment.</b> A rejected item carries
+        the reviewer's reason back to the employee, who can attach a corrected version —
+        the loop continues until the evidence stands or the claim is withdrawn.
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 7 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 8 — 07 REVIEW & APPROVAL ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">07</span><span class="name">REVIEW &amp; PERIOD APPROVAL</span>
+      </div>
+      <h2>Approval freezes a score you can reproduce</h2>
+      <p class="body">
+        The <b>Review &amp; Approval queue</b> lists provisional measurements grouped by
+        employee and period, each with readiness flags: is required evidence approved? is
+        any data-quality issue blocking the KPI? Reviewers work side-by-side — the claim,
+        the activity behind it, the evidence — and verify or reject with a reason.
+      </p>
+
+      <div class="steps">
+        <div class="step">
+          <span class="sn">1</span>
+          <h4>Provisional</h4>
+          <p>Measurements recompute live as activity lands.</p>
+        </div>
+        <div class="step">
+          <span class="sn">2</span>
+          <h4>Verify</h4>
+          <p>Reviewer checks evidence and recommends.</p>
+        </div>
+        <div class="step">
+          <span class="sn">3</span>
+          <h4>Approve period</h4>
+          <p>Enabled only when every KPI is ready.</p>
+        </div>
+        <div class="step">
+          <span class="sn">4</span>
+          <h4>Snapshot</h4>
+          <p>A reproducible score snapshot is frozen.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <b class="lead">Approve period is a gate, not a button.</b> It stays disabled
+        until every KPI in the group has its required evidence approved and no blocking
+        data-quality issue. Approving finalizes the measurements and freezes a
+        <b>score snapshot</b> — calculation version, inputs, caps and weights — so the
+        same number can be recomputed and audited months later.
+      </div>
+
+      <h3 class="sub">Overrides &amp; recalls — allowed, but never quiet</h3>
+      <p class="body">
+        A manager or system admin can override a score — but the override
+        <b>requires a written reason</b>, keeps the engine's original number alongside the
+        overridden one, and writes both to the audit log. Rejections and period approvals
+        can be recalled in the moment via a <b>post-action Undo</b>; a recall is just
+        another audited decision. Employees see their own approval outcomes on their
+        performance page — nothing about a decision is hidden from the person it concerns.
+      </p>
+
+      <h3 class="sub">Locking a period</h3>
+      <p class="body">
+        Once approvals are complete, the period can be <b>locked</b>: no further activity,
+        evidence or overrides may touch it. Reopening a locked period is a system-admin
+        action with a reason, and is itself audit-logged. Deadlines and period boundaries
+        follow <span class="pill">Africa/Lagos</span> time.
+      </p>
+
+      <div class="callout cream">
+        <b>Why it matters.</b> The approval workflow is what turns the dashboard from a
+        tracker into a system of record: a provisional number is a conversation; an
+        approved snapshot is a commitment with evidence attached.
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 8 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 9 — 08 SCORING ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">08</span><span class="name">DETERMINISTIC SCORING</span>
+      </div>
+      <h2>The engine scores; the AI only explains</h2>
+      <p class="body">
+        Every score is produced by a deterministic engine — pure functions over the
+        measurement inputs, the KPI's target, its direction of improvement and its weight.
+        The same inputs always produce the same score, on any machine, with no model in
+        the loop.
+      </p>
+
+      <div class="codeblock">
+        <span class="c">// per KPI, per period</span><br />
+        attainment&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;=
+        <span class="k">f</span>(mode, inputs, target, direction)&nbsp;&nbsp;<span
+          class="c"
+          >// 1.0 = 100%</span
+        ><br />
+        cappedAttainment&nbsp;&nbsp;&nbsp;&nbsp;= <span class="k">clamp</span>(attainment,
+        0, officialCap)<br />
+        weightedContribution = cappedAttainment × weightPoints<br />
+        <span class="c"
+          >// employee score = Σ weightedContribution over all KPIs — out of 100 (80 core
+          + 20 non-core)</span
+        >
+      </div>
+
+      <ul class="list">
+        <li>
+          <b>Direction is configuration, not guesswork</b> — <i>higher-is-better</i> or
+          <i>lower-is-better</i> is stored on each definition and never inferred at
+          runtime.
+        </li>
+        <li>
+          <b>Caps are policy</b> — attainment is capped at the official cap (default
+          100%), with a separate stretch cap (default 120%) available where the year's
+          policy allows it.
+        </li>
+        <li>
+          <b>Weights are points</b> — a 20-point KPI at 90% attainment contributes 18
+          points; the employee's score is the sum over all their KPIs, core and non-core
+          labelled apart.
+        </li>
+        <li>
+          <b>Honest edge cases</b> — percent-encoded reduction targets self-normalize; a
+          zero baseline with zero errors counts as met; and a provisional measurement
+          whose activities are all deleted is removed rather than scored as a fake 0% or
+          100%.
+        </li>
+      </ul>
+
+      <h3 class="sub">Status bands</h3>
+      <p class="body">
+        Attainment maps to admin-editable status bands used consistently across every
+        view, chart and export:
+      </p>
+      <div class="bandrow">
+        <span class="band g">On / Above Target</span>
+        <span class="band y">Watch</span>
+        <span class="band o">At Risk</span>
+        <span class="band r">Critical</span>
+        <span class="band n">No Data</span>
+      </div>
+
+      <div class="callout">
+        <b class="lead">The LLM never scores.</b> The optional AI narrative in reports
+        (§10) is generated <i>from</i> the engine's numbers and is labelled as
+        explanation. No official score, attainment or band is ever produced, adjusted or
+        rounded by a language model.
+      </div>
+
+      <div class="callout cream">
+        <b>Reproducibility.</b> Approved snapshots store the calculation version with the
+        inputs — if the engine's rules ever change, old scores still recompute under the
+        rules they were approved with.
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 9 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 10 — 09 ANALYTICS ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">09</span><span class="name">ANALYTICS &amp; OVERSIGHT</span>
+      </div>
+      <h2>From one employee's KPI to the whole team's trend</h2>
+      <p class="body">
+        Oversight runs at three altitudes, each a click apart and each carrying the
+        context that makes comparison fair:
+      </p>
+      <ul class="list">
+        <li>
+          <b>Executive Overview</b> — the approved team score out of 100 (core and
+          non-core labelled apart), submission-workflow posture, evidence and cadence
+          coverage, overdue periods, the review backlog and the current score drivers.
+        </li>
+        <li>
+          <b>Team Performance</b> — sortable scorecards with role and location comparison.
+          Every comparison shows job role and configured weight, so a Lead and a
+          Specialist are never ranked as if they carried the same targets.
+        </li>
+        <li>
+          <b>Individual Performance</b> — one employee's KPIs with target, actual,
+          attainment, weight and contribution; their activity timeline, evidence gallery,
+          score history and report shortcuts.
+        </li>
+      </ul>
+
+      <h3 class="sub">Analytics workbench</h3>
+      <p class="body">
+        The Analytics page adds coverage gauges, donut and comparison charts, data-quality
+        exception views — and a <b>per-employee analytics</b> section with peer context:
+        managers pick any employee in scope and see their attainment alongside the peer
+        distribution, while an employee opening the same page sees their own numbers in
+        context. Every chart offers a <b>table alternative</b> for accessibility, and
+        filters are URL-encoded so any view can be shared as a link.
+      </p>
+
+      <h3 class="sub">Live activity feed</h3>
+      <p class="body">
+        Managers and admins follow a live feed of KPI updates as employees save activity —
+        who reported what, against which KPI, moments after it happens. The same event
+        stream powers in-app notifications and the email alerts described in §11.
+      </p>
+
+      <div class="callout cream">
+        <b>Fair-comparison rule.</b> Nowhere does the dashboard rank people on raw numbers
+        alone — role, weight and scope ride along with every comparison surface, and
+        provisional figures are always labelled as provisional.
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 10 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 11 — 10 REPORTS ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">10</span
+        ><span class="name">REPORTS, EXPORTS &amp; AI NARRATIVE</span>
+      </div>
+      <h2>Deterministic documents, provenance included</h2>
+      <p class="body">
+        The Reports page runs export jobs with visible status and progress, preview,
+        versioning and access logs. Two formats ship today, both rendered server-side in
+        the Node runtime:
+      </p>
+
+      <ul class="list">
+        <li>
+          <b>Excel workbook</b> — seven typed sheets (summary, per-employee scores,
+          measurements, evidence index, data-quality ledger and more) with real cell
+          types, formula-injection-safe text and the configured-weight note on every
+          relevant sheet.
+        </li>
+        <li>
+          <b>PDF report</b> — a deterministic layout of the approved numbers with
+          <b>embedded engine-drawn charts</b> (weighted-score and per-KPI attainment bars,
+          coloured by status band), generated from the same frozen snapshots the dashboard
+          shows.
+        </li>
+      </ul>
+
+      <h3 class="sub">The optional AI narrative</h3>
+      <p class="body">
+        A report can include a written narrative generated through the Vercel
+        AI&nbsp;Gateway with structured output. The narrative
+        <b>only explains numbers the engine already produced</b> — it summarises drivers,
+        flags risks and drafts commentary — and it ships with a disclaimer and a
+        human-approval status. If the AI key is absent, reports simply generate without
+        the narrative; nothing else degrades.
+      </p>
+
+      <div class="callout">
+        <b class="lead">Provenance on every document.</b> Each generated report records
+        who ran it, the format, the AI provider, model, prompt and schema version (when a
+        narrative was included), and token usage — all written to the audit log. Report
+        downloads are themselves access-logged.
+      </div>
+
+      <h3 class="sub">Evidence-grade exports</h3>
+      <p class="body">
+        Official scores come from frozen snapshots, so a re-run export reproduces the same
+        numbers — a document derived from the system of record.
+      </p>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 11 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 12 — 11 DQ / AUDIT / NOTIFICATIONS ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">11</span
+        ><span class="name">DATA QUALITY, AUDIT &amp; NOTIFICATIONS</span>
+      </div>
+      <h2>Anomalies become decisions, decisions become records</h2>
+      <p class="body">
+        The workbook the catalogue was born from is imperfect — and the dashboard treats
+        every imperfection as a first-class object. Import validation raises a
+        <b>data-quality issue</b> for each anomaly: a blank frequency, a business unit
+        spelled two ways, a unit mismatch between target and formula, a truncated formula
+        cell.
+      </p>
+
+      <div class="fig">
+        <div class="figlabel">DATA-QUALITY LOOP</div>
+        <div class="cols c3">
+          <div class="node slate">
+            <div class="mono-t">DETECT</div>
+            <div class="ns">
+              Import validation raises an issue — nothing auto-corrected
+            </div>
+          </div>
+          <div class="node red">
+            <div class="mono-t">DECIDE</div>
+            <div class="ns">
+              Admin approves the canonical value, resolves the ambiguity, or rejects with
+              a reason
+            </div>
+          </div>
+          <div class="node green">
+            <div class="mono-t">UNBLOCK</div>
+            <div class="ns">Blocking issues clear → the KPI can score again</div>
+          </div>
+        </div>
+      </div>
+      <p class="figcap">
+        <span class="fign">FIG. 3</span> — The data-quality loop. Source values are
+        preserved verbatim either way, and a KPI with a blocking issue stays
+        <span class="pill">scoring blocked</span> until a human decides.
+      </p>
+
+      <h3 class="sub">The audit log</h3>
+      <p class="body">
+        Every consequential action — configuration changes, imports, activity submissions,
+        evidence reviews, approvals, overrides, report generation and downloads — writes
+        an audit row: who, what, before/after, reason and timestamp, filterable by entity.
+        Auditors and system admins read it; nobody edits it.
+      </p>
+
+      <h3 class="sub">Notifications &amp; scheduled jobs</h3>
+      <ul class="list">
+        <li>
+          <b>In-app + email</b> — KPI updates notify the right people in-app and by email;
+          if the email service is unconfigured the system degrades gracefully and the
+          in-app trail still lands.
+        </li>
+        <li>
+          <b>Daily overdue flagging</b> — a scheduled job flags tracking periods past
+          their deadline (Africa/Lagos) so nothing quietly slips.
+        </li>
+        <li>
+          <b>Review-backlog reminders</b> — managers with waiting approvals get nudged
+          until the queue is clear.
+        </li>
+      </ul>
+
+      <div class="callout">
+        <b class="lead">Nothing moves silently.</b> A number can change only through
+        captured activity, a human decision, or a versioned configuration change — and
+        each of the three leaves a record the audit log can replay.
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 12 of 13</span>
+      </div>
+    </div>
+
+    <!-- ============ PAGE 13 — CLOSING ============ -->
+    <div class="page">
+      <div class="sec">
+        <span class="chip">12</span><span class="name">THE TRAIL, END TO END</span>
+      </div>
+      <h2>From a day's work to a defensible score</h2>
+      <p class="body">
+        Put together, the workflow reads as one unbroken chain: an employee captures real
+        activity → the engine computes a provisional measurement → evidence is attached
+        and reviewed → the period is approved and a snapshot frozen → analytics, reports
+        and exports all read from that same snapshot → and every step along the way is
+        attributable, timestamped and audit-logged.
+      </p>
+
+      <div class="cards" style="margin-top: 18px">
+        <div class="card">
+          <div class="tag"><span class="dot red"></span>MANAGEMENT&nbsp;DASHBOARD</div>
+          <h3>gis-kpi.vercel.app</h3>
+          <p>Overview · Team · Review · Analytics · Reports · Data Quality · Audit</p>
+        </div>
+        <div class="card">
+          <div class="tag"><span class="dot orange"></span>EMPLOYEE&nbsp;WORKSPACE</div>
+          <h3>gis-kpi.vercel.app/activities</h3>
+          <p>Activity Capture · Evidence · Individual Performance · Profile</p>
+        </div>
+      </div>
+
+      <div class="bandrow" style="margin-top: 20px">
+        <span class="band g">Evidence-backed</span>
+        <span class="band o">Deterministically scored</span>
+        <span class="band r">Audited &amp; exportable</span>
+      </div>
+
+      <p class="body" style="margin-top: 16px">
+        The dashboard's promise is simple:
+        <b>every score is reproducible from source activity and evidence</b>, every
+        normalization of the source workbook is a surfaced, approvable decision, and
+        nothing about anyone's performance is ever computed — or changed — in the dark.
+      </p>
+
+      <div class="closing">
+        <div class="prep">
+          <img src="ie-logo.png" alt="Ikeja Electric" />
+          <div class="who">
+            <div class="lab">PREPARED BY</div>
+            <div class="nm">Collins Anyanwu</div>
+            <div class="rl">GIS Team · Ikeja Electric Plc</div>
+          </div>
+        </div>
+        <div class="docmeta">
+          <span class="r">GIS KPI DASHBOARD</span><br />
+          APPLICATION &amp; PERFORMANCE WORKFLOW · V2.0<br />
+          INTERNAL USE — © IKEJA ELECTRIC PLC
+        </div>
+      </div>
+
+      <div class="foot">
+        <span class="brand">GIS KPI DASHBOARD</span
+        ><span>Application &amp; Performance Workflow · Ikeja Electric Plc</span
+        ><span>Page 13 of 13</span>
+      </div>
+    </div>
+  </body>
 </html>

@@ -79,7 +79,9 @@ function DownloadButton({ evidenceId }: { evidenceId: Id<"evidenceFiles"> }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        throw new Error(`${res.status === 403 ? "No access" : "Download failed"} (HTTP ${res.status})`);
+        throw new Error(
+          `${res.status === 403 ? "No access" : "Download failed"} (HTTP ${res.status})`,
+        );
       }
       const filename =
         /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ??

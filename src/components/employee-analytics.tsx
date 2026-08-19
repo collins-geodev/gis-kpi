@@ -23,7 +23,20 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatPercent } from "@convex/lib/format";
 import { UserRoundSearch } from "lucide-react";
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 const BAR_TONE: Record<string, string> = {
   on_target: "bg-success",
@@ -85,11 +98,13 @@ export function EmployeeAnalytics() {
             aria-label="Select an employee"
           >
             {!data.employee && <option value="">Select an employee…</option>}
-            {data.roster.map((r: { id: string; displayName: string; jobRole: string }) => (
-              <option key={r.id} value={r.id}>
-                {r.displayName} — {r.jobRole}
-              </option>
-            ))}
+            {data.roster.map(
+              (r: { id: string; displayName: string; jobRole: string }) => (
+                <option key={r.id} value={r.id}>
+                  {r.displayName} — {r.jobRole}
+                </option>
+              ),
+            )}
           </select>
         )}
       </CardHeader>
@@ -160,67 +175,69 @@ export function EmployeeAnalytics() {
               0,
             );
             return (
-          <div key={cat} className="space-y-2">
-            <h3 className="text-sm font-medium">
-              {cat === "core" ? "Core KPIs" : "Non-core KPIs"}{" "}
-              <span className="tabular font-normal text-muted-foreground">
-                — {groupPoints.toFixed(1)} / {groupWeight} pts
-              </span>
-              {cat === "core" && (
-                <span className="font-normal text-muted-foreground">
-                  {" "}
-                  · ◆ marks the same-role peer average
-                </span>
-              )}
-            </h3>
-            {group.map((k) => {
-              const pct = k.attainment === null ? 0 : Math.min(k.attainment, 1) * 100;
-              return (
-                <div key={k.assignmentId} className="space-y-1">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <Link
-                      href={`/kpi/${k.assignmentId}` as never}
-                      className="max-w-xl truncate text-accent hover:underline"
-                    >
-                      {k.objective}
-                    </Link>
-                    <span className="flex items-center gap-2">
-                      <span className="tabular font-medium">
-                        {k.attainment === null ? "no data" : formatPercent(k.attainment)}
-                      </span>
-                      <StatusBadge status={k.status as never} />
-                      {k.isProvisional === false && (
-                        <Badge variant="success">official</Badge>
-                      )}
+              <div key={cat} className="space-y-2">
+                <h3 className="text-sm font-medium">
+                  {cat === "core" ? "Core KPIs" : "Non-core KPIs"}{" "}
+                  <span className="tabular font-normal text-muted-foreground">
+                    — {groupPoints.toFixed(1)} / {groupWeight} pts
+                  </span>
+                  {cat === "core" && (
+                    <span className="font-normal text-muted-foreground">
+                      {" "}
+                      · ◆ marks the same-role peer average
                     </span>
-                  </div>
-                  <div
-                    className="relative h-3 overflow-hidden rounded-full bg-muted"
-                    role="img"
-                    aria-label={`${k.objective}: ${k.attainment === null ? "no data" : formatPercent(k.attainment)}${k.peerAvg !== null ? `, peer average ${formatPercent(k.peerAvg)}` : ""}`}
-                  >
-                    <div
-                      className={`h-full rounded-full ${BAR_TONE[k.status] ?? "bg-accent"}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                    {k.peerAvg !== null && (
-                      <div
-                        className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 rounded bg-foreground/70"
-                        style={{ left: `${Math.min(k.peerAvg, 1) * 100}%` }}
-                        title={`Peer average (${k.peerCount} ${k.peerCount === 1 ? "peer" : "peers"}): ${formatPercent(k.peerAvg)}`}
-                      />
-                    )}
-                  </div>
-                  {k.peerAvg !== null && (
-                    <p className="text-xs text-muted-foreground">
-                      peers ({k.peerCount}): {formatPercent(k.peerAvg)} · weight{" "}
-                      {k.weight} · {k.periodKey}
-                    </p>
                   )}
-                </div>
-              );
-            })}
-          </div>
+                </h3>
+                {group.map((k) => {
+                  const pct = k.attainment === null ? 0 : Math.min(k.attainment, 1) * 100;
+                  return (
+                    <div key={k.assignmentId} className="space-y-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <Link
+                          href={`/kpi/${k.assignmentId}` as never}
+                          className="max-w-xl truncate text-accent hover:underline"
+                        >
+                          {k.objective}
+                        </Link>
+                        <span className="flex items-center gap-2">
+                          <span className="tabular font-medium">
+                            {k.attainment === null
+                              ? "no data"
+                              : formatPercent(k.attainment)}
+                          </span>
+                          <StatusBadge status={k.status as never} />
+                          {k.isProvisional === false && (
+                            <Badge variant="success">official</Badge>
+                          )}
+                        </span>
+                      </div>
+                      <div
+                        className="relative h-3 overflow-hidden rounded-full bg-muted"
+                        role="img"
+                        aria-label={`${k.objective}: ${k.attainment === null ? "no data" : formatPercent(k.attainment)}${k.peerAvg !== null ? `, peer average ${formatPercent(k.peerAvg)}` : ""}`}
+                      >
+                        <div
+                          className={`h-full rounded-full ${BAR_TONE[k.status] ?? "bg-accent"}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                        {k.peerAvg !== null && (
+                          <div
+                            className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 rounded bg-foreground/70"
+                            style={{ left: `${Math.min(k.peerAvg, 1) * 100}%` }}
+                            title={`Peer average (${k.peerCount} ${k.peerCount === 1 ? "peer" : "peers"}): ${formatPercent(k.peerAvg)}`}
+                          />
+                        )}
+                      </div>
+                      {k.peerAvg !== null && (
+                        <p className="text-xs text-muted-foreground">
+                          peers ({k.peerCount}): {formatPercent(k.peerAvg)} · weight{" "}
+                          {k.weight} · {k.periodKey}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             );
           })}
 
@@ -232,9 +249,16 @@ export function EmployeeAnalytics() {
                 — weighted score across monthly-tracked KPIs
               </span>
             </h3>
-            <div className="flex items-end gap-1.5" role="img" aria-label="Monthly score trend">
+            <div
+              className="flex items-end gap-1.5"
+              role="img"
+              aria-label="Monthly score trend"
+            >
               {data.trend.map((t) => (
-                <div key={t.periodKey} className="flex flex-1 flex-col items-center gap-1">
+                <div
+                  key={t.periodKey}
+                  className="flex flex-1 flex-col items-center gap-1"
+                >
                   <div
                     className="flex w-full items-end justify-center rounded-t bg-muted"
                     style={{ height: 72 }}

@@ -172,11 +172,10 @@ export default function OverviewPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ShieldCheck className="h-5 w-5 text-success" />
-                  Configured weight: {summary.fullWeightTotal} /{" "}
-                  {summary.fullWeightTotal}
+                  Configured weight: {summary.fullWeightTotal} / {summary.fullWeightTotal}
                 </CardTitle>
                 <CardDescription>
-                  Every employee carries the full 100 points — {" "}
+                  Every employee carries the full 100 points —{" "}
                   <strong>{summary.configuredWeightTotal} core</strong> +{" "}
                   <strong>
                     {summary.fullWeightTotal - summary.configuredWeightTotal} non-core

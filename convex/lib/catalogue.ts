@@ -306,10 +306,7 @@ export const ROLE_TEMPLATES: Record<JobRole, CanonicalKpiTemplate[]> = {
       frequency: "Monthly",
       weight: 10,
       evidenceRequired: true,
-      requiredInputs: [
-        "Errors found this month",
-        "Maintenance-window QA evidence",
-      ],
+      requiredInputs: ["Errors found this month", "Maintenance-window QA evidence"],
       scoringNotes:
         "Monthly error budget = prior-year monthly error baseline × 0.8 (the workbook's 'reduce by 20%' intent; source typed it Number/20). Attainment = budget ÷ errors found, capped at 100% — a smooth gradient instead of the reduction cliff. Admins set the real budget per assignment in KPI settings once the prior-year count is agreed.",
     },
@@ -422,8 +419,7 @@ export const NON_CORE_TEMPLATES: CanonicalKpiTemplate[] = [
       "Maximum score (denominator)",
       "Department survey result",
     ],
-    scoringNotes:
-      "Annual single-summary ratio: departmental survey score ÷ max vs 85%.",
+    scoringNotes: "Annual single-summary ratio: departmental survey score ÷ max vs 85%.",
     category: "non_core",
   },
   {
@@ -452,10 +448,7 @@ export const NON_CORE_TEMPLATES: CanonicalKpiTemplate[] = [
 ];
 
 /** Non-core weights must always total exactly 20 points. */
-export const NON_CORE_WEIGHT_TOTAL = NON_CORE_TEMPLATES.reduce(
-  (s, t) => s + t.weight,
-  0,
-);
+export const NON_CORE_WEIGHT_TOTAL = NON_CORE_TEMPLATES.reduce((s, t) => s + t.weight, 0);
 
 /**
  * Classify a source objective to its canonical KPI key.
