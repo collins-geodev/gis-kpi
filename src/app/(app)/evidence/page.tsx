@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  AlertTriangle,
   CheckCircle2,
   Clock3,
   Download,
@@ -38,6 +39,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+import { errorMessage } from "@/lib/errors";
 
 const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant"]> = {
   submitted: "muted",
@@ -104,9 +106,7 @@ function DownloadButton({ evidenceId }: { evidenceId: Id<"evidenceFiles"> }) {
       setFailure(
         err instanceof TypeError
           ? "Network/CORS error — check your connection and retry."
-          : err instanceof Error
-            ? err.message
-            : "Download failed.",
+          : errorMessage(err, "Download failed."),
       );
     } finally {
       setBusy(false);
@@ -353,6 +353,21 @@ export default function EvidenceCentrePage() {
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
+                      {r.kpiAssignmentId && !r.activityLogged && (
+                        <div className="mt-1 flex items-start gap-1 text-xs text-warning">
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span>
+                            No work logged yet — evidence alone isn&apos;t scored.{" "}
+                            <Link
+                              href={"/activities" as never}
+                              className="underline hover:no-underline"
+                            >
+                              Log it in Activity Capture
+                            </Link>
+                            .
+                          </span>
+                        </div>
+                      )}
                     </TableCell>
                     {seesOthers && (
                       <TableCell className="whitespace-nowrap text-sm">
@@ -406,9 +421,7 @@ export default function EvidenceCentrePage() {
                                 return;
                               void removeEvidence({ evidenceId: r.id }).catch((err) =>
                                 window.alert(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "Could not delete evidence.",
+                                  errorMessage(err, "Could not delete evidence."),
                                 ),
                               );
                             }}

@@ -5,6 +5,7 @@
  */
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { ConvexError, v } from "convex/values";
 import { adminUsers, resolveDisplayName } from "./emails";
 import {
@@ -552,11 +553,26 @@ export const listCentre = query({
       .slice(0, 400);
 
     const { user, roles } = await getAuthContext(ctx);
+    // Whether any work has been logged for an assignment — evidence alone
+    // never produces a score, so rows without an activity get a nudge.
+    const activityByAssignment = new Map<string, boolean>();
+    const hasActivity = async (assignmentId: Id<"kpiAssignments">) => {
+      const cached = activityByAssignment.get(assignmentId);
+      if (cached !== undefined) return cached;
+      const first = await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", assignmentId))
+        .first();
+      const logged = first !== null;
+      activityByAssignment.set(assignmentId, logged);
+      return logged;
+    };
     const out = [];
     for (const e of rows) {
       const assignment = e.kpiAssignmentId ? await ctx.db.get(e.kpiAssignmentId) : null;
       const employee = await ctx.db.get(e.employeeId);
       out.push({
+        activityLogged: e.kpiAssignmentId ? await hasActivity(e.kpiAssignmentId) : true,
         id: e._id,
         canDelete: canDeleteEvidence(e, user, roles),
         title: e.title,

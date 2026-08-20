@@ -1934,3 +1934,59 @@ describe("malware scan integration point", () => {
     expect(errorAudits.length).toBe(1);
   });
 });
+
+describe("evidence centre nudge: activityLogged", () => {
+  test("evidence without logged work is flagged; logging the activity clears it", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "nudge-emp@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const year = await ctx.db
+        .query("performanceYears")
+        .withIndex("by_year", (q) => q.eq("year", 2026))
+        .first();
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", empId).eq("performanceYearId", year!._id),
+        )
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+
+    // Evidence attached, no activity logged → nudge.
+    await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/batch-report",
+      originalFilename: "batch-report",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "batch_report",
+      title: "Asset integration batch report",
+    });
+    const before = await emp.query(api.evidence.listCentre, {});
+    expect(before.find((r) => r.kpiAssignmentId === assignmentId)?.activityLogged).toBe(
+      false,
+    );
+
+    // Log the work → nudge clears.
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+    const after = await emp.query(api.evidence.listCentre, {});
+    expect(after.find((r) => r.kpiAssignmentId === assignmentId)?.activityLogged).toBe(
+      true,
+    );
+  });
+});
