@@ -18,7 +18,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, ClipboardList, Loader2, Pencil, Trash2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  Loader2,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
+import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { aggregateActivityInputs } from "@convex/lib/measure";
 import { computeAttainment } from "@convex/lib/scoring";
@@ -212,6 +221,21 @@ export default function ActivitiesPage() {
   );
   const duplicateBlocked = Boolean(
     !editingId && existing && existing.singleEntry && existing.count > 0,
+  );
+
+  // Evidence-first rule (mirrors the server): an evidence-required KPI can't
+  // be captured until proof is attached. Reactive — Save unlocks on attach.
+  const evidenceForSelected = useQuery(
+    api.evidence.listForAssignment,
+    selected && !editingId
+      ? { kpiAssignmentId: selected.id as Id<"kpiAssignments"> }
+      : "skip",
+  );
+  const evidenceMissing = Boolean(
+    !editingId &&
+    selected?.evidenceRequired &&
+    evidenceForSelected !== undefined &&
+    evidenceForSelected.length === 0,
   );
 
   /**
@@ -712,6 +736,27 @@ export default function ActivitiesPage() {
                 />
               </Row>
 
+              {evidenceMissing && selected && (
+                <div className="space-y-3 rounded-md border border-warning/40 bg-warning/5 p-3">
+                  <p
+                    className="flex items-start gap-1.5 text-sm font-medium text-warning"
+                    role="alert"
+                  >
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    This KPI requires evidence — a submission needs both the work numbers
+                    and the proof behind them. Attach a file or link below; Save unlocks
+                    the moment it&apos;s attached.
+                  </p>
+                  <EvidencePanel
+                    assignmentId={selected.id as Id<"kpiAssignments">}
+                    kpi={{
+                      canonicalKey: selected.canonicalKey,
+                      objective: selected.objective,
+                    }}
+                  />
+                </div>
+              )}
+
               {error && (
                 <p className="text-sm text-critical" role="alert">
                   {error}
@@ -726,14 +771,16 @@ export default function ActivitiesPage() {
 
               <Button
                 type="submit"
-                disabled={submitting || !selected || duplicateBlocked}
+                disabled={submitting || !selected || duplicateBlocked || evidenceMissing}
               >
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                 {duplicateBlocked
                   ? "Already captured — edit it instead"
-                  : editingId
-                    ? "Save changes"
-                    : "Save activity"}
+                  : evidenceMissing
+                    ? "Attach evidence to unlock"
+                    : editingId
+                      ? "Save changes"
+                      : "Save activity"}
               </Button>
             </form>
           </CardContent>

@@ -54,6 +54,35 @@ async function makeUser(
   return { as: t.withIdentity({ subject: `${userId}|test` }), userId };
 }
 
+/**
+ * Attach stub evidence to an assignment so the evidence-first capture rule
+ * lets employees log work. Tests that exercise the rule itself skip this.
+ */
+async function unlockCapture(t: T, assignmentId: Id<"kpiAssignments">) {
+  await t.run(async (ctx) => {
+    const assignment = (await ctx.db.get(assignmentId))!;
+    const anyUser =
+      (await ctx.db.query("users").first()) ??
+      (await ctx.db.get(await ctx.db.insert("users", { isActive: true })));
+    await ctx.db.insert("evidenceFiles", {
+      employeeId: assignment.employeeId,
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/stub-evidence",
+      originalFilename: "stub-evidence",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "supporting_document",
+      title: "Stub evidence",
+      uploadedByUserId: anyUser!._id,
+      uploadedAt: Date.now(),
+      version: 1,
+      confidentiality: "internal",
+      reviewStatus: "submitted",
+      retentionState: "active",
+    });
+  });
+}
+
 async function employeeIdByBiz(t: T, biz: string): Promise<Id<"employees">> {
   return await t.run(async (ctx) => {
     const e = await ctx.db
@@ -200,6 +229,7 @@ describe("activity → measurement, evidence gate & approval (#7, #9)", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
 
     // Capture an activity: 9 / 10 = 90% attainment.
     await emp.mutation(api.activities.create, {
@@ -332,6 +362,7 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
@@ -415,6 +446,7 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
 
     const activityId = await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
@@ -474,6 +506,7 @@ describe("activity capture: required fields + edit", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
 
     const base = {
       kpiAssignmentId: assignmentId,
@@ -640,6 +673,7 @@ describe("submission rejection", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
     const activityId = await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
@@ -709,6 +743,7 @@ describe("score overrides", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
@@ -794,6 +829,7 @@ describe("cadence-aware periods", () => {
       const e = (await ctx.db.get(a.employeeId))!;
       return { assignmentId: a._id, target: a.target, employeeBiz: e.employeeId };
     });
+    await unlockCapture(t, assignmentId);
     const { as: emp } = await makeUser(t, {
       email: "e@x.com",
       roles: ["employee"],
@@ -863,6 +899,7 @@ describe("submission compliance & gating", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
@@ -906,6 +943,7 @@ describe("submission compliance & gating", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
     const base = {
       kpiAssignmentId: assignmentId,
       periodKey: "2026-M08",
@@ -990,6 +1028,7 @@ describe("duplicate capture guard", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, ratioAssignment);
     const base = {
       kpiAssignmentId: ratioAssignment,
       periodKey: "2026-M08",
@@ -1029,6 +1068,7 @@ describe("duplicate capture guard", () => {
       const e = (await ctx.db.get(a.employeeId))!;
       return { countAssignment: a._id, countBiz: e.employeeId };
     });
+    await unlockCapture(t, countAssignment);
     const { as: lead } = await makeUser(t, {
       email: "lead@x.com",
       roles: ["employee"],
@@ -1069,6 +1109,7 @@ describe("duplicate capture guard", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "qa_data_quality")!._id;
     });
+    await unlockCapture(t, qaAssignment);
     const base = {
       kpiAssignmentId: qaAssignment,
       periodKey: "2026-M08",
@@ -1129,16 +1170,7 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
-
-    await emp.mutation(api.activities.create, {
-      kpiAssignmentId: assignmentId,
-      periodKey: "2026-M08",
-      activityAt: AUG_2026,
-      title: "Integrated assets",
-      description: "batch",
-      numerator: 9,
-      denominator: 10,
-    });
+    // Evidence-first: attach the proof, then log the work.
     await emp.mutation(api.evidence.saveEvidence, {
       kpiAssignmentId: assignmentId,
       externalUrl: "https://example.com/log",
@@ -1147,6 +1179,15 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
       fileSize: 0,
       category: "qa_log",
       title: "Integration log",
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
     });
 
     // The queue distinguishes "submitted, awaiting review" from "needed".
@@ -1246,6 +1287,7 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
     const readMeasurement = () =>
       t.run(async (ctx) =>
         ctx.db
@@ -1417,6 +1459,7 @@ describe("pinned baseline & scoring-block repair", () => {
       const e = (await ctx.db.get(a.employeeId))!;
       return { assignmentId: a._id, biz: e.employeeId };
     });
+    await unlockCapture(t, assignmentId);
     const { as: emp } = await makeUser(t, {
       email: "e@x.com",
       roles: ["employee"],
@@ -1548,15 +1591,7 @@ describe("account reset & delete", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
-    await emp.mutation(api.activities.create, {
-      kpiAssignmentId: assignmentId,
-      periodKey: "2026-M08",
-      activityAt: AUG_2026,
-      title: "Integrated assets",
-      description: "batch",
-      numerator: 9,
-      denominator: 10,
-    });
+    // Evidence-first: attach the proof, then log the work.
     await emp.mutation(api.evidence.saveEvidence, {
       kpiAssignmentId: assignmentId,
       externalUrl: "https://example.com/r",
@@ -1565,6 +1600,15 @@ describe("account reset & delete", () => {
       fileSize: 0,
       category: "supporting_document",
       title: "Report",
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
     });
 
     await expect(
@@ -1695,6 +1739,7 @@ describe("capture window — employees start capturing from July 2026", () => {
         .collect();
       return list.find((a) => a.canonicalKey === "asset_integration")!._id;
     });
+    await unlockCapture(t, assignmentId);
     return { t, emp, assignmentId };
   }
 
@@ -1988,5 +2033,72 @@ describe("evidence centre nudge: activityLogged", () => {
     expect(after.find((r) => r.kpiAssignmentId === assignmentId)?.activityLogged).toBe(
       true,
     );
+  });
+});
+
+describe("evidence-first capture rule", () => {
+  test("employees cannot log work on an evidence-required KPI until proof is attached; admins bypass", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "efirst@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "efirst-admin@x.com",
+      roles: ["kpi_admin"],
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    const base = {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    };
+
+    // No evidence yet → the employee's capture is refused with guidance.
+    await expect(emp.mutation(api.activities.create, base)).rejects.toThrow(
+      /requires evidence/i,
+    );
+
+    // Admins bypass (cleanup/backfill path).
+    const adminActivity = await admin.mutation(api.activities.create, base);
+    await admin.mutation(api.activities.remove, { activityId: adminActivity });
+
+    // Attaching evidence (any review status) unlocks the employee.
+    await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      externalUrl: "https://example.com/batch-report",
+      originalFilename: "batch-report",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "batch_report",
+      title: "Batch report",
+    });
+    await emp.mutation(api.activities.create, base);
+
+    // Deleting the only evidence re-locks new captures (existing entries stay).
+    const evidenceId = await t.run(async (ctx) => {
+      const rows = await ctx.db
+        .query("evidenceFiles")
+        .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", assignmentId))
+        .take(5);
+      return rows[0]!._id;
+    });
+    await emp.mutation(api.evidence.removeEvidence, { evidenceId });
+    await expect(
+      emp.mutation(api.activities.create, { ...base, title: "Another batch" }),
+    ).rejects.toThrow(/requires evidence/i);
   });
 });

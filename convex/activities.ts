@@ -211,6 +211,22 @@ export const create = mutation({
     await assertActivityDateInPeriod(ctx, args.periodKey, args.activityAt);
     await assertWithinCaptureWindow(ctx, args.periodKey, args.activityAt);
 
+    // Evidence-first rule: an evidence-required KPI cannot be captured until
+    // proof is attached — a submission is numbers + evidence, never one alone.
+    // Admins bypass (cleanup/backfill), and approval still requires the
+    // evidence to be APPROVED before any score becomes official.
+    if (!isAdmin && assignment.evidenceRequired) {
+      const evidence = await ctx.db
+        .query("evidenceFiles")
+        .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", args.kpiAssignmentId))
+        .take(20);
+      if (!evidence.some((e) => e.retentionState !== "deleted")) {
+        throw new ConvexError(
+          "This KPI requires evidence. Attach your proof (a file or link) in the Evidence section first — a submission needs both the work numbers and the evidence behind them.",
+        );
+      }
+    }
+
     // Period-total modes: one entry IS the period's summary — block duplicates.
     if (isPeriodTotal(assignment.measurementMode, assignment.canonicalKey)) {
       const existing = (
