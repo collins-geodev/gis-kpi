@@ -11,6 +11,9 @@ import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
 import { recomputeMeasurement } from "./measurementsModel";
 import { vCanonicalKpiKey } from "./validators";
+import { cadencePeriodKey } from "./lib/periods";
+import { reopenApprovedPeriod } from "./approvals";
+import type { Frequency } from "./lib/types";
 import { computeEmployeeAnalytics } from "./analytics";
 
 /**
@@ -538,6 +541,123 @@ export const listReductionPins = internalQuery({
       });
     }
     return out;
+  },
+});
+
+/**
+ * CLI twin of the review queue's submission delete, scoped to ONE employee
+ * and period (optionally one KPI): recalls the period approval if one exists
+ * (all snapshots cleared), removes the non-locked activities, soft-deletes
+ * the touched KPIs' active evidence, and recomputes measurements. Audited.
+ *
+ *   npx convex run migrations:cliDeleteEmployeePeriodSubmission \
+ *     '{"employeeBusinessId":"IKD000000","periodKey":"2026-M08","reason":"…"}' --prod
+ */
+export const cliDeleteEmployeePeriodSubmission = internalMutation({
+  args: {
+    employeeBusinessId: v.string(),
+    periodKey: v.string(),
+    canonicalKey: v.optional(vCanonicalKpiKey),
+    reason: v.string(),
+  },
+  returns: v.object({
+    assignments: v.number(),
+    deleted: v.number(),
+    evidenceDeleted: v.number(),
+    snapshotsDeleted: v.number(),
+    measurementsReopened: v.number(),
+  }),
+  handler: async (ctx, { employeeBusinessId, periodKey, canonicalKey, reason }) => {
+    const employee = await ctx.db
+      .query("employees")
+      .withIndex("by_employeeId", (q) => q.eq("employeeId", employeeBusinessId))
+      .first();
+    if (!employee) throw new Error(`employee ${employeeBusinessId} not found`);
+    const year = await ctx.db
+      .query("performanceYears")
+      .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+      .first();
+    if (!year) throw new Error("Performance year not seeded");
+
+    const reopened = await reopenApprovedPeriod(
+      ctx,
+      employee._id,
+      periodKey,
+      `Submission deleted (CLI): ${reason}`,
+    );
+
+    const assignments = (
+      await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) =>
+          q.eq("employeeId", employee._id).eq("performanceYearId", year._id),
+        )
+        .collect()
+    ).filter((a) => !canonicalKey || a.canonicalKey === canonicalKey);
+
+    let touched = 0;
+    let deleted = 0;
+    let evidenceDeleted = 0;
+    for (const a of assignments) {
+      const lookupKey = cadencePeriodKey(a.frequency as Frequency, periodKey);
+      const acts = await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", a._id).eq("periodKey", lookupKey),
+        )
+        .take(500);
+      let del = 0;
+      for (const act of acts) {
+        if (act.status === "locked") continue;
+        await recordAudit(ctx, {
+          entityType: "activity",
+          entityId: act._id,
+          action: "delete_submission_activity",
+          reason,
+          before: { ...act },
+        });
+        await ctx.db.delete(act._id);
+        del++;
+      }
+      if (del === 0) continue;
+      touched++;
+      deleted += del;
+
+      const evidence = await ctx.db
+        .query("evidenceFiles")
+        .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", a._id))
+        .take(500);
+      for (const e of evidence) {
+        if (e.retentionState !== "active") continue;
+        if (e.storageId) await ctx.storage.delete(e.storageId);
+        await ctx.db.patch(e._id, { retentionState: "deleted", storageId: undefined });
+        await recordAudit(ctx, {
+          entityType: "evidenceFile",
+          entityId: e._id,
+          action: "delete_submission_evidence",
+          reason,
+          before: { title: e.title, reviewStatus: e.reviewStatus },
+        });
+        evidenceDeleted++;
+      }
+
+      const ms = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", a._id))
+        .take(500);
+      const periods = new Set(ms.map((m) => m.periodKey));
+      periods.add(lookupKey);
+      for (const pk of periods) {
+        await recomputeMeasurement(ctx, a, pk);
+      }
+    }
+    return {
+      assignments: touched,
+      deleted,
+      evidenceDeleted,
+      snapshotsDeleted: reopened.snapshotsDeleted,
+      measurementsReopened: reopened.measurementsReopened,
+    };
   },
 });
 

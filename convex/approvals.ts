@@ -7,6 +7,8 @@
  * by an open data-quality issue cannot be approved — enforcing acceptance #7.
  */
 import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { assertEmployeeReadScope, readableEmployeeIds, requireRole } from "./authz";
@@ -21,14 +23,26 @@ import { describeActivityInputs, describeSelfReport } from "./lib/selfReport";
 
 /** Provisional measurements awaiting review, within the caller's scope. */
 export const reviewQueue = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    /**
+     * "pending" (default) = provisional submissions awaiting a decision;
+     * "official" = already-approved periods (recallable / deletable);
+     * "all" = both.
+     */
+    view: v.optional(
+      v.union(v.literal("pending"), v.literal("official"), v.literal("all")),
+    ),
+  },
+  handler: async (ctx, { view }) => {
     await requireRole(ctx, ["manager", "reviewer", "kpi_admin", "system_admin"]);
+    const mode = view ?? "pending";
     const scope = await readableEmployeeIds(ctx);
     const measurements = await ctx.db.query("kpiMeasurements").take(2000);
     const rows = [];
     for (const m of measurements) {
-      if (!m.isProvisional || !m.hasData) continue;
+      if (!m.hasData) continue;
+      if (mode === "pending" && !m.isProvisional) continue;
+      if (mode === "official" && m.isProvisional) continue;
       if (scope !== "all" && !scope.includes(m.employeeId)) continue;
       const assignment = await ctx.db.get(m.kpiAssignmentId);
       const employee = await ctx.db.get(m.employeeId);
@@ -60,6 +74,7 @@ export const reviewQueue = query({
         .sort((a, b) => b.activityAt - a.activityAt);
 
       rows.push({
+        isProvisional: m.isProvisional,
         selfReported: describeSelfReport(
           assignment.measurementMode,
           assignment.direction,
@@ -99,11 +114,100 @@ export const reviewQueue = query({
 });
 
 /**
+ * Delete EVERY approved snapshot for an employee's period and reopen the
+ * official measurements/activities. Used when a submission is deleted after
+ * approval — the frozen score cannot outlive the records behind it. (The
+ * review queue's recall button pops only the LATEST snapshot; this clears
+ * them all so no earlier approval silently becomes current.) No-op when the
+ * period has no snapshots.
+ */
+export async function reopenApprovedPeriod(
+  ctx: MutationCtx,
+  employeeId: Id<"employees">,
+  periodKey: string,
+  reason: string,
+  actorUserId?: Id<"users">,
+): Promise<{ snapshotsDeleted: number; measurementsReopened: number }> {
+  const snapshots = await ctx.db
+    .query("scoreSnapshots")
+    .withIndex("by_scope_period", (q) =>
+      q.eq("scope", "individual").eq("scopeRef", employeeId).eq("periodKey", periodKey),
+    )
+    .take(100);
+  if (snapshots.length === 0) {
+    return { snapshotsDeleted: 0, measurementsReopened: 0 };
+  }
+  for (const s of snapshots) await ctx.db.delete(s._id);
+
+  const year = await ctx.db
+    .query("performanceYears")
+    .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+    .first();
+  let measurementsReopened = 0;
+  if (year) {
+    const assignments = await ctx.db
+      .query("kpiAssignments")
+      .withIndex("by_employee_year", (q) =>
+        q.eq("employeeId", employeeId).eq("performanceYearId", year._id),
+      )
+      .collect();
+    for (const assignment of assignments) {
+      const lookupKey = cadencePeriodKey(assignment.frequency as Frequency, periodKey);
+      const m = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignment._id).eq("periodKey", lookupKey),
+        )
+        .first();
+      if (m && !m.isProvisional) {
+        await ctx.db.patch(m._id, { isProvisional: true });
+        measurementsReopened++;
+        const acts = await ctx.db
+          .query("activities")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignment._id).eq("periodKey", lookupKey),
+          )
+          .take(500);
+        for (const a of acts) {
+          if (a.status === "approved") {
+            await ctx.db.patch(a._id, { status: "submitted", updatedAt: Date.now() });
+          }
+        }
+      }
+    }
+    const approver = actorUserId ?? snapshots[0]!.createdByUserId;
+    if (approver) {
+      await ctx.db.insert("approvals", {
+        employeeId,
+        performanceYearId: year._id,
+        periodKey,
+        approverUserId: approver,
+        state: "reopened",
+        reason,
+        priorScoreSnapshotId: undefined,
+        createdAt: Date.now(),
+      });
+    }
+  }
+  await recordAudit(ctx, {
+    entityType: "scoreSnapshot",
+    entityId: `${employeeId}:${periodKey}`,
+    action: "recall_period_approval",
+    actorUserId,
+    reason,
+    before: { employeeId, periodKey, snapshotsDeleted: snapshots.length },
+  });
+  return { snapshotsDeleted: snapshots.length, measurementsReopened };
+}
+
+/**
  * Admin hard-delete of a period's submission: every non-locked activity for
  * the (KPI, period) is removed — the records are shared, so they disappear
  * from the employee's side too — the provisional measurement is recomputed
  * (and removed when nothing counted remains), everything is audit-logged with
  * the full former payload, and the employee is notified with the reason.
+ * Works after approval too: the period approval is recalled automatically
+ * first (all snapshots cleared), so the frozen score never outlives its data.
  */
 export const deleteSubmission = mutation({
   args: {
@@ -120,6 +224,15 @@ export const deleteSubmission = mutation({
     const cleanReason = reason.trim();
     if (!cleanReason)
       throw new ConvexError("A reason is required to delete a submission.");
+
+    // Approved period? Recall the approval first — automatically.
+    await reopenApprovedPeriod(
+      ctx,
+      assignment.employeeId,
+      periodKey,
+      `Submission deleted: ${cleanReason}`,
+      user._id,
+    );
 
     const activities = await ctx.db
       .query("activities")

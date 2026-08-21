@@ -22,6 +22,7 @@ import {
   Inbox,
   Lock,
   Trash2,
+  Undo2,
   XCircle,
 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
@@ -38,7 +39,8 @@ export default function ReviewPage() {
 
   const isAdmin = roles.some((r) => ["kpi_admin", "system_admin"].includes(r));
 
-  const queue = useQuery(api.approvals.reviewQueue, canView ? {} : "skip");
+  const [view, setView] = useState<"pending" | "official" | "all">("pending");
+  const queue = useQuery(api.approvals.reviewQueue, canView ? { view } : "skip");
   const approve = useMutation(api.approvals.approveEmployeePeriod);
   const reject = useMutation(api.approvals.rejectSubmission);
   const approveEvidence = useMutation(api.evidence.approveAllForAssignment);
@@ -114,7 +116,7 @@ export default function ReviewPage() {
 
   async function doDelete(assignmentId: string, periodKey: string, objective: string) {
     const reason = window.prompt(
-      `Delete the ${periodKey} submission for “${objective.slice(0, 80)}”?\n\nEvery entry AND the KPI's attached evidence are removed for the employee as well, and they are notified with this reason (required):`,
+      `Delete the ${periodKey} submission for “${objective.slice(0, 80)}”?\n\nEvery entry AND the KPI's attached evidence are removed for the employee as well, and they are notified with this reason (required). If the period was already approved, the approval is recalled automatically first:`,
     );
     if (!reason?.trim()) return;
     setBusy(assignmentId);
@@ -195,6 +197,25 @@ export default function ReviewPage() {
         description="Provisional measurements awaiting review. A period can only be approved once required evidence is approved and no data-quality issue blocks it — then its score is frozen into a reproducible snapshot."
       />
 
+      <div className="flex items-center gap-2">
+        <select
+          value={view}
+          onChange={(e) => setView(e.target.value as typeof view)}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          aria-label="Filter the queue"
+        >
+          <option value="pending">Awaiting review</option>
+          <option value="official">Approved (official)</option>
+          <option value="all">All submissions</option>
+        </select>
+        {view !== "pending" && (
+          <span className="text-xs text-muted-foreground">
+            Approved submissions can be recalled for re-review, or deleted — deleting
+            recalls the approval automatically.
+          </span>
+        )}
+      </div>
+
       {error && (
         <Card className="border-critical/50 bg-critical/5">
           <CardContent className="p-3 text-sm text-critical">{error}</CardContent>
@@ -241,6 +262,7 @@ export default function ReviewPage() {
         <div className="space-y-4">
           {groups.map((g) => {
             const allReady = g.items.every((i) => i.ready);
+            const official = g.items.every((i) => i.isProvisional === false);
             const gk = `${g.employeeId}::${g.periodKey}`;
             return (
               <Card key={gk}>
@@ -254,19 +276,56 @@ export default function ReviewPage() {
                         {g.employeeName}
                       </Link>{" "}
                       <span className="text-muted-foreground">· {g.periodKey}</span>
+                      {official && (
+                        <Badge variant="success" className="ml-2 align-middle">
+                          approved
+                        </Badge>
+                      )}
                     </CardTitle>
                   </div>
-                  {canApprove && (
-                    <Button
-                      size="sm"
-                      variant={allReady ? "default" : "outline"}
-                      disabled={!allReady || busy === gk}
-                      onClick={() => doApprove(g.employeeId, g.periodKey)}
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      {allReady ? "Approve period" : "Blocked"}
-                    </Button>
-                  )}
+                  {canApprove &&
+                    (official ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy === gk}
+                        title="Reopen this period for re-review — the frozen score is recalled and the employee notified"
+                        onClick={async () => {
+                          const reason = window.prompt(
+                            `Recall the ${g.periodKey} approval for ${g.employeeName}?\n\nThe frozen score is removed, their submissions return to review, and they are notified. Reason (optional):`,
+                          );
+                          if (reason === null) return;
+                          setBusy(gk);
+                          setError(null);
+                          try {
+                            await recallApproval({
+                              employeeId: g.employeeId as Id<"employees">,
+                              periodKey: g.periodKey,
+                              reason: reason.trim() || undefined,
+                            });
+                            setNotice({
+                              text: `Approval recalled — ${g.periodKey} is back under review and ${g.employeeName} has been notified.`,
+                            });
+                          } catch (e) {
+                            setError(errorMessage(e, "Recall failed."));
+                          } finally {
+                            setBusy(null);
+                          }
+                        }}
+                      >
+                        <Undo2 className="h-4 w-4" /> Recall approval
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant={allReady ? "default" : "outline"}
+                        disabled={!allReady || busy === gk}
+                        onClick={() => doApprove(g.employeeId, g.periodKey)}
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        {allReady ? "Approve period" : "Blocked"}
+                      </Button>
+                    ))}
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {g.items.map((i) => (
@@ -284,6 +343,9 @@ export default function ReviewPage() {
                         <div className="flex items-center gap-2">
                           {i.kpiCategory === "non_core" && (
                             <Badge variant="info">non-core</Badge>
+                          )}
+                          {i.isProvisional === false && (
+                            <Badge variant="success">official</Badge>
                           )}
                           <span className="tabular text-muted-foreground">
                             {i.cappedAttainment === null
@@ -320,7 +382,7 @@ export default function ReviewPage() {
                               <Lock className="h-3 w-3" /> DQ blocked
                             </Badge>
                           )}
-                          {canApprove && (
+                          {canApprove && i.isProvisional !== false && (
                             <Button
                               size="sm"
                               variant="ghost"
