@@ -146,9 +146,19 @@ describe("buildWorkbook", () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buf as unknown as ArrayBuffer);
     const ws = wb.getWorksheet("Team Scorecard")!;
-    const normalized = ws.getCell(4, 8); // Normalized column
+    // Locate columns by header (row 3) so inserts never silently shift them.
+    const colByHeader = (header: string) => {
+      for (let c = 1; c <= 30; c++) {
+        if (ws.getCell(3, c).value === header) return c;
+      }
+      throw new Error(`header not found: ${header}`);
+    };
+    const normalized = ws.getCell(4, colByHeader("Normalized"));
     expect(normalized.numFmt).toBe("0%");
     expect(normalized.value).toBeCloseTo(0.875, 5);
+    const due = ws.getCell(4, colByHeader("Due-to-date"));
+    expect(due.numFmt).toBe("0%");
+    expect(due.value).toBeCloseTo(0.875, 5);
   });
 
   it("neutralizes spreadsheet formula injection", async () => {
