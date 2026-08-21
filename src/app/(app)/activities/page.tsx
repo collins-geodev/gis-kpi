@@ -745,7 +745,8 @@ export default function ActivitiesPage() {
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                     This KPI requires evidence — a submission needs both the work numbers
                     and the proof behind them. Attach a file or link below; Save unlocks
-                    the moment it&apos;s attached.
+                    the moment it&apos;s attached. Attachments stay quietly with this KPI
+                    and go for review together with the activity when you save it.
                   </p>
                   <EvidencePanel
                     assignmentId={selected.id as Id<"kpiAssignments">}
@@ -753,6 +754,7 @@ export default function ActivitiesPage() {
                       canonicalKey: selected.canonicalKey,
                       objective: selected.objective,
                     }}
+                    deferNotice
                   />
                 </div>
               )}

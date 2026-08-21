@@ -23,10 +23,17 @@ const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant
 export function EvidencePanel({
   assignmentId,
   kpi,
+  deferNotice,
 }: {
   assignmentId: Id<"kpiAssignments">;
   /** When provided, the title/category start with a KPI-aware suggestion. */
   kpi?: { canonicalKey?: string; objective?: string };
+  /**
+   * True inside the Activity Capture form: attachments are a step of a
+   * submission still being written, so no notifications fire on upload —
+   * saving the activity is the announced event.
+   */
+  deferNotice?: boolean;
 }) {
   const me = useQuery(api.access.currentUser);
   const evidence = useQuery(api.evidence.listForAssignment, {
@@ -76,6 +83,7 @@ export function EvidencePanel({
         fileSize: file.size,
         category,
         title: title || file.name,
+        ...(deferNotice ? { deferNotice: true } : {}),
       });
       setTitle("");
     } catch (e) {
@@ -98,6 +106,7 @@ export function EvidencePanel({
         fileSize: 0,
         category,
         title: title || "External evidence",
+        ...(deferNotice ? { deferNotice: true } : {}),
       });
       setLinkUrl("");
       setTitle("");

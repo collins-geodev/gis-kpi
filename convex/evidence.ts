@@ -121,6 +121,13 @@ export const saveEvidence = mutation({
     title: v.string(),
     description: v.optional(v.string()),
     confidentiality: v.optional(vConfidentiality),
+    /**
+     * True when attaching from inside the Activity Capture form: the upload
+     * is a step of a submission still being written, so no "evidence awaiting
+     * review" notices fire — the activity save is the announced event (its
+     * KPI-update notification covers the reviewers).
+     */
+    deferNotice: v.optional(v.boolean()),
   },
   returns: v.id("evidenceFiles"),
   handler: async (ctx, args) => {
@@ -184,6 +191,11 @@ export const saveEvidence = mutation({
       actorUserId: user._id,
       after: { kpiAssignmentId: args.kpiAssignmentId },
     });
+
+    // Mid-capture attachments announce nothing: the activity save that
+    // follows is the reviewable event, and its KPI-update notification is
+    // what reaches the oversight group.
+    if (args.deferNotice) return evidenceId;
 
     // Submitting for review notifies the oversight group (email + in-app),
     // and — when a SYSTEM ADMIN submitted on their behalf — the employee

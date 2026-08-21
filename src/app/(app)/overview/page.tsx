@@ -23,6 +23,7 @@ import {
   ClipboardCheck,
   Hourglass,
   ShieldCheck,
+  Trophy,
   Undo2,
   Users,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import {
 export default function OverviewPage() {
   const me = useQuery(api.access.currentUser);
   const summary = useQuery(api.overview.baselineSummary);
+  const team = useQuery(api.employees.listScoped, {});
   const bootstrap = useMutation(api.access.bootstrapFirstAdmin);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -206,6 +208,72 @@ export default function OverviewPage() {
                   scoring.
                 </CardDescription>
               </CardHeader>
+            </Card>
+          )}
+
+          {/* Score leaderboard — same overall-points convention as Team
+              Performance and Analytics, current month, best first. */}
+          {team && team.rows.length > 0 && (
+            <Card>
+              <CardHeader className="flex-row items-center justify-between space-y-0">
+                <div className="space-y-1">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Trophy className="h-5 w-5 text-accent" />
+                    Team leaderboard · {team.periodKey}
+                  </CardTitle>
+                  <CardDescription>
+                    Overall score — points earned of the configured 100; unmeasured KPIs
+                    count as 0.
+                  </CardDescription>
+                </div>
+                <Link
+                  href="/team"
+                  className="text-sm font-medium text-accent hover:underline"
+                >
+                  Team performance →
+                </Link>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {[...team.rows]
+                  .sort(
+                    (a, b) =>
+                      b.overallPct - a.overallPct || a.displayOrder - b.displayOrder,
+                  )
+                  .map((e, idx) => (
+                    <div
+                      key={e.id}
+                      className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border px-3 py-1.5 text-sm"
+                    >
+                      <span className="tabular w-6 shrink-0 text-right text-xs text-muted-foreground">
+                        {idx + 1}.
+                      </span>
+                      <Link
+                        href={`/employees/${e.id}` as never}
+                        className="min-w-0 flex-1 truncate font-medium text-accent hover:underline"
+                      >
+                        {e.displayName}
+                        <span className="ml-2 hidden text-xs font-normal text-muted-foreground md:inline">
+                          {e.jobRole}
+                        </span>
+                      </Link>
+                      <div
+                        className="hidden h-1.5 w-32 overflow-hidden rounded-full bg-muted sm:block"
+                        aria-hidden
+                      >
+                        <div
+                          className="h-full rounded-full bg-accent"
+                          style={{ width: `${Math.min(e.overallPct, 100)}%` }}
+                        />
+                      </div>
+                      <span className="tabular font-medium">
+                        {e.overallPct.toFixed(1)}%
+                      </span>
+                      <span className="tabular text-xs text-muted-foreground">
+                        {e.pointsEarned.toFixed(1)} / {e.configuredWeight} pts
+                      </span>
+                    </div>
+                  ))}
+              </CardContent>
             </Card>
           )}
         </>
