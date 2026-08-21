@@ -395,11 +395,12 @@ export default function EvidenceCentrePage() {
                         {r.originalFilename}
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-[18rem]">
+                    <TableCell className="min-w-[14rem] max-w-[20rem]">
                       {r.kpiAssignmentId ? (
                         <Link
                           href={`/kpi/${r.kpiAssignmentId}` as never}
-                          className="line-clamp-2 text-sm text-accent hover:underline"
+                          title={r.objective ?? undefined}
+                          className="line-clamp-3 text-sm leading-snug text-accent hover:underline"
                         >
                           {r.objective ?? "View KPI"}
                         </Link>
