@@ -46,11 +46,13 @@ const BAR_TONE: Record<string, string> = {
   no_data: "bg-muted-foreground/30",
 };
 
-/** "2026-M07" → "Jul 2026" for the month selector. */
+/** Human label for any period key: "2026-M07" → "Jul 2026", "2026-Q3" → "Q3 2026". */
 function monthLabel(key: string): string {
   const m = /^(\d{4})-M(\d{2})$/.exec(key);
-  if (!m) return key;
-  return `${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+  if (m) return `${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+  const q = /^(\d{4})-Q([1-4])$/.exec(key);
+  if (q) return `Q${q[2]} ${q[1]}`;
+  return key;
 }
 
 export function EmployeeAnalytics() {
@@ -265,7 +267,7 @@ export function EmployeeAnalytics() {
                       {k.peerAvg !== null && (
                         <p className="text-xs text-muted-foreground">
                           peers ({k.peerCount}): {formatPercent(k.peerAvg)} · weight{" "}
-                          {k.weight} · {k.periodKey}
+                          {k.weight} · {monthLabel(k.periodKey)}
                         </p>
                       )}
                     </div>
@@ -298,8 +300,8 @@ export function EmployeeAnalytics() {
                     style={{ height: 72 }}
                     title={
                       t.scoreOnMeasured === null
-                        ? `${t.periodKey}: no data`
-                        : `${t.periodKey}: ${formatPercent(t.scoreOnMeasured)} (${t.kpisWithData} KPIs)`
+                        ? `${monthLabel(t.periodKey)}: no data`
+                        : `${monthLabel(t.periodKey)}: ${formatPercent(t.scoreOnMeasured)} (${t.kpisWithData} KPIs)`
                     }
                   >
                     {t.scoreOnMeasured !== null && (
@@ -376,6 +378,9 @@ export function EmployeeAnalytics() {
                           timeZone: "Africa/Lagos",
                         })}
                       </span>
+                      <Badge variant="muted" title="KPI period this entry counts toward">
+                        {monthLabel(a.periodKey)}
+                      </Badge>
                       <span className="max-w-md truncate font-medium">{a.title}</span>
                       <span className="tabular text-muted-foreground">{a.detail}</span>
                     </div>
