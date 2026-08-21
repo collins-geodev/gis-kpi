@@ -185,12 +185,63 @@ export const employeeAnalytics = query({
       employeeId = user.employeeId;
     }
 
-    // Moderator roster for the selector (small, seeded table).
-    const roster = canSelect
-      ? (await ctx.db.query("employees").take(2000))
-          .sort((a, b) => a.displayName.localeCompare(b.displayName))
-          .map((e) => ({ id: e._id, displayName: e.displayName, jobRole: e.jobRole }))
-      : [];
+    // Moderator roster for the selector (small, seeded table), carrying each
+    // employee's overall score for the selected month so the dropdown lists
+    // best-first — same points-out-of-configured convention as everywhere.
+    const roster: {
+      id: Id<"employees">;
+      displayName: string;
+      jobRole: string;
+      overallPct: number;
+    }[] = [];
+    if (canSelect) {
+      const selMonth =
+        args.periodKey && /^\d{4}-M(0[1-9]|1[0-2])$/.test(args.periodKey)
+          ? args.periodKey
+          : monthKey(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth());
+      const year = await ctx.db
+        .query("performanceYears")
+        .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
+        .first();
+      for (const e of await ctx.db.query("employees").take(2000)) {
+        let overallPct = 0;
+        if (year) {
+          const assignments = await ctx.db
+            .query("kpiAssignments")
+            .withIndex("by_employee_year", (q) =>
+              q.eq("employeeId", e._id).eq("performanceYearId", year._id),
+            )
+            .collect();
+          const items: ScorecardItem[] = [];
+          for (const a of assignments) {
+            const pk = cadencePeriodKey(a.frequency as Frequency, selMonth);
+            const m = await ctx.db
+              .query("kpiMeasurements")
+              .withIndex("by_assignment_period", (q) =>
+                q.eq("kpiAssignmentId", a._id).eq("periodKey", pk),
+              )
+              .first();
+            items.push({
+              weight: a.weight,
+              cappedAttainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
+              evidenceComplete: false,
+              cadenceCompliant: false,
+            });
+          }
+          overallPct = scoreScorecard(items).normalizedScore;
+        }
+        roster.push({
+          id: e._id,
+          displayName: e.displayName,
+          jobRole: e.jobRole,
+          overallPct,
+        });
+      }
+      roster.sort(
+        (a, b) =>
+          b.overallPct - a.overallPct || a.displayName.localeCompare(b.displayName),
+      );
+    }
 
     if (!employeeId) {
       return {

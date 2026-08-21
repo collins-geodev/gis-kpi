@@ -122,9 +122,14 @@ export function EmployeeAnalytics() {
             >
               {!data.employee && <option value="">Select an employee…</option>}
               {data.roster.map(
-                (r: { id: string; displayName: string; jobRole: string }) => (
+                (r: {
+                  id: string;
+                  displayName: string;
+                  jobRole: string;
+                  overallPct: number;
+                }) => (
                   <option key={r.id} value={r.id}>
-                    {r.displayName} — {r.jobRole}
+                    {r.overallPct.toFixed(1)}% — {r.displayName} — {r.jobRole}
                   </option>
                 ),
               )}
