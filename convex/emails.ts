@@ -360,7 +360,18 @@ export const sendNotices = internalAction({
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ from, to: [n.email], subject, html, text }),
+            body: JSON.stringify({
+              from,
+              to: [n.email],
+              subject,
+              html,
+              text,
+              // A real reply-to measurably improves corporate inbox placement
+              // (same trick as the SwitchTrace notifier).
+              ...(process.env.EMAIL_REPLY_TO
+                ? { reply_to: process.env.EMAIL_REPLY_TO }
+                : {}),
+            }),
           });
           if (res.ok) {
             emailed = true;
@@ -447,7 +458,16 @@ export const notifyKpiUpdate = internalAction({
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ from, to: [r.email], subject, html, text }),
+            body: JSON.stringify({
+              from,
+              to: [r.email],
+              subject,
+              html,
+              text,
+              ...(process.env.EMAIL_REPLY_TO
+                ? { reply_to: process.env.EMAIL_REPLY_TO }
+                : {}),
+            }),
           });
           if (res.ok) {
             emailed = true;

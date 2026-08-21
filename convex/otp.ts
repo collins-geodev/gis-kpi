@@ -56,7 +56,14 @@ export const ResendOTPPasswordReset = Email({
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to: [email], subject, html, text }),
+      body: JSON.stringify({
+        from,
+        to: [email],
+        subject,
+        html,
+        text,
+        ...(process.env.EMAIL_REPLY_TO ? { reply_to: process.env.EMAIL_REPLY_TO } : {}),
+      }),
     });
     if (!res.ok) {
       const detail = (await res.text()).slice(0, 300);
