@@ -25,7 +25,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatKpiTarget, formatNumber, formatPercent } from "@convex/lib/format";
-import { aggregateActivityInputs } from "@convex/lib/measure";
+import { aggregateActivityInputs, type ActivityInputLike } from "@convex/lib/measure";
+import { describeSelfReport } from "@convex/lib/selfReport";
 import { computeAttainment } from "@convex/lib/scoring";
 import type { Direction, MeasurementMode } from "@convex/lib/types";
 import { lagosDayKeyOf, lagosWeekKeyOf, lagosWeekLabelOf } from "@convex/lib/periods";
@@ -59,6 +60,37 @@ export default function KpiDetailPage() {
   }
 
   const { assignment, employee, definition, issues, measurements, activities } = data;
+
+  // What the employee entered for one period, in the engine's own aggregation
+  // — the human-readable claim behind each computed measurement row.
+  function selfReportFor(periodKey: string): { text: string; entries: number } {
+    const inputs: ActivityInputLike[] = activities
+      .filter((a) => a.periodKey === periodKey)
+      .map((a) => ({
+        activityAt: a.activityAt,
+        quantity: a.quantity ?? undefined,
+        numerator: a.numerator ?? undefined,
+        denominator: a.denominator ?? undefined,
+        baseline: a.baseline ?? undefined,
+        currentValue: a.currentValue ?? undefined,
+        withinThreshold: a.withinThreshold ?? undefined,
+        eligible: a.eligible ?? undefined,
+        completed: a.completed ?? undefined,
+        planned: a.planned ?? undefined,
+        pass: a.pass ?? undefined,
+        score: a.score ?? undefined,
+        maxScore: a.maxScore ?? undefined,
+      }));
+    return {
+      text: describeSelfReport(
+        assignment.measurementMode,
+        assignment.direction,
+        assignment.target,
+        inputs,
+      ),
+      entries: inputs.length,
+    };
+  }
 
   return (
     <div className="space-y-6">
@@ -238,6 +270,7 @@ export default function KpiDetailPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Period</TableHead>
+                  <TableHead>Self-reported</TableHead>
                   <TableHead className="text-right">Actual</TableHead>
                   <TableHead className="text-right">Attainment</TableHead>
                   <TableHead className="text-right">Contribution</TableHead>
@@ -245,23 +278,32 @@ export default function KpiDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {measurements.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell>{m.periodKey}</TableCell>
-                    <TableCell className="tabular text-right">
-                      {m.rawActual === null ? "—" : formatNumber(m.rawActual, 2)}
-                    </TableCell>
-                    <TableCell className="tabular text-right">
-                      {m.cappedAttainment === null
-                        ? "—"
-                        : formatPercent(m.cappedAttainment)}
-                    </TableCell>
-                    <TableCell className="tabular text-right">
-                      {formatNumber(m.weightedContribution)}
-                    </TableCell>
-                    <TableCell>{m.status}</TableCell>
-                  </TableRow>
-                ))}
+                {measurements.map((m) => {
+                  const sr = selfReportFor(m.periodKey);
+                  return (
+                    <TableRow key={m.id}>
+                      <TableCell>{m.periodKey}</TableCell>
+                      <TableCell>
+                        {sr.text}{" "}
+                        <span className="text-xs text-muted-foreground">
+                          · {sr.entries} entr{sr.entries === 1 ? "y" : "ies"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="tabular text-right">
+                        {m.rawActual === null ? "—" : formatNumber(m.rawActual, 2)}
+                      </TableCell>
+                      <TableCell className="tabular text-right">
+                        {m.cappedAttainment === null
+                          ? "—"
+                          : formatPercent(m.cappedAttainment)}
+                      </TableCell>
+                      <TableCell className="tabular text-right">
+                        {formatNumber(m.weightedContribution)}
+                      </TableCell>
+                      <TableCell>{m.status}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
