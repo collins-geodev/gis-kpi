@@ -17,6 +17,7 @@ import { CALC_VERSION, scoreScorecard, type ScorecardItem } from "./lib/scoring"
 import { recomputeMeasurement } from "./measurementsModel";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
 import { cadencePeriodKey } from "./lib/periods";
+import { describeActivityInputs, describeSelfReport } from "./lib/selfReport";
 
 /** Provisional measurements awaiting review, within the caller's scope. */
 export const reviewQueue = query({
@@ -44,7 +45,35 @@ export const reviewQueue = query({
           ["submitted", "verified"].includes(e.reviewStatus),
         ).length;
       }
+
+      // What the employee self-reported: the raw counted entries behind the
+      // provisional number, so the reviewer can eyeball the claim in place.
+      const acts = (
+        await ctx.db
+          .query("activities")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignment._id).eq("periodKey", m.periodKey),
+          )
+          .take(200)
+      )
+        .filter((a) => ["submitted", "verified", "approved"].includes(a.status))
+        .sort((a, b) => b.activityAt - a.activityAt);
+
       rows.push({
+        selfReported: describeSelfReport(
+          assignment.measurementMode,
+          assignment.direction,
+          assignment.target,
+          acts,
+        ),
+        entryCount: acts.length,
+        entries: acts.slice(0, 8).map((a) => ({
+          id: a._id,
+          activityAt: a.activityAt,
+          title: a.title,
+          values: describeActivityInputs(assignment.measurementMode, a),
+          status: a.status,
+        })),
         measurementId: m._id,
         employeeId: m.employeeId,
         employeeName: employee.displayName,

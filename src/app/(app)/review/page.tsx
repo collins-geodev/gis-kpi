@@ -15,7 +15,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AccessDenied } from "@/components/access-denied";
 import { formatPercent } from "@convex/lib/format";
-import { CheckCircle2, FileCheck2, Inbox, Lock, Trash2, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  FileCheck2,
+  Inbox,
+  Lock,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 
 export default function ReviewPage() {
@@ -264,80 +272,123 @@ export default function ReviewPage() {
                   {g.items.map((i) => (
                     <div
                       key={i.measurementId}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2.5 text-sm"
+                      className="space-y-1.5 rounded-md border border-border p-2.5 text-sm"
                     >
-                      <Link
-                        href={`/kpi/${i.assignmentId}` as never}
-                        className="max-w-md font-medium text-accent hover:underline"
-                      >
-                        {i.objective}
-                      </Link>
-                      <div className="flex items-center gap-2">
-                        {i.kpiCategory === "non_core" && (
-                          <Badge variant="info">non-core</Badge>
-                        )}
-                        <span className="tabular text-muted-foreground">
-                          {i.cappedAttainment === null
-                            ? "—"
-                            : formatPercent(i.cappedAttainment)}
-                        </span>
-                        <StatusBadge status={i.status as never} />
-                        {i.evidenceRequired &&
-                          (i.evidenceComplete ? (
-                            <Badge variant="success">evidence ✓</Badge>
-                          ) : i.pendingEvidence > 0 ? (
-                            <>
-                              <Badge variant="info">
-                                evidence submitted ({i.pendingEvidence})
-                              </Badge>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={busy === i.assignmentId}
-                                title={`Approve the ${i.pendingEvidence} pending evidence item${i.pendingEvidence === 1 ? "" : "s"} — the employee is notified`}
-                                onClick={() => doApproveEvidence(i.assignmentId)}
-                              >
-                                <FileCheck2 className="h-4 w-4" /> Approve evidence
-                              </Button>
-                            </>
-                          ) : (
-                            <Badge variant="warning">evidence needed</Badge>
-                          ))}
-                        {!i.cadenceCompliant && (
-                          <Badge variant="warning">submitted late</Badge>
-                        )}
-                        {i.scoringBlocked && (
-                          <Badge variant="critical">
-                            <Lock className="h-3 w-3" /> DQ blocked
-                          </Badge>
-                        )}
-                        {canApprove && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-muted-foreground hover:text-critical"
-                            disabled={busy === i.assignmentId}
-                            title="Reject this submission — the reason is emailed to the employee"
-                            onClick={() => doReject(i.assignmentId, i.periodKey)}
-                          >
-                            <XCircle className="h-4 w-4" /> Reject
-                          </Button>
-                        )}
-                        {isAdmin && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-muted-foreground hover:text-critical"
-                            disabled={busy === i.assignmentId}
-                            title="Delete this submission and its attached evidence — removed for the employee too; they are notified with your reason (audited)"
-                            onClick={() =>
-                              doDelete(i.assignmentId, i.periodKey, i.objective)
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" /> Delete
-                          </Button>
-                        )}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Link
+                          href={`/kpi/${i.assignmentId}` as never}
+                          className="max-w-md font-medium text-accent hover:underline"
+                        >
+                          {i.objective}
+                        </Link>
+                        <div className="flex items-center gap-2">
+                          {i.kpiCategory === "non_core" && (
+                            <Badge variant="info">non-core</Badge>
+                          )}
+                          <span className="tabular text-muted-foreground">
+                            {i.cappedAttainment === null
+                              ? "—"
+                              : formatPercent(i.cappedAttainment)}
+                          </span>
+                          <StatusBadge status={i.status as never} />
+                          {i.evidenceRequired &&
+                            (i.evidenceComplete ? (
+                              <Badge variant="success">evidence ✓</Badge>
+                            ) : i.pendingEvidence > 0 ? (
+                              <>
+                                <Badge variant="info">
+                                  evidence submitted ({i.pendingEvidence})
+                                </Badge>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={busy === i.assignmentId}
+                                  title={`Approve the ${i.pendingEvidence} pending evidence item${i.pendingEvidence === 1 ? "" : "s"} — the employee is notified`}
+                                  onClick={() => doApproveEvidence(i.assignmentId)}
+                                >
+                                  <FileCheck2 className="h-4 w-4" /> Approve evidence
+                                </Button>
+                              </>
+                            ) : (
+                              <Badge variant="warning">evidence needed</Badge>
+                            ))}
+                          {!i.cadenceCompliant && (
+                            <Badge variant="warning">submitted late</Badge>
+                          )}
+                          {i.scoringBlocked && (
+                            <Badge variant="critical">
+                              <Lock className="h-3 w-3" /> DQ blocked
+                            </Badge>
+                          )}
+                          {canApprove && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-critical"
+                              disabled={busy === i.assignmentId}
+                              title="Reject this submission — the reason is emailed to the employee"
+                              onClick={() => doReject(i.assignmentId, i.periodKey)}
+                            >
+                              <XCircle className="h-4 w-4" /> Reject
+                            </Button>
+                          )}
+                          {isAdmin && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-critical"
+                              disabled={busy === i.assignmentId}
+                              title="Delete this submission and its attached evidence — removed for the employee too; they are notified with your reason (audited)"
+                              onClick={() =>
+                                doDelete(i.assignmentId, i.periodKey, i.objective)
+                              }
+                            >
+                              <Trash2 className="h-4 w-4" /> Delete
+                            </Button>
+                          )}
+                        </div>
                       </div>
+                      {/* What the employee self-reported, before trusting the
+                          computed number — expandable to the raw entries. */}
+                      <details className="group">
+                        <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-xs text-muted-foreground [&::-webkit-details-marker]:hidden">
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" />
+                          <span className="font-medium text-foreground/80">
+                            Self-reported:
+                          </span>
+                          <span>{i.selfReported}</span>
+                          <span>
+                            · {i.entryCount} entr{i.entryCount === 1 ? "y" : "ies"}
+                          </span>
+                        </summary>
+                        {i.entries.length > 0 && (
+                          <ul className="mt-1.5 space-y-1 border-l-2 border-border pl-4">
+                            {i.entries.map((e) => (
+                              <li
+                                key={e.id}
+                                className="flex flex-wrap items-baseline gap-x-2 text-xs"
+                              >
+                                <span className="tabular text-muted-foreground">
+                                  {new Date(e.activityAt).toLocaleDateString("en-GB", {
+                                    day: "2-digit",
+                                    month: "short",
+                                    timeZone: "Africa/Lagos",
+                                  })}
+                                </span>
+                                <span className="max-w-sm truncate">{e.title}</span>
+                                <span className="tabular font-medium">{e.values}</span>
+                                <span className="text-muted-foreground">{e.status}</span>
+                              </li>
+                            ))}
+                            {i.entryCount > i.entries.length && (
+                              <li className="text-xs text-muted-foreground">
+                                … {i.entryCount - i.entries.length} more — open the KPI
+                                for the full list
+                              </li>
+                            )}
+                          </ul>
+                        )}
+                      </details>
                     </div>
                   ))}
                 </CardContent>

@@ -33,6 +33,7 @@ import type * as lib_format from "../lib/format.js";
 import type * as lib_measure from "../lib/measure.js";
 import type * as lib_periods from "../lib/periods.js";
 import type * as lib_scoring from "../lib/scoring.js";
+import type * as lib_selfReport from "../lib/selfReport.js";
 import type * as lib_sourceRows from "../lib/sourceRows.js";
 import type * as lib_thresholds from "../lib/thresholds.js";
 import type * as lib_trend from "../lib/trend.js";
@@ -84,6 +85,7 @@ declare const fullApi: ApiFromModules<{
   "lib/measure": typeof lib_measure;
   "lib/periods": typeof lib_periods;
   "lib/scoring": typeof lib_scoring;
+  "lib/selfReport": typeof lib_selfReport;
   "lib/sourceRows": typeof lib_sourceRows;
   "lib/thresholds": typeof lib_thresholds;
   "lib/trend": typeof lib_trend;
