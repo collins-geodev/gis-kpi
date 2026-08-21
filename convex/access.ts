@@ -234,6 +234,77 @@ export const setUserActive = mutation({
   },
 });
 
+/**
+ * Reset a user's login (System Admin only): deletes their password credential
+ * and terminates every session so they can register afresh from the sign-in
+ * page with the SAME email. The auth callback links the re-registration back
+ * to this account, so roles, employee link, and history all survive. For a
+ * simple forgotten password, point the user at "Forgot password?" instead —
+ * this reset is for credentials that are broken or were never handed over.
+ */
+export const adminResetLogin = mutation({
+  args: { userId: v.id("users") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user: actor } = await requireRole(ctx, ["system_admin"]);
+    if (args.userId === actor._id) {
+      throw new ConvexError(
+        "You cannot reset your own login — use Change password on your profile.",
+      );
+    }
+    const target = await ctx.db.get(args.userId);
+    if (!target) throw new ConvexError("User not found");
+    if (!target.email) throw new ConvexError("This account has no email credential.");
+
+    let credentialDeleted = false;
+    for (const a of await ctx.db
+      .query("authAccounts")
+      .withIndex("providerAndAccountId", (q) =>
+        q.eq("provider", "password").eq("providerAccountId", target.email!),
+      )
+      .take(10)) {
+      await ctx.db.delete(a._id);
+      credentialDeleted = true;
+    }
+
+    let sessionsDeleted = 0;
+    for (const s of await ctx.db
+      .query("authSessions")
+      .withIndex("userId", (q) => q.eq("userId", target._id))
+      .take(100)) {
+      for (const t of await ctx.db
+        .query("authRefreshTokens")
+        .withIndex("sessionId", (q) => q.eq("sessionId", s._id))
+        .take(100)) {
+        await ctx.db.delete(t._id);
+      }
+      await ctx.db.delete(s._id);
+      sessionsDeleted++;
+    }
+
+    // Seen after they re-register — confirms the account they came back to
+    // is the same one, with everything still attached.
+    await ctx.db.insert("notifications", {
+      userId: target._id,
+      kind: "login_reset",
+      title: "Your login was reset by an administrator",
+      body: "Your previous password no longer works. You have re-registered successfully — your roles and records are intact.",
+      href: "/overview",
+      createdAt: Date.now(),
+    });
+    await recordAudit(ctx, {
+      entityType: "user",
+      entityId: args.userId,
+      action: "reset_login_credential",
+      actorUserId: actor._id,
+      reason:
+        "Admin reset from Users & Organization — user re-registers with the same email",
+      after: { email: target.email, credentialDeleted, sessionsDeleted },
+    });
+    return null;
+  },
+});
+
 export const linkUserToEmployee = mutation({
   args: { userId: v.id("users"), employeeId: v.id("employees") },
   returns: v.null(),

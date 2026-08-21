@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AccessDenied } from "@/components/access-denied";
 import { APP_ROLES, APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
 import {
+  KeyRound,
   Link2Off,
   LogOut,
   RotateCcw,
@@ -43,6 +44,7 @@ export default function UsersPage() {
   const resetUserData = useMutation(api.access.resetUserData);
   const deleteUser = useMutation(api.access.deleteUser);
   const forceSignOut = useAction(api.passwords.adminForceSignOut);
+  const resetLogin = useMutation(api.access.adminResetLogin);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -235,6 +237,28 @@ export default function UsersPage() {
                         }}
                       >
                         <LogOut className="h-4 w-4" /> Sign out
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-warning"
+                        disabled={u.id === me?.userId}
+                        title={
+                          u.id === me?.userId
+                            ? "Use Change password on your profile instead"
+                            : "Clear this account's password so the employee can register afresh with the same email (roles and records survive)"
+                        }
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Reset login for ${u.name ?? u.email}?\n\nTheir current password stops working and every session is signed out. They then go to the sign-in page, choose "Create one", and register with ${u.email} and a new password — their roles, employee link and records reconnect automatically.\n\nIf they merely forgot their password, "Forgot password?" on the sign-in page is the self-service route.`,
+                            )
+                          )
+                            return;
+                          void run(() => resetLogin({ userId: u.id as Id<"users"> }));
+                        }}
+                      >
+                        <KeyRound className="h-4 w-4" /> Reset login
                       </Button>
                       <Button
                         variant="ghost"

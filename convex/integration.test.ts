@@ -342,6 +342,65 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
     expect(audit.length).toBe(1);
   });
 
+  test("admin login reset clears the credential and sessions; self/non-admin blocked", async () => {
+    const t = harness();
+    const { as: admin, userId: adminId } = await makeUser(t, {
+      email: "admin@x.com",
+      roles: ["system_admin"],
+    });
+    const { as: plain, userId: targetId } = await makeUser(t, {
+      email: "employee@x.com",
+    });
+
+    // Give the target a password credential and a live session.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("authAccounts", {
+        provider: "password",
+        providerAccountId: "employee@x.com",
+        userId: targetId,
+        secret: "hash:stub",
+      });
+      const sessionId = await ctx.db.insert("authSessions", {
+        userId: targetId,
+        expirationTime: Date.now() + 86_400_000,
+      });
+      await ctx.db.insert("authRefreshTokens", {
+        sessionId,
+        expirationTime: Date.now() + 86_400_000,
+      });
+    });
+
+    // Non-admin cannot reset; admin cannot reset their own login.
+    await expect(
+      plain.mutation(api.access.adminResetLogin, { userId: targetId }),
+    ).rejects.toThrow();
+    await expect(
+      admin.mutation(api.access.adminResetLogin, { userId: adminId }),
+    ).rejects.toThrow(/own login/i);
+
+    await admin.mutation(api.access.adminResetLogin, { userId: targetId });
+
+    const after = await t.run(async (ctx) => ({
+      accounts: (await ctx.db.query("authAccounts").collect()).filter(
+        (a) => a.userId === targetId,
+      ).length,
+      sessions: (await ctx.db.query("authSessions").collect()).filter(
+        (s) => s.userId === targetId,
+      ).length,
+      refresh: (await ctx.db.query("authRefreshTokens").collect()).length,
+      user: await ctx.db.get(targetId),
+      audit: (await ctx.db.query("auditLogs").collect()).filter(
+        (l) => l.action === "reset_login_credential",
+      ).length,
+    }));
+    expect(after.accounts).toBe(0);
+    expect(after.sessions).toBe(0);
+    expect(after.refresh).toBe(0);
+    // The users row survives so a re-registration reconnects to it.
+    expect(after.user?.email).toBe("employee@x.com");
+    expect(after.audit).toBe(1);
+  });
+
   test("admin can unlink a user's roster employee; non-admin cannot; unlink wipes captured data", async () => {
     const t = harness();
     await t.mutation(internal.seed.seedBaseline, {});
