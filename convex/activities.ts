@@ -15,7 +15,7 @@ import { AuthError, getAuthContext, requireRole, requireUser } from "./authz";
 import { recordAudit } from "./audit";
 import { recomputeMeasurement } from "./measurementsModel";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
-import { captureGrainForFrequency } from "./lib/periods";
+import { LAGOS_OFFSET_MS, captureGrainForFrequency } from "./lib/periods";
 
 /**
  * Activities must land in the KPI's native cadence bucket (Quarterly → Qn,
@@ -294,8 +294,12 @@ export const create = mutation({
 
 /** Recent activities across ALL employees — the admin/manager activity feed. */
 export const listRecentAll = query({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, { limit }) => {
+  args: {
+    limit: v.optional(v.number()),
+    /** Restrict to entries LOGGED in this Lagos month, e.g. "2026-M07". */
+    monthKey: v.optional(v.string()),
+  },
+  handler: async (ctx, { limit, monthKey }) => {
     await requireRole(ctx, [
       "system_admin",
       "kpi_admin",
@@ -303,10 +307,22 @@ export const listRecentAll = query({
       "reviewer",
       "auditor",
     ]);
-    const rows = await ctx.db
-      .query("activities")
-      .order("desc")
-      .take(Math.min(limit ?? 40, 100));
+    // Scan a bounded window of the newest entries; derive the month choices
+    // from it so the dropdown only offers months that actually have entries.
+    const recent = await ctx.db.query("activities").order("desc").take(1000);
+    const monthOf = (ts: number) => {
+      const d = new Date(ts + LAGOS_OFFSET_MS);
+      return `${d.getUTCFullYear()}-M${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    };
+    const availableMonths = Array.from(new Set(recent.map((a) => monthOf(a.createdAt))))
+      .sort()
+      .reverse();
+    if (monthKey !== undefined && !/^\d{4}-M(0[1-9]|1[0-2])$/.test(monthKey)) {
+      throw new ConvexError(`Invalid month key: ${monthKey}`);
+    }
+    const rows = (
+      monthKey ? recent.filter((a) => monthOf(a.createdAt) === monthKey) : recent
+    ).slice(0, Math.min(limit ?? 40, 100));
     const out = [];
     for (const a of rows) {
       const employee = await ctx.db.get(a.employeeId);
@@ -335,7 +351,7 @@ export const listRecentAll = query({
         measurementStatus: measurement?.status ?? "no_data",
       });
     }
-    return out;
+    return { rows: out, availableMonths };
   },
 });
 

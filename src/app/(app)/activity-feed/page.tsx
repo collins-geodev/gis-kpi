@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { PageHeader } from "@/components/page-header";
@@ -13,6 +14,28 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatPercent } from "@convex/lib/format";
 import { Activity, ClipboardList, Mail } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** "2026-M07" → "Jul 2026". */
+function monthLabel(key: string): string {
+  const m = /^(\d{4})-M(\d{2})$/.exec(key);
+  if (!m) return key;
+  return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+}
 
 function timeAgo(ms: number): string {
   const s = Math.max(1, Math.floor((Date.now() - ms) / 1000));
@@ -30,7 +53,12 @@ export default function ActivityFeedPage() {
   const canView = roles.some((r) =>
     ["system_admin", "kpi_admin", "manager", "reviewer", "auditor"].includes(r),
   );
-  const feed = useQuery(api.activities.listRecentAll, canView ? { limit: 50 } : "skip");
+  const [month, setMonth] = useState("all");
+  const data = useQuery(
+    api.activities.listRecentAll,
+    canView ? { limit: 50, ...(month !== "all" ? { monthKey: month } : {}) } : "skip",
+  );
+  const feed = data?.rows;
 
   if (me === undefined) return <Skeleton className="h-64" />;
   if (!canView) return <AccessDenied />;
@@ -41,6 +69,28 @@ export default function ActivityFeedPage() {
         title="Activity Feed"
         description="Live backend view of every KPI update as it lands — who logged what, for which KPI, and the recomputed provisional attainment. Admins and the submitter are notified by email when configured."
       />
+
+      <div className="flex items-center gap-2">
+        <select
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          aria-label="Filter by month logged"
+        >
+          <option value="all">All months</option>
+          {(data?.availableMonths ?? []).map((m) => (
+            <option key={m} value={m}>
+              {monthLabel(m)}
+            </option>
+          ))}
+        </select>
+        {feed !== undefined && (
+          <span className="text-xs text-muted-foreground">
+            {feed.length} entr{feed.length === 1 ? "y" : "ies"}
+            {month !== "all" ? ` · ${monthLabel(month)}` : " · latest"}
+          </span>
+        )}
+      </div>
 
       {feed === undefined ? (
         <div className="space-y-2">
