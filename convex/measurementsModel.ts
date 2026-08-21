@@ -83,7 +83,11 @@ export async function recomputeMeasurement(
     .query("trackingPeriods")
     .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
     .first();
-  const cadenceCompliant = period ? Date.now() <= period.dueAt : true;
+  // Admin-granted grace on a period (e.g. the go-live month) means every
+  // submission in it counts as on time, no matter when it lands.
+  const cadenceCompliant = period
+    ? period.cadenceGrace === true || Date.now() <= period.dueAt
+    : true;
 
   const doc = {
     kpiAssignmentId: assignment._id,

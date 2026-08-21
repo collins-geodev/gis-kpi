@@ -545,6 +545,54 @@ export const listReductionPins = internalQuery({
 });
 
 /**
+ * Grant (or revoke) cadence grace on a tracking period: every submission in
+ * it counts as on time. Sets the flag for future recomputes AND surgically
+ * patches existing measurements' cadenceCompliant — deliberately NOT a full
+ * recompute, which would flip approved (official) measurements back to
+ * provisional. Idempotent.
+ *
+ *   npx convex run migrations:grantCadenceGrace '{"periodKey":"2026-M07"}' --prod
+ *   npx convex run migrations:grantCadenceGrace '{"periodKey":"2026-M07","revoke":true}' --prod
+ */
+export const grantCadenceGrace = internalMutation({
+  args: { periodKey: v.string(), revoke: v.optional(v.boolean()) },
+  returns: v.union(
+    v.object({ granted: v.boolean(), measurementsUpdated: v.number() }),
+    v.null(),
+  ),
+  handler: async (ctx, { periodKey, revoke }) => {
+    const period = await ctx.db
+      .query("trackingPeriods")
+      .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
+      .first();
+    if (!period) return null;
+    const granting = revoke !== true;
+    await ctx.db.patch(period._id, { cadenceGrace: granting ? true : undefined });
+
+    let measurementsUpdated = 0;
+    const measurements = await ctx.db.query("kpiMeasurements").take(2000);
+    for (const m of measurements) {
+      if (m.periodKey !== periodKey) continue;
+      const compliant = granting ? true : Date.now() <= period.dueAt;
+      if (m.cadenceCompliant !== compliant) {
+        await ctx.db.patch(m._id, { cadenceCompliant: compliant });
+        measurementsUpdated++;
+      }
+    }
+    await recordAudit(ctx, {
+      entityType: "trackingPeriod",
+      entityId: period._id,
+      action: granting ? "grant_cadence_grace" : "revoke_cadence_grace",
+      reason: granting
+        ? `All ${periodKey} submissions count as on time (admin grace)`
+        : `Cadence grace revoked for ${periodKey}`,
+      after: { periodKey, measurementsUpdated },
+    });
+    return { granted: granting, measurementsUpdated };
+  },
+});
+
+/**
  * Backfill the KPI period on evidence uploaded before periods were tagged at
  * capture. Preference order: the linked activity's period; else the period of
  * the KPI's activity whose work-date is nearest the upload moment (an August

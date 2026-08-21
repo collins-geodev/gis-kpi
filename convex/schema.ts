@@ -164,6 +164,11 @@ export default defineSchema({
       v.literal("closed"),
       v.literal("locked"),
     ),
+    /**
+     * Admin-granted cadence amnesty: submissions in this period always count
+     * as on time (e.g. the July 2026 go-live month). Recomputes honor it.
+     */
+    cadenceGrace: v.optional(v.boolean()),
   })
     .index("by_year_grain", ["performanceYearId", "grain"])
     .index("by_periodKey", ["periodKey"])
