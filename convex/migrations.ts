@@ -803,10 +803,7 @@ export const addNonCoreKpis = internalMutation({
  */
 export const updateUserEmail = internalMutation({
   args: { from: v.string(), to: v.string() },
-  returns: v.union(
-    v.object({ updated: v.boolean(), email: v.string() }),
-    v.null(),
-  ),
+  returns: v.union(v.object({ updated: v.boolean(), email: v.string() }), v.null()),
   handler: async (ctx, { from, to }) => {
     if (!to.includes("@")) throw new Error(`"to" is not an email address: ${to}`);
     const user = await ctx.db
