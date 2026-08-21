@@ -86,6 +86,15 @@ function uploadMonthLabel(key: string): string {
   return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
 }
 
+/** Human label for any period key: month, quarter, or year. */
+function periodLabel(pk: string): string {
+  const m = /^(\d{4})-M(\d{2})$/.exec(pk);
+  if (m) return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+  const q = /^(\d{4})-Q([1-4])$/.exec(pk);
+  if (q) return `Q${q[2]} ${q[1]}`;
+  return pk;
+}
+
 /** Convex site URL (HTTP actions) derived from the deployment URL. */
 const CONVEX_SITE_URL =
   process.env.NEXT_PUBLIC_CONVEX_SITE_URL ??
@@ -190,12 +199,27 @@ export default function EvidenceCentrePage() {
     [rows],
   );
 
-  // A row belongs to a month by the KPI PERIOD it supports when tagged
-  // (capture-form uploads carry it), falling back to its upload month.
-  const monthsOf = (r: { periodKey: string | null; uploadedAt: number }) => {
-    const out = new Set<string>([uploadMonthKey(r.uploadedAt)]);
-    if (r.periodKey && /^\d{4}-M\d{2}$/.test(r.periodKey)) out.add(r.periodKey);
-    return out;
+  // A row belongs to the KPI PERIOD it supports when tagged (a monthly key
+  // maps to that month, a quarter/year to its months). ONLY untagged rows
+  // fall back to the upload month — an August upload proving July work is
+  // July's evidence, not August's.
+  const monthsOf = (r: { periodKey: string | null; uploadedAt: number }): string[] => {
+    const pk = r.periodKey;
+    if (pk) {
+      if (/^\d{4}-M\d{2}$/.test(pk)) return [pk];
+      const q = /^(\d{4})-Q([1-4])$/.exec(pk);
+      if (q) {
+        const start = (Number(q[2]) - 1) * 3 + 1;
+        return [0, 1, 2].map((i) => `${q[1]}-M${String(start + i).padStart(2, "0")}`);
+      }
+      if (/^\d{4}$/.test(pk)) {
+        return Array.from(
+          { length: 12 },
+          (_, i) => `${pk}-M${String(i + 1).padStart(2, "0")}`,
+        );
+      }
+    }
+    return [uploadMonthKey(r.uploadedAt)];
   };
 
   // Months that actually have evidence, newest first.
@@ -210,7 +234,7 @@ export default function EvidenceCentrePage() {
     return (rows ?? []).filter((r) => {
       if (status !== "all" && r.reviewStatus !== status) return false;
       if (category !== "all" && r.category !== category) return false;
-      if (month !== "all" && !monthsOf(r).has(month)) return false;
+      if (month !== "all" && !monthsOf(r).includes(month)) return false;
       if (!q) return true;
       return [r.title, r.originalFilename, r.objective ?? "", r.employeeName]
         .join(" ")
@@ -384,6 +408,7 @@ export default function EvidenceCentrePage() {
                   <TableHead>Evidence</TableHead>
                   <TableHead>KPI</TableHead>
                   {seesOthers && <TableHead>Employee</TableHead>}
+                  <TableHead>Month</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Size</TableHead>
@@ -398,7 +423,6 @@ export default function EvidenceCentrePage() {
                       <div className="max-w-[16rem] truncate font-medium">{r.title}</div>
                       <div className="max-w-[16rem] truncate text-xs text-muted-foreground">
                         {r.originalFilename}
-                        {r.periodKey ? ` · ${r.periodKey}` : ""}
                       </div>
                     </TableCell>
                     <TableCell className="max-w-[18rem]">
@@ -433,6 +457,20 @@ export default function EvidenceCentrePage() {
                         {r.employeeName}
                       </TableCell>
                     )}
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {r.periodKey ? (
+                        <span title="KPI period this evidence supports">
+                          {periodLabel(r.periodKey)}
+                        </span>
+                      ) : (
+                        <span
+                          className="text-muted-foreground"
+                          title="No KPI period tagged — showing the upload month"
+                        >
+                          {uploadMonthLabel(uploadMonthKey(r.uploadedAt))}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="muted">{r.category}</Badge>
                     </TableCell>

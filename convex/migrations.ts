@@ -545,6 +545,76 @@ export const listReductionPins = internalQuery({
 });
 
 /**
+ * Backfill the KPI period on evidence uploaded before periods were tagged at
+ * capture. Preference order: the linked activity's period; else the period of
+ * the KPI's activity whose work-date is nearest the upload moment (an August
+ * upload proving July work adopts July). Untagged rows stay on their upload
+ * month in the Evidence Centre. Idempotent — only null periods are touched.
+ */
+export const backfillEvidencePeriods = internalMutation({
+  args: {},
+  returns: v.object({
+    tagged: v.number(),
+    fromActivity: v.number(),
+    fromNearest: v.number(),
+    untagged: v.number(),
+  }),
+  handler: async (ctx) => {
+    const evidence = await ctx.db.query("evidenceFiles").take(2000);
+    let tagged = 0;
+    let fromActivity = 0;
+    let fromNearest = 0;
+    let untagged = 0;
+    for (const e of evidence) {
+      if (e.periodKey || e.retentionState === "deleted") continue;
+      let pk: string | undefined;
+      if (e.activityId) {
+        const act = await ctx.db.get(e.activityId);
+        if (act) {
+          pk = act.periodKey;
+          fromActivity++;
+        }
+      }
+      if (!pk && e.kpiAssignmentId) {
+        const acts = await ctx.db
+          .query("activities")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", e.kpiAssignmentId!),
+          )
+          .take(500);
+        if (acts.length > 0) {
+          const nearest = acts.reduce((best, a) =>
+            Math.abs(a.activityAt - e.uploadedAt) <
+            Math.abs(best.activityAt - e.uploadedAt)
+              ? a
+              : best,
+          );
+          pk = nearest.periodKey;
+          fromNearest++;
+        }
+      }
+      if (pk) {
+        await ctx.db.patch(e._id, { periodKey: pk });
+        tagged++;
+      } else {
+        untagged++;
+      }
+    }
+    if (tagged > 0) {
+      await recordAudit(ctx, {
+        entityType: "evidenceFile",
+        entityId: "backfill_periods",
+        action: "backfill_evidence_periods",
+        reason:
+          "Evidence uploaded before period tagging adopts the period of the work it supports",
+        after: { tagged, fromActivity, fromNearest, untagged },
+      });
+    }
+    return { tagged, fromActivity, fromNearest, untagged };
+  },
+});
+
+/**
  * CLI twin of the review queue's submission delete, scoped to ONE employee
  * and period (optionally one KPI): recalls the period approval if one exists
  * (all snapshots cleared), removes the non-locked activities, soft-deletes
