@@ -1,9 +1,9 @@
 /**
- * Email notifications for KPI updates — sent to the whole oversight group
- * (System Admins, KPI Admins, Managers, Reviewers) and to the person who
- * logged the update, using the branded template in lib/emailTemplate.ts via
- * the Resend API. Security-sensitive notices (password changes, malware
- * flags) stay System-Admin-only — they are the only ones who can act.
+ * Email notifications for KPI updates — sent to the whole team (every active
+ * user with an app role, employees included) and to the person who logged
+ * the update, using the branded template in lib/emailTemplate.ts via the
+ * Resend API. Security-sensitive notices (password changes, malware flags)
+ * stay System-Admin-only — they are the only ones who can act.
  *
  * Config (Convex env):
  *   RESEND_API_KEY  — required to actually send; without it we skip sending
@@ -20,7 +20,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { buildKpiUpdateEmail, buildNoticeEmail } from "./lib/emailTemplate";
 import { formatPercent } from "./lib/format";
-import { STATUS_BAND_LABELS, type AppRole } from "./lib/types";
+import { APP_ROLES, STATUS_BAND_LABELS, type AppRole } from "./lib/types";
 
 /**
  * Friendly display name for greetings: profile name → linked roster name →
@@ -72,20 +72,14 @@ export async function adminUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
 }
 
 /**
- * The full oversight group for KPI-flow notifications: everyone whose role
- * gives them a stake in submissions and reviews. KPI updates, evidence
- * submissions, and deadline escalations fan out to all of them, so nothing
- * waits on a single admin noticing.
+ * The full-team notification audience: every active user holding ANY app
+ * role — employees included. KPI updates, evidence submissions, and deadline
+ * escalations fan out to all of them, so the whole team sees the work as it
+ * happens. Security notices (password changes, malware flags) deliberately
+ * stay with adminUsers — only System Admins can act on those.
  */
-export const OVERSIGHT_ROLES = [
-  "system_admin",
-  "kpi_admin",
-  "manager",
-  "reviewer",
-] as const satisfies readonly AppRole[];
-
-export async function oversightUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
-  return usersWithRoles(ctx, OVERSIGHT_ROLES);
+export async function teamUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
+  return usersWithRoles(ctx, APP_ROLES);
 }
 
 const vRecipient = v.object({
@@ -166,8 +160,8 @@ export const getKpiUpdatePayload = internalQuery({
       });
     }
 
-    // The whole oversight group (except anyone already covered above).
-    for (const admin of await oversightUsers(ctx)) {
+    // The whole team (except anyone already covered above).
+    for (const admin of await teamUsers(ctx)) {
       const key = admin.email!.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);

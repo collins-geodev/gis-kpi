@@ -342,13 +342,12 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
     expect(audit.length).toBe(1);
   });
 
-  test("oversight notification group spans admin/kpi_admin/manager/reviewer, active only, deduped", async () => {
+  test("team notification audience spans every role incl. employees, active only, deduped", async () => {
     const t = harness();
     await makeUser(t, { email: "sysadmin@x.com", roles: ["system_admin"] });
     await makeUser(t, { email: "kpiadmin@x.com", roles: ["kpi_admin"] });
-    // Holds two oversight roles — must appear exactly once.
+    // Holds two roles — must appear exactly once.
     await makeUser(t, { email: "lead@x.com", roles: ["manager", "reviewer"] });
-    await makeUser(t, { email: "reviewer@x.com", roles: ["reviewer"] });
     await makeUser(t, { email: "worker@x.com", roles: ["employee"] });
     await makeUser(t, { email: "exec@x.com", roles: ["executive_viewer"] });
     const { userId: goneId } = await makeUser(t, {
@@ -359,17 +358,19 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
       await ctx.db.patch(goneId, { isActive: false });
     });
 
-    const { adminUsers, oversightUsers } = await import("./emails");
+    const { adminUsers, teamUsers } = await import("./emails");
     const groups = await t.run(async (ctx) => ({
       admins: (await adminUsers(ctx)).map((u) => u.email).sort(),
-      oversight: (await oversightUsers(ctx)).map((u) => u.email).sort(),
+      team: (await teamUsers(ctx)).map((u) => u.email).sort(),
     }));
+    // Security notices stay admin-only; team events reach every active role.
     expect(groups.admins).toEqual(["sysadmin@x.com"]);
-    expect(groups.oversight).toEqual([
+    expect(groups.team).toEqual([
+      "exec@x.com",
       "kpiadmin@x.com",
       "lead@x.com",
-      "reviewer@x.com",
       "sysadmin@x.com",
+      "worker@x.com",
     ]);
   });
 

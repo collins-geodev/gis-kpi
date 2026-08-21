@@ -7,7 +7,7 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { ConvexError, v } from "convex/values";
-import { oversightUsers, resolveDisplayName } from "./emails";
+import { teamUsers, resolveDisplayName } from "./emails";
 import {
   assertEmployeeReadScope,
   assertEvidenceAccess,
@@ -184,11 +184,11 @@ export const saveEvidence = mutation({
       after: { kpiAssignmentId: args.kpiAssignmentId },
     });
 
-    // Submitting for review notifies the whole oversight group (email + in-app).
+    // Submitting for review notifies the whole team (email + in-app).
     const employee = await ctx.db.get(assignment.employeeId);
     const uploaderName = await resolveDisplayName(ctx, user);
     const notices = [];
-    for (const admin of await oversightUsers(ctx)) {
+    for (const admin of await teamUsers(ctx)) {
       if (admin._id === user._id) continue;
       notices.push({
         userId: admin._id,
