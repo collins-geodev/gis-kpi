@@ -58,11 +58,14 @@ export default function TeamPage() {
     [rows],
   );
 
-  const filtered = rows.filter(
-    (e) =>
-      (role === "all" || e.jobRole === role) &&
-      (location === "all" || e.canonicalLocation === location),
-  );
+  const filtered = rows
+    .filter(
+      (e) =>
+        (role === "all" || e.jobRole === role) &&
+        (location === "all" || e.canonicalLocation === location),
+    )
+    // Highest overall score first; ties fall back to the roster order.
+    .sort((a, b) => b.overallPct - a.overallPct || a.displayOrder - b.displayOrder);
 
   return (
     <div className="space-y-6">
