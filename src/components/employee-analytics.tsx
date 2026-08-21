@@ -159,9 +159,14 @@ export function EmployeeAnalytics() {
           </div>
 
           {/* Tiles */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
             <MiniStat
-              label="Score (measured KPIs)"
+              label="Overall score"
+              value={`${data.tiles.overallPct.toFixed(1)}%`}
+              hint={`${data.tiles.pointsEarned.toFixed(1)} of ${data.tiles.pointsPossible} pts — unmeasured KPIs count as 0`}
+            />
+            <MiniStat
+              label="On measured KPIs"
               value={
                 data.tiles.scoreOnMeasured === null
                   ? "—"

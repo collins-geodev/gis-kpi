@@ -394,6 +394,13 @@ export async function computeEmployeeAnalytics(
     },
     currentPeriodKey: currentMonthKey,
     tiles: {
+      // The scorecard headline: points earned out of the full configured
+      // weight — unmeasured KPIs count as 0 until captured. Matches the
+      // official "N / 100" convention used at period approval.
+      overallPct: scorecard.normalizedScore,
+      pointsEarned: scorecard.assignedWeightScore,
+      pointsPossible: scorecard.configuredWeight,
+      // Quality of what HAS been submitted (context, not the headline).
       scoreOnMeasured: scorecard.scoreOnMeasured,
       evidenceCompletionPct: scorecard.evidenceCompletionPct,
       cadenceCompliancePct: scorecard.cadenceCompliancePct,
