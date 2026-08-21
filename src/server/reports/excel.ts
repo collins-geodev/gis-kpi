@@ -9,6 +9,7 @@
  * note, print headers/footers, and spreadsheet-formula-injection-safe cells.
  */
 import ExcelJS from "exceljs";
+import { periodLabel } from "@convex/lib/format";
 import type { ReportDataset } from "./types";
 
 const COLORS = {
@@ -279,7 +280,9 @@ export async function buildWorkbook(ds: ReportDataset, stampMs: number): Promise
     [
       text<ReportDataset["activities"][number]>("Employee", 26, (r) => r.employeeName),
       text<ReportDataset["activities"][number]>("KPI objective", 50, (r) => r.objective),
-      text<ReportDataset["activities"][number]>("Period", 12, (r) => r.periodKey),
+      text<ReportDataset["activities"][number]>("Period", 12, (r) =>
+        periodLabel(r.periodKey),
+      ),
       text<ReportDataset["activities"][number]>("Activity", 40, (r) => r.title),
       dateCol<ReportDataset["activities"][number]>("Date", 20, (r) => r.activityAt),
       text<ReportDataset["activities"][number]>("Status", 14, (r) => r.status),

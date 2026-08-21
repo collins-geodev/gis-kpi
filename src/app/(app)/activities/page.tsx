@@ -31,7 +31,7 @@ import { EvidencePanel } from "@/components/evidence-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { aggregateActivityInputs } from "@convex/lib/measure";
 import { computeAttainment } from "@convex/lib/scoring";
-import { formatPercent, normalizeReductionTarget } from "@convex/lib/format";
+import { formatPercent, normalizeReductionTarget, periodLabel } from "@convex/lib/format";
 import type { Direction, Frequency, MeasurementMode } from "@convex/lib/types";
 import { LAGOS_OFFSET_MS, captureGrainForFrequency } from "@convex/lib/periods";
 import { suggestActivityTitle } from "@/lib/evidence-suggestions";
@@ -74,30 +74,6 @@ type Assignment = {
   scoringBlocked: boolean;
   kpiCategory: string;
 };
-
-const MONTH_NAMES = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-/** Human label for any period key: "2026-M07" → "Jul 2026", "2026-Q3" → "Q3 2026". */
-function periodLabel(pk: string): string {
-  const m = /^(\d{4})-M(\d{2})$/.exec(pk);
-  if (m) return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
-  const q = /^(\d{4})-Q([1-4])$/.exec(pk);
-  if (q) return `Q${q[2]} ${q[1]}`;
-  return pk;
-}
 
 /** KPI-specific overrides for the generic mode field labels. */
 const KEY_FIELD_LABELS: Record<string, Record<string, string>> = {

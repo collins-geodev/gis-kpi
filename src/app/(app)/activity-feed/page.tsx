@@ -11,33 +11,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AccessDenied } from "@/components/access-denied";
 import { StatusBadge } from "@/components/status-badge";
-import { formatPercent } from "@convex/lib/format";
+import { formatPercent, periodLabel } from "@convex/lib/format";
 import { Activity, ClipboardList, Mail } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
-
-const MONTH_NAMES = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-/** Human label for any period key: "2026-M07" → "Jul 2026", "2026-Q3" → "Q3 2026". */
-function monthLabel(key: string): string {
-  const m = /^(\d{4})-M(\d{2})$/.exec(key);
-  if (m) return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
-  const q = /^(\d{4})-Q([1-4])$/.exec(key);
-  if (q) return `Q${q[2]} ${q[1]}`;
-  return key;
-}
 
 function timeAgo(ms: number): string {
   const s = Math.max(1, Math.floor((Date.now() - ms) / 1000));
@@ -82,14 +58,14 @@ export default function ActivityFeedPage() {
           <option value="all">All months</option>
           {(data?.availableMonths ?? []).map((m) => (
             <option key={m} value={m}>
-              {monthLabel(m)}
+              {periodLabel(m)}
             </option>
           ))}
         </select>
         {feed !== undefined && (
           <span className="text-xs text-muted-foreground">
             {feed.length} entr{feed.length === 1 ? "y" : "ies"}
-            {month !== "all" ? ` · ${monthLabel(month)}` : " · latest"}
+            {month !== "all" ? ` · ${periodLabel(month)}` : " · latest"}
           </span>
         )}
       </div>
@@ -126,7 +102,7 @@ export default function ActivityFeedPage() {
                     </Link>
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {a.objective} · {monthLabel(a.periodKey)} · logged by {a.actorName}
+                    {a.objective} · {periodLabel(a.periodKey)} · logged by {a.actorName}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

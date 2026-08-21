@@ -117,3 +117,30 @@ export function sanitizeSpreadsheetCell(value: unknown): string {
 export function normalizeWhitespace(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+/**
+ * Human label for any period key — the one rendering of periods across the
+ * UI and exports: "2026-M07" → "Jul 2026", "2026-Q3" → "Q3 2026", "2026" → "2026".
+ */
+export function periodLabel(pk: string): string {
+  const m = /^(\d{4})-M(\d{2})$/.exec(pk);
+  if (m) return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+  const q = /^(\d{4})-Q([1-4])$/.exec(pk);
+  if (q) return `Q${q[2]} ${q[1]}`;
+  return pk;
+}

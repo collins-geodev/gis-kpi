@@ -20,7 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
-import { formatPercent } from "@convex/lib/format";
+import { formatPercent, periodLabel } from "@convex/lib/format";
 import { UserRoundSearch } from "lucide-react";
 
 const MONTHS = [
@@ -45,15 +45,6 @@ const BAR_TONE: Record<string, string> = {
   critical: "bg-critical",
   no_data: "bg-muted-foreground/30",
 };
-
-/** Human label for any period key: "2026-M07" → "Jul 2026", "2026-Q3" → "Q3 2026". */
-function monthLabel(key: string): string {
-  const m = /^(\d{4})-M(\d{2})$/.exec(key);
-  if (m) return `${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
-  const q = /^(\d{4})-Q([1-4])$/.exec(key);
-  if (q) return `Q${q[2]} ${q[1]}`;
-  return key;
-}
 
 export function EmployeeAnalytics() {
   const [selectedId, setSelectedId] = useState<string>("");
@@ -111,7 +102,7 @@ export function EmployeeAnalytics() {
           >
             {data.availableMonths.map((k: string) => (
               <option key={k} value={k}>
-                {monthLabel(k)}
+                {periodLabel(k)}
               </option>
             ))}
           </select>
@@ -190,7 +181,7 @@ export function EmployeeAnalytics() {
               value={formatPercent(data.tiles.cadenceCompliancePct / 100)}
             />
             <MiniStat
-              label={`Entries · ${data.currentPeriodKey ? monthLabel(data.currentPeriodKey) : "this month"}`}
+              label={`Entries · ${data.currentPeriodKey ? periodLabel(data.currentPeriodKey) : "this month"}`}
               value={String(data.tiles.activitiesThisMonth)}
             />
           </div>
@@ -267,7 +258,7 @@ export function EmployeeAnalytics() {
                       {k.peerAvg !== null && (
                         <p className="text-xs text-muted-foreground">
                           peers ({k.peerCount}): {formatPercent(k.peerAvg)} · weight{" "}
-                          {k.weight} · {monthLabel(k.periodKey)}
+                          {k.weight} · {periodLabel(k.periodKey)}
                         </p>
                       )}
                     </div>
@@ -300,8 +291,8 @@ export function EmployeeAnalytics() {
                     style={{ height: 72 }}
                     title={
                       t.scoreOnMeasured === null
-                        ? `${monthLabel(t.periodKey)}: no data`
-                        : `${monthLabel(t.periodKey)}: ${formatPercent(t.scoreOnMeasured)} (${t.kpisWithData} KPIs)`
+                        ? `${periodLabel(t.periodKey)}: no data`
+                        : `${periodLabel(t.periodKey)}: ${formatPercent(t.scoreOnMeasured)} (${t.kpisWithData} KPIs)`
                     }
                   >
                     {t.scoreOnMeasured !== null && (
@@ -379,7 +370,7 @@ export function EmployeeAnalytics() {
                         })}
                       </span>
                       <Badge variant="muted" title="KPI period this entry counts toward">
-                        {monthLabel(a.periodKey)}
+                        {periodLabel(a.periodKey)}
                       </Badge>
                       <span className="max-w-md truncate font-medium">{a.title}</span>
                       <span className="tabular text-muted-foreground">{a.detail}</span>

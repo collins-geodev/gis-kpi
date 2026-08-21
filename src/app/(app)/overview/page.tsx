@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { CountUp } from "@/components/count-up";
 import { APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
+import { periodLabel } from "@convex/lib/format";
 import {
   AlertTriangle,
   BookOpenCheck,
@@ -31,7 +32,11 @@ import {
 export default function OverviewPage() {
   const me = useQuery(api.access.currentUser);
   const summary = useQuery(api.overview.baselineSummary);
-  const team = useQuery(api.employees.listScoped, {});
+  const [boardMonth, setBoardMonth] = useState("");
+  const team = useQuery(
+    api.employees.listScoped,
+    boardMonth ? { periodKey: boardMonth } : {},
+  );
   const bootstrap = useMutation(api.access.bootstrapFirstAdmin);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -219,19 +224,33 @@ export default function OverviewPage() {
                 <div className="space-y-1">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Trophy className="h-5 w-5 text-accent" />
-                    Team leaderboard · {team.periodKey}
+                    Team leaderboard · {periodLabel(team.periodKey)}
                   </CardTitle>
                   <CardDescription>
                     Overall score — points earned of the configured 100; unmeasured KPIs
                     count as 0.
                   </CardDescription>
                 </div>
-                <Link
-                  href="/team"
-                  className="text-sm font-medium text-accent hover:underline"
-                >
-                  Team performance →
-                </Link>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={boardMonth || team.periodKey}
+                    onChange={(e) => setBoardMonth(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    aria-label="Leaderboard month"
+                  >
+                    {team.availableMonths.map((k) => (
+                      <option key={k} value={k}>
+                        {periodLabel(k)}
+                      </option>
+                    ))}
+                  </select>
+                  <Link
+                    href="/team"
+                    className="whitespace-nowrap text-sm font-medium text-accent hover:underline"
+                  >
+                    Team performance →
+                  </Link>
+                </div>
               </CardHeader>
               <CardContent className="space-y-1.5">
                 {[...team.rows]

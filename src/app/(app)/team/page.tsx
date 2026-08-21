@@ -19,28 +19,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Users } from "lucide-react";
-
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-/** "2026-M07" → "Jul 2026". */
-function monthLabel(key: string): string {
-  const m = /^(\d{4})-M(\d{2})$/.exec(key);
-  if (!m) return key;
-  return `${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
-}
+import { periodLabel } from "@convex/lib/format";
 
 export default function TeamPage() {
   const [period, setPeriod] = useState<string>("");
@@ -85,7 +64,7 @@ export default function TeamPage() {
           >
             {(data?.availableMonths ?? []).map((k) => (
               <option key={k} value={k}>
-                {monthLabel(k)}
+                {periodLabel(k)}
               </option>
             ))}
           </select>

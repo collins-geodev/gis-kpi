@@ -39,6 +39,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+import { periodLabel } from "@convex/lib/format";
 import { errorMessage } from "@/lib/errors";
 
 const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant"]> = {
@@ -58,41 +59,10 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const MONTH_NAMES = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
 /** Upload timestamp → its Lagos month as a sortable "2026-M07" key. */
 function uploadMonthKey(ts: number): string {
   const d = new Date(ts + 60 * 60 * 1000); // Africa/Lagos = UTC+1
   return `${d.getUTCFullYear()}-M${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-/** "2026-M07" → "Jul 2026". */
-function uploadMonthLabel(key: string): string {
-  const m = /^(\d{4})-M(\d{2})$/.exec(key);
-  if (!m) return key;
-  return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
-}
-
-/** Human label for any period key: month, quarter, or year. */
-function periodLabel(pk: string): string {
-  const m = /^(\d{4})-M(\d{2})$/.exec(pk);
-  if (m) return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
-  const q = /^(\d{4})-Q([1-4])$/.exec(pk);
-  if (q) return `Q${q[2]} ${q[1]}`;
-  return pk;
 }
 
 /** Convex site URL (HTTP actions) derived from the deployment URL. */
@@ -369,7 +339,7 @@ export default function EvidenceCentrePage() {
           <option value="all">All months</option>
           {months.map((m) => (
             <option key={m} value={m}>
-              {uploadMonthLabel(m)}
+              {periodLabel(m)}
             </option>
           ))}
         </select>
@@ -467,7 +437,7 @@ export default function EvidenceCentrePage() {
                           className="text-muted-foreground"
                           title="No KPI period tagged — showing the upload month"
                         >
-                          {uploadMonthLabel(uploadMonthKey(r.uploadedAt))}
+                          {periodLabel(uploadMonthKey(r.uploadedAt))}
                         </span>
                       )}
                     </TableCell>
