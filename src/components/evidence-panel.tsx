@@ -24,6 +24,7 @@ export function EvidencePanel({
   assignmentId,
   kpi,
   deferNotice,
+  periodKey,
 }: {
   assignmentId: Id<"kpiAssignments">;
   /** When provided, the title/category start with a KPI-aware suggestion. */
@@ -34,6 +35,8 @@ export function EvidencePanel({
    * saving the activity is the announced event.
    */
   deferNotice?: boolean;
+  /** The capture period this evidence supports (e.g. "2026-M07"). */
+  periodKey?: string;
 }) {
   const me = useQuery(api.access.currentUser);
   const evidence = useQuery(api.evidence.listForAssignment, {
@@ -84,6 +87,7 @@ export function EvidencePanel({
         category,
         title: title || file.name,
         ...(deferNotice ? { deferNotice: true } : {}),
+        ...(periodKey ? { periodKey } : {}),
       });
       setTitle("");
     } catch (e) {
@@ -107,6 +111,7 @@ export function EvidencePanel({
         category,
         title: title || "External evidence",
         ...(deferNotice ? { deferNotice: true } : {}),
+        ...(periodKey ? { periodKey } : {}),
       });
       setLinkUrl("");
       setTitle("");

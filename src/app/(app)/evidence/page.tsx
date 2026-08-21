@@ -190,21 +190,27 @@ export default function EvidenceCentrePage() {
     [rows],
   );
 
-  // Months that actually have uploads (Lagos wall-clock), newest first.
-  const months = useMemo(
-    () =>
-      Array.from(new Set((rows ?? []).map((r) => uploadMonthKey(r.uploadedAt))))
-        .sort()
-        .reverse(),
-    [rows],
-  );
+  // A row belongs to a month by the KPI PERIOD it supports when tagged
+  // (capture-form uploads carry it), falling back to its upload month.
+  const monthsOf = (r: { periodKey: string | null; uploadedAt: number }) => {
+    const out = new Set<string>([uploadMonthKey(r.uploadedAt)]);
+    if (r.periodKey && /^\d{4}-M\d{2}$/.test(r.periodKey)) out.add(r.periodKey);
+    return out;
+  };
+
+  // Months that actually have evidence, newest first.
+  const months = useMemo(() => {
+    const all = new Set<string>();
+    for (const r of rows ?? []) for (const m of monthsOf(r)) all.add(m);
+    return Array.from(all).sort().reverse();
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (rows ?? []).filter((r) => {
       if (status !== "all" && r.reviewStatus !== status) return false;
       if (category !== "all" && r.category !== category) return false;
-      if (month !== "all" && uploadMonthKey(r.uploadedAt) !== month) return false;
+      if (month !== "all" && !monthsOf(r).has(month)) return false;
       if (!q) return true;
       return [r.title, r.originalFilename, r.objective ?? "", r.employeeName]
         .join(" ")
@@ -213,16 +219,17 @@ export default function EvidenceCentrePage() {
     });
   }, [rows, search, status, category, month]);
 
+  // The posture tiles follow the ACTIVE filters, so narrowing to a month (or
+  // status, category, search) re-counts the cards to the visible slice.
   const stats = useMemo(() => {
-    const all = rows ?? [];
     return {
-      total: all.length,
-      pending: all.filter((r) => ["submitted", "verified"].includes(r.reviewStatus))
+      total: filtered.length,
+      pending: filtered.filter((r) => ["submitted", "verified"].includes(r.reviewStatus))
         .length,
-      approved: all.filter((r) => r.reviewStatus === "approved").length,
-      rejected: all.filter((r) => r.reviewStatus === "rejected").length,
+      approved: filtered.filter((r) => r.reviewStatus === "approved").length,
+      rejected: filtered.filter((r) => r.reviewStatus === "rejected").length,
     };
-  }, [rows]);
+  }, [filtered]);
 
   return (
     <div className="space-y-6">

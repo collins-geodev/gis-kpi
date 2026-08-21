@@ -755,6 +755,7 @@ export default function ActivitiesPage() {
                       objective: selected.objective,
                     }}
                     deferNotice
+                    periodKey={periodKey}
                   />
                 </div>
               )}
