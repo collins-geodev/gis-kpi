@@ -13,7 +13,7 @@ import {
   requireUser,
 } from "./authz";
 import { recordAudit } from "./audit";
-import { scoreScorecard, type ScorecardItem } from "./lib/scoring";
+import { scoreDueToDate, scoreScorecard, type ScorecardItem } from "./lib/scoring";
 import { ROLE_TEMPLATES } from "./lib/catalogue";
 import { BASELINE_PERFORMANCE_YEAR, type JobRole } from "./lib/types";
 import { vReportScope } from "./validators";
@@ -117,7 +117,7 @@ export const dataset = query({
         )
         .collect();
       assignments.sort((a, b) => a.displayOrder - b.displayOrder);
-      const items: ScorecardItem[] = [];
+      const items: (ScorecardItem & { frequency: string })[] = [];
       for (const a of assignments) {
         assignmentObjective.set(a._id, a.objective);
         if (a.scoringBlocked) scoringBlocked++;
@@ -132,6 +132,7 @@ export const dataset = query({
           cappedAttainment: m?.cappedAttainment ?? null,
           evidenceComplete: m?.evidenceComplete ?? false,
           cadenceCompliant: m?.cadenceCompliant ?? false,
+          frequency: a.frequency,
         });
         kpiRows.push({
           employeeId: e.employeeId,
@@ -151,6 +152,12 @@ export const dataset = query({
         });
       }
       const sc = scoreScorecard(items);
+      // Weight due by the report period: a monthly report uses its month, a
+      // quarterly report its closing month, and the year report includes all.
+      const pm = /^\d{4}-M(\d{2})$/.exec(periodKey);
+      const pq = /^\d{4}-Q([1-4])$/.exec(periodKey);
+      const dueMonth = pm ? Number(pm[1]) : pq ? Number(pq[1]) * 3 : 12;
+      const due = scoreDueToDate(items, dueMonth);
       employeeRows.push({
         employeeId: e.employeeId,
         name: e.displayName,
@@ -159,6 +166,9 @@ export const dataset = query({
         configuredWeight: sc.configuredWeight,
         assignedWeightScore: sc.assignedWeightScore,
         normalizedScore: sc.normalizedScore,
+        duePct: due.duePct,
+        dueEarned: due.dueEarned,
+        dueWeight: due.dueWeight,
         itemsWithData: sc.itemsWithData,
         kpiCount: assignments.length,
       });

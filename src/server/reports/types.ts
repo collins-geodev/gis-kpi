@@ -26,6 +26,10 @@ export interface ReportEmployeeRow {
   configuredWeight: number;
   assignedWeightScore: number;
   normalizedScore: number;
+  /** Score against only the weight due by the report period. */
+  duePct: number;
+  dueEarned: number;
+  dueWeight: number;
   itemsWithData: number;
   kpiCount: number;
 }

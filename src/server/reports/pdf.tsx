@@ -372,25 +372,30 @@ export async function buildReportPdf(
             },
             { header: "Role", width: 24, get: (r) => r.jobRole },
             { header: "Location", width: 16, get: (r) => r.location },
-            { header: "Cfg wt", width: 9, get: (r) => `${r.configuredWeight}/100` },
-            { header: "Score", width: 10, get: (r) => String(r.assignedWeightScore) },
-            { header: "Norm", width: 9, get: (r) => `${Math.round(r.normalizedScore)}%` },
+            { header: "Cfg wt", width: 8, get: (r) => `${r.configuredWeight}/100` },
+            {
+              header: "Due-to-date",
+              width: 12,
+              get: (r) =>
+                r.dueWeight === 0
+                  ? "—"
+                  : `${Math.round(r.duePct)}% (${r.dueEarned}/${r.dueWeight})`,
+            },
+            { header: "Score", width: 9, get: (r) => String(r.assignedWeightScore) },
+            { header: "Norm", width: 8, get: (r) => `${Math.round(r.normalizedScore)}%` },
             { header: "Data", width: 6, get: (r) => `${r.itemsWithData}/${r.kpiCount}` },
           ]}
           rows={ds.employees}
         />
         <PdfBarChart
-          title="Weighted score vs configured maximum"
+          title="Due-to-date score — earned vs weight due this period"
           rows={ds.employees.map((e) => ({
             label: e.name,
-            frac:
-              e.itemsWithData === 0 || e.configuredWeight === 0
-                ? null
-                : e.assignedWeightScore / e.configuredWeight,
+            frac: e.itemsWithData === 0 || e.dueWeight === 0 ? null : e.duePct / 100,
             valueLabel:
-              e.itemsWithData === 0
+              e.itemsWithData === 0 || e.dueWeight === 0
                 ? "no data"
-                : `${e.assignedWeightScore}/${e.configuredWeight}`,
+                : `${e.dueEarned}/${e.dueWeight}`,
           }))}
         />
         <Footer ds={ds} stampMs={stampMs} />
@@ -499,9 +504,11 @@ export async function buildReportPdf(
           × weight; assignedWeightScore = Σ contributions (out of the true configured
           maximum, {ds.meta.configuredWeightTotal}); normalizedScore = assignedWeightScore
           / configured × 100 (shown {ds.meta.normalizationEnabled ? "with" : "without"}{" "}
-          normalization enabled). Ratio KPIs aggregate numerators/denominators; zero
-          denominator or missing baseline reads as No Data. Percentages are decimals.
-          Timezone {ds.meta.timezone}.
+          normalization enabled). Due-to-date % scores against only the weight due by the
+          report period: monthly KPIs always; quarterly at quarter ends; annual in
+          December — each joining earlier the moment it is measured. Ratio KPIs aggregate
+          numerators/denominators; zero denominator or missing baseline reads as No Data.
+          Percentages are decimals. Timezone {ds.meta.timezone}.
         </Text>
         {narrative && <Text style={s.p}>{narrative.methodologyNotes}</Text>}
         {narrative && narrative.citations.length > 0 && (

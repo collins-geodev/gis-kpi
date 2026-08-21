@@ -209,6 +209,12 @@ export async function buildWorkbook(ds: ReportDataset, stampMs: number): Promise
         16,
         (r) => r.configuredWeight,
       ),
+      percentDecimal<ReportDataset["employees"][number]>(
+        "Due-to-date",
+        12,
+        (r) => r.duePct / 100,
+      ),
+      number<ReportDataset["employees"][number]>("Pts due", 10, (r) => r.dueWeight),
       number<ReportDataset["employees"][number]>(
         "Assigned score",
         14,
