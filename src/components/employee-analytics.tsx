@@ -46,14 +46,22 @@ const BAR_TONE: Record<string, string> = {
   no_data: "bg-muted-foreground/30",
 };
 
+/** "2026-M07" → "Jul 2026" for the month selector. */
+function monthLabel(key: string): string {
+  const m = /^(\d{4})-M(\d{2})$/.exec(key);
+  if (!m) return key;
+  return `${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+}
+
 export function EmployeeAnalytics() {
   const [selectedId, setSelectedId] = useState<string>("");
+  const [period, setPeriod] = useState<string>("");
   const [kpiFilter, setKpiFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const data = useQuery(
-    api.analytics.employeeAnalytics,
-    selectedId ? { employeeId: selectedId as Id<"employees"> } : {},
-  );
+  const data = useQuery(api.analytics.employeeAnalytics, {
+    ...(selectedId ? { employeeId: selectedId as Id<"employees"> } : {}),
+    ...(period ? { periodKey: period } : {}),
+  });
 
   const filteredActivities = useMemo(
     () =>
@@ -90,23 +98,39 @@ export function EmployeeAnalytics() {
               : "Your KPIs in context — current attainment, monthly trend, and your activity record."}
           </CardDescription>
         </div>
-        {data.canSelect && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Month under review — defaults to the current month. */}
           <select
-            value={selectedId || (data.employee?.id ?? "")}
-            onChange={(e) => setSelectedId(e.target.value)}
+            value={period || (data.currentPeriodKey ?? "")}
+            onChange={(e) => setPeriod(e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            aria-label="Select an employee"
+            aria-label="Select a month"
+            title="Show this month's attainment, tiles, and peer context"
           >
-            {!data.employee && <option value="">Select an employee…</option>}
-            {data.roster.map(
-              (r: { id: string; displayName: string; jobRole: string }) => (
-                <option key={r.id} value={r.id}>
-                  {r.displayName} — {r.jobRole}
-                </option>
-              ),
-            )}
+            {data.availableMonths.map((k: string) => (
+              <option key={k} value={k}>
+                {monthLabel(k)}
+              </option>
+            ))}
           </select>
-        )}
+          {data.canSelect && (
+            <select
+              value={selectedId || (data.employee?.id ?? "")}
+              onChange={(e) => setSelectedId(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              aria-label="Select an employee"
+            >
+              {!data.employee && <option value="">Select an employee…</option>}
+              {data.roster.map(
+                (r: { id: string; displayName: string; jobRole: string }) => (
+                  <option key={r.id} value={r.id}>
+                    {r.displayName} — {r.jobRole}
+                  </option>
+                ),
+              )}
+            </select>
+          )}
+        </div>
       </CardHeader>
 
       {!data.employee ? (
@@ -154,7 +178,7 @@ export function EmployeeAnalytics() {
               value={formatPercent(data.tiles.cadenceCompliancePct / 100)}
             />
             <MiniStat
-              label="Entries this month"
+              label={`Entries · ${data.currentPeriodKey ? monthLabel(data.currentPeriodKey) : "this month"}`}
               value={String(data.tiles.activitiesThisMonth)}
             />
           </div>

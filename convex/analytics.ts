@@ -6,7 +6,7 @@
 import { query } from "./_generated/server";
 import { buildScoreTrend } from "./lib/trend";
 import type { QueryCtx } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertEmployeeReadScope, getAuthContext } from "./authz";
 import { scoreScorecard, type ScorecardItem } from "./lib/scoring";
@@ -155,10 +155,27 @@ function activityDetail(mode: string, a: Doc<"activities">): string {
  * own linked employee (or null when unlinked).
  */
 export const employeeAnalytics = query({
-  args: { employeeId: v.optional(v.id("employees")) },
+  args: {
+    employeeId: v.optional(v.id("employees")),
+    /** Month under review, e.g. "2026-M07"; omitted = current Lagos month. */
+    periodKey: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const { user, roles } = await getAuthContext(ctx);
     const canSelect = roles.some((r) => MODERATOR_ROLES.includes(r));
+
+    // Months selectable in the UI: the performance year up to the current
+    // Lagos month (all twelve once the year has passed).
+    const nowLagos = new Date(Date.now() + LAGOS_OFFSET_MS);
+    const lastIdx =
+      nowLagos.getUTCFullYear() > BASELINE_PERFORMANCE_YEAR
+        ? 11
+        : nowLagos.getUTCFullYear() < BASELINE_PERFORMANCE_YEAR
+          ? 0
+          : nowLagos.getUTCMonth();
+    const availableMonths = Array.from({ length: lastIdx + 1 }, (_, i) =>
+      monthKey(BASELINE_PERFORMANCE_YEAR, i),
+    ).reverse();
 
     let employeeId: Id<"employees"> | null = null;
     if (canSelect && args.employeeId) {
@@ -179,6 +196,7 @@ export const employeeAnalytics = query({
       return {
         canSelect,
         roster,
+        availableMonths,
         employee: null,
         currentPeriodKey: null,
         tiles: null,
@@ -187,11 +205,12 @@ export const employeeAnalytics = query({
         activities: [],
       };
     }
-    const core = await computeEmployeeAnalytics(ctx, employeeId);
+    const core = await computeEmployeeAnalytics(ctx, employeeId, args.periodKey);
     if (!core) {
       return {
         canSelect,
         roster,
+        availableMonths,
         employee: null,
         currentPeriodKey: null,
         tiles: null,
@@ -200,14 +219,19 @@ export const employeeAnalytics = query({
         activities: [],
       };
     }
-    return { canSelect, roster, ...core };
+    return { canSelect, roster, availableMonths, ...core };
   },
 });
 
-/** Shared computation for one employee (also used by the CLI audit query). */
+/**
+ * Shared computation for one employee (also used by the CLI audit query).
+ * `periodKey` selects the month under review (e.g. "2026-M07"); omitted =
+ * the current Lagos month.
+ */
 export async function computeEmployeeAnalytics(
   ctx: QueryCtx,
   employeeId: Id<"employees">,
+  periodKey?: string,
 ) {
   const employee = await ctx.db.get(employeeId);
   if (!employee) return null;
@@ -226,7 +250,11 @@ export async function computeEmployeeAnalytics(
     .collect();
 
   const nowLagos = new Date(Date.now() + LAGOS_OFFSET_MS);
-  const currentMonthKey = monthKey(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth());
+  const nowMonthKey = monthKey(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth());
+  if (periodKey !== undefined && !/^\d{4}-M(0[1-9]|1[0-2])$/.test(periodKey)) {
+    throw new ConvexError(`Invalid month key: ${periodKey}`);
+  }
+  const currentMonthKey = periodKey ?? nowMonthKey;
 
   const measurementAt = async (assignmentId: Id<"kpiAssignments">, pk: string) =>
     await ctx.db
@@ -342,11 +370,13 @@ export async function computeEmployeeAnalytics(
       };
     });
 
-  // Current-month activity count uses the real work-dates.
-  const monthStart =
-    Date.UTC(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth(), 1) - LAGOS_OFFSET_MS;
-  const monthEnd =
-    Date.UTC(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth() + 1, 1) - LAGOS_OFFSET_MS;
+  // Selected-month activity count uses the real work-dates.
+  const [selYear, selMonth1] = currentMonthKey.split("-M").map(Number) as [
+    number,
+    number,
+  ];
+  const monthStart = Date.UTC(selYear, selMonth1 - 1, 1) - LAGOS_OFFSET_MS;
+  const monthEnd = Date.UTC(selYear, selMonth1, 1) - LAGOS_OFFSET_MS;
   const COUNTED = ["submitted", "verified", "approved", "locked"];
   const activitiesThisMonth = rawActivities.filter(
     (act) =>
