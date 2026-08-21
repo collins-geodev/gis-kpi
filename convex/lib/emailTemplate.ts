@@ -14,8 +14,12 @@ export function escapeHtml(s: string): string {
 }
 
 export interface KpiUpdateEmailInput {
-  /** "admin" = sent to a System Admin; "self" = sent to the person who logged it. */
-  variant: "admin" | "self";
+  /**
+   * "admin" = sent to an oversight member; "self" = sent to the person who
+   * logged it; "employee" = sent to the employee the KPI belongs to when
+   * someone else logged the update on their behalf.
+   */
+  variant: "admin" | "self" | "employee";
   recipientName: string;
   actorName: string;
   employeeName: string;
@@ -178,12 +182,16 @@ export function buildKpiUpdateEmail(input: KpiUpdateEmailInput): {
   const subject =
     input.variant === "admin"
       ? `KPI update — ${input.employeeName}: ${input.activityTitle}`
-      : `Your KPI update was recorded — ${input.activityTitle}`;
+      : input.variant === "employee"
+        ? `A KPI update was logged for you — ${input.activityTitle}`
+        : `Your KPI update was recorded — ${input.activityTitle}`;
 
   const intro =
     input.variant === "admin"
       ? `<strong>${e.actorName}</strong> logged a KPI update for <strong>${e.employeeName}</strong> (${e.employeeBusinessId}). The measurement was recomputed by the deterministic scoring engine and is awaiting review.`
-      : `Your KPI update was recorded successfully and your provisional measurement has been recomputed. It now moves to evidence verification and review.`;
+      : input.variant === "employee"
+        ? `<strong>${e.actorName}</strong> logged a KPI update on your behalf. Your provisional measurement has been recomputed and now moves to evidence verification and review.`
+        : `Your KPI update was recorded successfully and your provisional measurement has been recomputed. It now moves to evidence verification and review.`;
 
   const row = (label: string, value: string) => `
     <tr>
@@ -241,7 +249,9 @@ export function buildKpiUpdateEmail(input: KpiUpdateEmailInput): {
     "",
     input.variant === "admin"
       ? `${input.actorName} logged a KPI update for ${input.employeeName} (${input.employeeBusinessId}).`
-      : "Your KPI update was recorded and your provisional measurement recomputed.",
+      : input.variant === "employee"
+        ? `${input.actorName} logged a KPI update on your behalf. Your provisional measurement was recomputed.`
+        : "Your KPI update was recorded and your provisional measurement recomputed.",
     "",
     `Activity: ${input.activityTitle}`,
     `KPI objective: ${input.objective}`,

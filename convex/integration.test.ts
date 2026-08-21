@@ -342,6 +342,37 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
     expect(audit.length).toBe(1);
   });
 
+  test("oversight notification group spans admin/kpi_admin/manager/reviewer, active only, deduped", async () => {
+    const t = harness();
+    await makeUser(t, { email: "sysadmin@x.com", roles: ["system_admin"] });
+    await makeUser(t, { email: "kpiadmin@x.com", roles: ["kpi_admin"] });
+    // Holds two oversight roles — must appear exactly once.
+    await makeUser(t, { email: "lead@x.com", roles: ["manager", "reviewer"] });
+    await makeUser(t, { email: "reviewer@x.com", roles: ["reviewer"] });
+    await makeUser(t, { email: "worker@x.com", roles: ["employee"] });
+    await makeUser(t, { email: "exec@x.com", roles: ["executive_viewer"] });
+    const { userId: goneId } = await makeUser(t, {
+      email: "gone@x.com",
+      roles: ["manager"],
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(goneId, { isActive: false });
+    });
+
+    const { adminUsers, oversightUsers } = await import("./emails");
+    const groups = await t.run(async (ctx) => ({
+      admins: (await adminUsers(ctx)).map((u) => u.email).sort(),
+      oversight: (await oversightUsers(ctx)).map((u) => u.email).sort(),
+    }));
+    expect(groups.admins).toEqual(["sysadmin@x.com"]);
+    expect(groups.oversight).toEqual([
+      "kpiadmin@x.com",
+      "lead@x.com",
+      "reviewer@x.com",
+      "sysadmin@x.com",
+    ]);
+  });
+
   test("admin login reset clears the credential and sessions; self/non-admin blocked", async () => {
     const t = harness();
     const { as: admin, userId: adminId } = await makeUser(t, {

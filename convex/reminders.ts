@@ -6,7 +6,7 @@ import { internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { recordAudit } from "./audit";
-import { adminUsers, resolveDisplayName } from "./emails";
+import { oversightUsers, resolveDisplayName } from "./emails";
 import { captureGrainForFrequency } from "./lib/periods";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
 
@@ -210,7 +210,7 @@ export const scanSubmissionReminders = internalMutation({
             dedupeKey,
           });
           const adminNotices = [];
-          for (const admin of await adminUsers(ctx)) {
+          for (const admin of await oversightUsers(ctx)) {
             adminNotices.push({
               userId: admin._id,
               email: admin.email!,

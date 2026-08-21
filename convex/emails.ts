@@ -1,7 +1,9 @@
 /**
- * Email notifications for KPI updates — sent to every System Admin and to the
- * person who logged the update, using the branded template in
- * lib/emailTemplate.ts via the Resend API.
+ * Email notifications for KPI updates — sent to the whole oversight group
+ * (System Admins, KPI Admins, Managers, Reviewers) and to the person who
+ * logged the update, using the branded template in lib/emailTemplate.ts via
+ * the Resend API. Security-sensitive notices (password changes, malware
+ * flags) stay System-Admin-only — they are the only ones who can act.
  *
  * Config (Convex env):
  *   RESEND_API_KEY  — required to actually send; without it we skip sending
@@ -18,7 +20,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { buildKpiUpdateEmail, buildNoticeEmail } from "./lib/emailTemplate";
 import { formatPercent } from "./lib/format";
-import { STATUS_BAND_LABELS } from "./lib/types";
+import { STATUS_BAND_LABELS, type AppRole } from "./lib/types";
 
 /**
  * Friendly display name for greetings: profile name → linked roster name →
@@ -39,31 +41,58 @@ export async function resolveDisplayName(
   return (user.email ?? "there").split("@")[0]!;
 }
 
-/** Active System Admin users with an email, deduped. */
-export async function adminUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
-  const rows = await ctx.db
-    .query("userRoleAssignments")
-    .withIndex("by_role", (q) => q.eq("role", "system_admin"))
-    .take(100);
+/** Active users holding any of the given app roles, with an email, deduped. */
+export async function usersWithRoles(
+  ctx: QueryCtx,
+  roles: readonly AppRole[],
+): Promise<Doc<"users">[]> {
   const out: Doc<"users">[] = [];
   const seen = new Set<string>();
-  for (const a of rows) {
-    if (!a.isActive) continue;
-    const u = await ctx.db.get(a.userId);
-    if (!u?.email || u.isActive === false) continue;
-    const key = u.email.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(u);
+  for (const role of roles) {
+    const rows = await ctx.db
+      .query("userRoleAssignments")
+      .withIndex("by_role", (q) => q.eq("role", role))
+      .take(100);
+    for (const a of rows) {
+      if (!a.isActive) continue;
+      const u = await ctx.db.get(a.userId);
+      if (!u?.email || u.isActive === false) continue;
+      const key = u.email.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(u);
+    }
   }
   return out;
+}
+
+/** Active System Admin users with an email, deduped. */
+export async function adminUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
+  return usersWithRoles(ctx, ["system_admin"]);
+}
+
+/**
+ * The full oversight group for KPI-flow notifications: everyone whose role
+ * gives them a stake in submissions and reviews. KPI updates, evidence
+ * submissions, and deadline escalations fan out to all of them, so nothing
+ * waits on a single admin noticing.
+ */
+export const OVERSIGHT_ROLES = [
+  "system_admin",
+  "kpi_admin",
+  "manager",
+  "reviewer",
+] as const satisfies readonly AppRole[];
+
+export async function oversightUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
+  return usersWithRoles(ctx, OVERSIGHT_ROLES);
 }
 
 const vRecipient = v.object({
   email: v.string(),
   name: v.string(),
   userId: v.id("users"),
-  variant: v.union(v.literal("admin"), v.literal("self")),
+  variant: v.union(v.literal("admin"), v.literal("self"), v.literal("employee")),
 });
 
 /** Gather everything the notification needs in one transactional read. */
@@ -103,7 +132,7 @@ export const getKpiUpdatePayload = internalQuery({
       email: string;
       name: string;
       userId: typeof activity.createdByUserId;
-      variant: "admin" | "self";
+      variant: "admin" | "self" | "employee";
     }[] = [];
 
     // The person who logged the update (greeted by name, never raw email).
@@ -115,10 +144,30 @@ export const getKpiUpdatePayload = internalQuery({
         variant: "self",
       });
     }
-
-    // Every active System Admin (except the actor — they get the "self" mail).
     const seen = new Set(recipients.map((r) => r.email.toLowerCase()));
-    for (const admin of await adminUsers(ctx)) {
+
+    // The employee the KPI belongs to — emailed even when someone else
+    // (an admin backfilling, a manager) logged the update on their behalf.
+    const employeeUser = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", activity.employeeId))
+      .first();
+    if (
+      employeeUser?.email &&
+      employeeUser.isActive !== false &&
+      !seen.has(employeeUser.email.toLowerCase())
+    ) {
+      seen.add(employeeUser.email.toLowerCase());
+      recipients.push({
+        email: employeeUser.email,
+        name: await resolveDisplayName(ctx, employeeUser),
+        userId: employeeUser._id,
+        variant: "employee",
+      });
+    }
+
+    // The whole oversight group (except anyone already covered above).
+    for (const admin of await oversightUsers(ctx)) {
       const key = admin.email!.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -177,7 +226,9 @@ export const recordNotifications = internalMutation({
         title:
           r.variant === "self"
             ? "Your KPI update was recorded"
-            : `KPI update — ${args.employeeName}`,
+            : r.variant === "employee"
+              ? "A KPI update was logged for you"
+              : `KPI update — ${args.employeeName}`,
         body: `${args.activityTitle} (${args.emailed ? "email sent" : "email pending setup"})`,
         href: args.kpiPath,
         createdAt: now,
