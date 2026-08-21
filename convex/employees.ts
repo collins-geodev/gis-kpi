@@ -9,7 +9,8 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertEmployeeReadScope, getAuthContext, readableEmployeeIds } from "./authz";
 import { scoreScorecard, type ScorecardItem } from "./lib/scoring";
-import { BASELINE_PERFORMANCE_YEAR } from "./lib/types";
+import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
+import { LAGOS_OFFSET_MS, cadencePeriodKey, monthKey } from "./lib/periods";
 
 function employeeDTO(e: Doc<"employees">) {
   return {
@@ -36,12 +37,39 @@ async function baselineYearId(ctx: {
   return year?._id ?? null;
 }
 
-/** Directory of employees the caller may see, with a scorecard headline each. */
+/**
+ * Directory of employees the caller may see, with a scorecard headline each
+ * for the selected month (default: the current Lagos month). The headline is
+ * the official points convention — earned / configured, unmeasured KPIs
+ * count as 0 — alongside the on-measured average for context.
+ */
 export const listScoped = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    /** Month under review, e.g. "2026-M07"; omitted = current Lagos month. */
+    periodKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
     await getAuthContext(ctx); // must be authenticated with a role
     const scope = await readableEmployeeIds(ctx);
+
+    if (
+      args.periodKey !== undefined &&
+      !/^\d{4}-M(0[1-9]|1[0-2])$/.test(args.periodKey)
+    ) {
+      throw new ConvexError(`Invalid month key: ${args.periodKey}`);
+    }
+    const nowLagos = new Date(Date.now() + LAGOS_OFFSET_MS);
+    const selectedMonth =
+      args.periodKey ?? monthKey(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth());
+    const lastIdx =
+      nowLagos.getUTCFullYear() > BASELINE_PERFORMANCE_YEAR
+        ? 11
+        : nowLagos.getUTCFullYear() < BASELINE_PERFORMANCE_YEAR
+          ? 0
+          : nowLagos.getUTCMonth();
+    const availableMonths = Array.from({ length: lastIdx + 1 }, (_, i) =>
+      monthKey(BASELINE_PERFORMANCE_YEAR, i),
+    ).reverse();
 
     let employees: Doc<"employees">[];
     if (scope === "all") {
@@ -66,20 +94,34 @@ export const listScoped = query({
             )
             .collect()
         : [];
-      const items: ScorecardItem[] = assignments.map((a) => ({
-        weight: a.weight,
-        cappedAttainment: null, // no measurements in the baseline yet
-      }));
+      const items: ScorecardItem[] = [];
+      for (const a of assignments) {
+        const pk = cadencePeriodKey(a.frequency as Frequency, selectedMonth);
+        const m = await ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", a._id).eq("periodKey", pk),
+          )
+          .first();
+        items.push({
+          weight: a.weight,
+          cappedAttainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
+          evidenceComplete: m?.evidenceComplete ?? false,
+          cadenceCompliant: m?.cadenceCompliant ?? false,
+        });
+      }
       const scorecard = scoreScorecard(items);
       rows.push({
         ...employeeDTO(e),
         kpiCount: assignments.length,
         configuredWeight: scorecard.configuredWeight,
-        assignedWeightScore: scorecard.assignedWeightScore,
+        overallPct: scorecard.normalizedScore,
+        pointsEarned: scorecard.assignedWeightScore,
+        scoreOnMeasured: scorecard.scoreOnMeasured,
         itemsWithData: scorecard.itemsWithData,
       });
     }
-    return rows;
+    return { periodKey: selectedMonth, availableMonths, rows };
   },
 });
 

@@ -20,21 +20,45 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Users } from "lucide-react";
 
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** "2026-M07" → "Jul 2026". */
+function monthLabel(key: string): string {
+  const m = /^(\d{4})-M(\d{2})$/.exec(key);
+  if (!m) return key;
+  return `${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+}
+
 export default function TeamPage() {
-  const employees = useQuery(api.employees.listScoped);
+  const [period, setPeriod] = useState<string>("");
+  const data = useQuery(api.employees.listScoped, period ? { periodKey: period } : {});
   const [role, setRole] = useState<string>("all");
   const [location, setLocation] = useState<string>("all");
 
+  const rows = useMemo(() => data?.rows ?? [], [data]);
   const roles = useMemo(
-    () => Array.from(new Set((employees ?? []).map((e) => e.jobRole))).sort(),
-    [employees],
+    () => Array.from(new Set(rows.map((e) => e.jobRole))).sort(),
+    [rows],
   );
   const locations = useMemo(
-    () => Array.from(new Set((employees ?? []).map((e) => e.canonicalLocation))).sort(),
-    [employees],
+    () => Array.from(new Set(rows.map((e) => e.canonicalLocation))).sort(),
+    [rows],
   );
 
-  const filtered = (employees ?? []).filter(
+  const filtered = rows.filter(
     (e) =>
       (role === "all" || e.jobRole === role) &&
       (location === "all" || e.canonicalLocation === location),
@@ -44,10 +68,25 @@ export default function TeamPage() {
     <div className="space-y-6">
       <PageHeader
         title="Team Performance"
-        description="Role-based scorecards for the GIS Team. Scores read “No Data” until activities and approved evidence are captured — comparisons always show role and configured weight for fairness."
+        description="Role-based scorecards for the GIS Team. The overall score is points earned out of the configured 100 — unmeasured KPIs count as 0 until captured, so sparse submission never inflates a score."
       />
 
       <div className="flex flex-wrap gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Month</span>
+          <select
+            value={period || (data?.periodKey ?? "")}
+            onChange={(e) => setPeriod(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Select a month"
+          >
+            {(data?.availableMonths ?? []).map((k) => (
+              <option key={k} value={k}>
+                {monthLabel(k)}
+              </option>
+            ))}
+          </select>
+        </label>
         <FilterSelect label="Role" value={role} onChange={setRole} options={roles} />
         <FilterSelect
           label="Location"
@@ -59,7 +98,7 @@ export default function TeamPage() {
 
       <Card>
         <CardContent className="p-0">
-          {employees === undefined ? (
+          {data === undefined ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-10" />
@@ -79,7 +118,8 @@ export default function TeamPage() {
                   <TableHead>Employee</TableHead>
                   <TableHead>Job role</TableHead>
                   <TableHead>Location</TableHead>
-                  <TableHead className="text-right">KPIs</TableHead>
+                  <TableHead className="text-right">Overall score</TableHead>
+                  <TableHead className="text-right">On measured</TableHead>
                   <TableHead className="text-right">Configured weight</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -99,7 +139,22 @@ export default function TeamPage() {
                     </TableCell>
                     <TableCell className="text-sm">{e.jobRole}</TableCell>
                     <TableCell className="text-sm">{e.canonicalLocation}</TableCell>
-                    <TableCell className="tabular text-right">{e.kpiCount}</TableCell>
+                    <TableCell className="tabular text-right">
+                      <span className="font-medium">{e.overallPct.toFixed(1)}%</span>
+                      <div className="text-xs text-muted-foreground">
+                        {e.pointsEarned.toFixed(1)} / {e.configuredWeight} pts
+                      </div>
+                    </TableCell>
+                    <TableCell className="tabular text-right">
+                      {e.scoreOnMeasured === null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        `${e.scoreOnMeasured.toFixed(1)}%`
+                      )}
+                      <div className="text-xs text-muted-foreground">
+                        {e.itemsWithData} of {e.kpiCount} KPIs
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">
                       <Badge variant={e.configuredWeight === 100 ? "success" : "brand"}>
                         {e.configuredWeight} / 100
