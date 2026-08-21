@@ -58,6 +58,34 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** Upload timestamp → its Lagos month as a sortable "2026-M07" key. */
+function uploadMonthKey(ts: number): string {
+  const d = new Date(ts + 60 * 60 * 1000); // Africa/Lagos = UTC+1
+  return `${d.getUTCFullYear()}-M${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "2026-M07" → "Jul 2026". */
+function uploadMonthLabel(key: string): string {
+  const m = /^(\d{4})-M(\d{2})$/.exec(key);
+  if (!m) return key;
+  return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+}
+
 /** Convex site URL (HTTP actions) derived from the deployment URL. */
 const CONVEX_SITE_URL =
   process.env.NEXT_PUBLIC_CONVEX_SITE_URL ??
@@ -143,6 +171,7 @@ export default function EvidenceCentrePage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<(typeof STATUS_FILTERS)[number]>("all");
   const [category, setCategory] = useState("all");
+  const [month, setMonth] = useState("all");
 
   const roles = (me?.roles ?? []) as AppRole[];
   const seesOthers = roles.some((r) =>
@@ -161,18 +190,28 @@ export default function EvidenceCentrePage() {
     [rows],
   );
 
+  // Months that actually have uploads (Lagos wall-clock), newest first.
+  const months = useMemo(
+    () =>
+      Array.from(new Set((rows ?? []).map((r) => uploadMonthKey(r.uploadedAt))))
+        .sort()
+        .reverse(),
+    [rows],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (rows ?? []).filter((r) => {
       if (status !== "all" && r.reviewStatus !== status) return false;
       if (category !== "all" && r.category !== category) return false;
+      if (month !== "all" && uploadMonthKey(r.uploadedAt) !== month) return false;
       if (!q) return true;
       return [r.title, r.originalFilename, r.objective ?? "", r.employeeName]
         .join(" ")
         .toLowerCase()
         .includes(q);
     });
-  }, [rows, search, status, category]);
+  }, [rows, search, status, category, month]);
 
   const stats = useMemo(() => {
     const all = rows ?? [];
@@ -287,6 +326,19 @@ export default function EvidenceCentrePage() {
           {categories.map((c) => (
             <option key={c} value={c}>
               {c}
+            </option>
+          ))}
+        </select>
+        <select
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          aria-label="Filter by upload month"
+        >
+          <option value="all">All months</option>
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {uploadMonthLabel(m)}
             </option>
           ))}
         </select>
