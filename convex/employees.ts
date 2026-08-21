@@ -151,7 +151,7 @@ export const getDetail = query({
       : [];
 
     const kpiRows = [];
-    const scorecardItems: ScorecardItem[] = [];
+    const scorecardItems: (ScorecardItem & { frequency: string })[] = [];
     for (const a of assignments) {
       const measurements = await ctx.db
         .query("kpiMeasurements")
@@ -163,6 +163,7 @@ export const getDetail = query({
         cappedAttainment: latest?.cappedAttainment ?? null,
         evidenceComplete: latest?.evidenceComplete ?? false,
         cadenceCompliant: latest?.cadenceCompliant ?? false,
+        frequency: a.frequency,
       });
       kpiRows.push({
         assignmentId: a._id,
@@ -185,6 +186,9 @@ export const getDetail = query({
       });
     }
     const scorecard = scoreScorecard(scorecardItems);
+    // Due-to-date for the CURRENT Lagos month — the fair "as of today" view.
+    const nowLagosDetail = new Date(Date.now() + LAGOS_OFFSET_MS);
+    const due = scoreDueToDate(scorecardItems, nowLagosDetail.getUTCMonth() + 1);
 
     // Official score history — frozen, approved snapshots for this employee.
     const snapshots = await ctx.db
@@ -217,6 +221,7 @@ export const getDetail = query({
       employee: employeeDTO(employee),
       kpis: kpiRows,
       scorecard,
+      due,
       history,
       year: BASELINE_PERFORMANCE_YEAR,
     };

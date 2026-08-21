@@ -42,7 +42,7 @@ export default function IndividualPage() {
     );
   }
 
-  const { employee, kpis, scorecard } = data;
+  const { employee, kpis, scorecard, due } = data;
 
   return (
     <div className="space-y-6">
@@ -84,12 +84,17 @@ export default function IndividualPage() {
       />
 
       {/* Scorecard summary */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+        <SummaryStat
+          label="Score · due to date"
+          value={formatPercent(due.duePct / 100, 1)}
+          hint={`${formatNumber(due.dueEarned, 1)} of ${due.dueWeight} pts due so far — quarterly/annual KPIs join when due or measured`}
+          tone="brand"
+        />
         <SummaryStat
           label="Assigned-weight score"
           value={`${formatNumber(scorecard.assignedWeightScore)} / ${scorecard.configuredWeight}`}
           hint={`Configured max ${scorecard.configuredWeight} (not 100)`}
-          tone="brand"
         />
         <SummaryStat
           label="Normalized (÷ configured)"
