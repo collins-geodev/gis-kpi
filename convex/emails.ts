@@ -1,9 +1,15 @@
 /**
- * Email notifications for KPI updates — sent to the whole team (every active
- * user with an app role, employees included) and to the person who logged
- * the update, using the branded template in lib/emailTemplate.ts via the
- * Resend API. Security-sensitive notices (password changes, malware flags)
- * stay System-Admin-only — they are the only ones who can act.
+ * Email notifications, branded via lib/emailTemplate.ts and sent through the
+ * Resend API. Audience model:
+ *  - Oversight roles (System Admin, KPI Admin, Manager, Reviewer) get the
+ *    team-wide feed: every KPI update, evidence submission, and deadline
+ *    escalation.
+ *  - Employees are emailed ONLY about their own KPIs — their updates
+ *    (including ones logged on their behalf), decisions on their evidence,
+ *    their scorecards, and admin actions on their account. Never about
+ *    colleagues' events.
+ *  - Security notices (password changes, malware flags) stay
+ *    System-Admin-only — they are the only ones who can act.
  *
  * Config (Convex env):
  *   RESEND_API_KEY  — required to actually send; without it we skip sending
@@ -20,7 +26,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { buildKpiUpdateEmail, buildNoticeEmail } from "./lib/emailTemplate";
 import { formatPercent } from "./lib/format";
-import { APP_ROLES, STATUS_BAND_LABELS, type AppRole } from "./lib/types";
+import { STATUS_BAND_LABELS, type AppRole } from "./lib/types";
 
 /**
  * Friendly display name for greetings: profile name → linked roster name →
@@ -72,14 +78,20 @@ export async function adminUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
 }
 
 /**
- * The full-team notification audience: every active user holding ANY app
- * role — employees included. KPI updates, evidence submissions, and deadline
- * escalations fan out to all of them, so the whole team sees the work as it
- * happens. Security notices (password changes, malware flags) deliberately
- * stay with adminUsers — only System Admins can act on those.
+ * The oversight audience for team-wide events: everyone whose role gives
+ * them a stake in ALL submissions and reviews. Employees are deliberately
+ * excluded — they get individually-targeted notices about their own KPIs
+ * instead, never a feed of colleagues' events.
  */
-export async function teamUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
-  return usersWithRoles(ctx, APP_ROLES);
+export const OVERSIGHT_ROLES = [
+  "system_admin",
+  "kpi_admin",
+  "manager",
+  "reviewer",
+] as const satisfies readonly AppRole[];
+
+export async function oversightUsers(ctx: QueryCtx): Promise<Doc<"users">[]> {
+  return usersWithRoles(ctx, OVERSIGHT_ROLES);
 }
 
 const vRecipient = v.object({
@@ -160,8 +172,8 @@ export const getKpiUpdatePayload = internalQuery({
       });
     }
 
-    // The whole team (except anyone already covered above).
-    for (const admin of await teamUsers(ctx)) {
+    // The oversight group (except anyone already covered above).
+    for (const admin of await oversightUsers(ctx)) {
       const key = admin.email!.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);

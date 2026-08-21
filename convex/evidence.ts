@@ -7,7 +7,7 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { ConvexError, v } from "convex/values";
-import { teamUsers, resolveDisplayName } from "./emails";
+import { oversightUsers, resolveDisplayName } from "./emails";
 import {
   assertEmployeeReadScope,
   assertEvidenceAccess,
@@ -184,12 +184,51 @@ export const saveEvidence = mutation({
       after: { kpiAssignmentId: args.kpiAssignmentId },
     });
 
-    // Submitting for review notifies the whole team (email + in-app).
+    // Submitting for review notifies the oversight group (email + in-app),
+    // and — when someone else submitted on their behalf — the employee whose
+    // KPI it is. Employees never receive colleagues' evidence alerts.
     const employee = await ctx.db.get(assignment.employeeId);
     const uploaderName = await resolveDisplayName(ctx, user);
     const notices = [];
-    for (const admin of await teamUsers(ctx)) {
+
+    const employeeUser = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", assignment.employeeId))
+      .first();
+    if (
+      employeeUser?.email &&
+      employeeUser.isActive !== false &&
+      employeeUser._id !== user._id
+    ) {
+      notices.push({
+        userId: employeeUser._id,
+        email: employeeUser.email,
+        recipientName: await resolveDisplayName(ctx, employeeUser),
+        subject: `Evidence was submitted for your KPI — ${args.title.slice(0, 80)}`,
+        intro: `*${uploaderName}* submitted evidence on your KPI (*${assignment.objective.slice(0, 120)}*). It is now awaiting verification and approval — you'll be notified of the decision.`,
+        panelTitle: "Evidence details",
+        rows: [
+          { label: "Evidence", value: args.title.slice(0, 200), strong: true },
+          { label: "KPI objective", value: assignment.objective },
+          { label: "Category", value: args.category.slice(0, 80) },
+          {
+            label: "File",
+            value: args.storageId
+              ? args.originalFilename.slice(0, 120)
+              : (args.externalUrl ?? "link"),
+          },
+        ],
+        ctaLabel: "View your KPI",
+        ctaPath: `/kpi/${args.kpiAssignmentId}`,
+        inAppTitle: "Evidence was submitted for your KPI",
+        inAppBody: args.title.slice(0, 200),
+      });
+    }
+
+    const seen = new Set(notices.map((n) => n.email.toLowerCase()));
+    for (const admin of await oversightUsers(ctx)) {
       if (admin._id === user._id) continue;
+      if (seen.has(admin.email!.toLowerCase())) continue;
       notices.push({
         userId: admin._id,
         email: admin.email!,

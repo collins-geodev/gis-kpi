@@ -10,10 +10,12 @@
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { vAppRole } from "./validators";
 import { getCurrentUser, getUserRoles, requireRole, requireUser } from "./authz";
 import { recordAudit } from "./audit";
+import { resolveDisplayName } from "./emails";
 
 export const currentUser = query({
   args: {},
@@ -282,15 +284,37 @@ export const adminResetLogin = mutation({
       sessionsDeleted++;
     }
 
-    // Seen after they re-register — confirms the account they came back to
-    // is the same one, with everything still attached.
-    await ctx.db.insert("notifications", {
-      userId: target._id,
-      kind: "login_reset",
-      title: "Your login was reset by an administrator",
-      body: "Your previous password no longer works. You have re-registered successfully — your roles and records are intact.",
-      href: "/overview",
-      createdAt: Date.now(),
+    // Email + in-app notice to the employee: the email reaches their mailbox
+    // immediately with re-registration steps; the in-app copy confirms, once
+    // they are back in, that it is the same account with everything attached.
+    await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+      entityType: "user",
+      entityId: args.userId,
+      auditAction: "login_reset",
+      notices: [
+        {
+          userId: target._id,
+          email: target.email,
+          recipientName: await resolveDisplayName(ctx, target),
+          subject: "Your dashboard login was reset",
+          intro:
+            "An administrator reset your GIS KPI Dashboard login. Your previous password no longer works and every session was signed out. To get back in: open the sign-in page, choose *Create one*, and register with this same email address and a new password — your roles and records reconnect automatically.",
+          panelTitle: "Login reset",
+          rows: [
+            { label: "Account", value: target.email, strong: true },
+            { label: "Old password", value: "No longer valid" },
+            {
+              label: "Action needed",
+              value: 'Sign-in page → "Create one" → same email + new password',
+            },
+          ],
+          ctaLabel: "Go to the sign-in page",
+          ctaPath: "/signin",
+          inAppTitle: "Your login was reset by an administrator",
+          inAppBody:
+            "Your previous password no longer works. You have re-registered successfully — your roles and records are intact.",
+        },
+      ],
     });
     await recordAudit(ctx, {
       entityType: "user",
