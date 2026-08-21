@@ -27,6 +27,30 @@ import {
 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** Human label for any period key: "2026-M07" → "Jul 2026", "2026-Q3" → "Q3 2026". */
+function periodLabel(pk: string): string {
+  const m = /^(\d{4})-M(\d{2})$/.exec(pk);
+  if (m) return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+  const q = /^(\d{4})-Q([1-4])$/.exec(pk);
+  if (q) return `Q${q[2]} ${q[1]}`;
+  return pk;
+}
+
 export default function ReviewPage() {
   const me = useQuery(api.access.currentUser);
   const roles = (me?.roles ?? []) as AppRole[];
@@ -275,7 +299,9 @@ export default function ReviewPage() {
                       >
                         {g.employeeName}
                       </Link>{" "}
-                      <span className="text-muted-foreground">· {g.periodKey}</span>
+                      <span className="text-muted-foreground">
+                        · {periodLabel(g.periodKey)}
+                      </span>
                       {official && (
                         <Badge variant="success" className="ml-2 align-middle">
                           approved

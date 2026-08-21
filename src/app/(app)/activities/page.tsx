@@ -75,6 +75,30 @@ type Assignment = {
   kpiCategory: string;
 };
 
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** Human label for any period key: "2026-M07" → "Jul 2026", "2026-Q3" → "Q3 2026". */
+function periodLabel(pk: string): string {
+  const m = /^(\d{4})-M(\d{2})$/.exec(pk);
+  if (m) return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+  const q = /^(\d{4})-Q([1-4])$/.exec(pk);
+  if (q) return `Q${q[2]} ${q[1]}`;
+  return pk;
+}
+
 /** KPI-specific overrides for the generic mode field labels. */
 const KEY_FIELD_LABELS: Record<string, Record<string, string>> = {
   qa_data_quality: {
@@ -817,7 +841,7 @@ export default function ActivitiesPage() {
                         <Badge variant="muted">{a.status}</Badge>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {a.periodKey} ·{" "}
+                        {periodLabel(a.periodKey)} ·{" "}
                         {new Date(a.activityAt).toLocaleDateString("en-GB", {
                           timeZone: "Africa/Lagos",
                         })}
@@ -846,7 +870,7 @@ export default function ActivitiesPage() {
                         onClick={() => {
                           if (
                             !window.confirm(
-                              `Delete “${a.title}” (${a.periodKey})? The KPI measurement will be recomputed without it.`,
+                              `Delete “${a.title}” (${periodLabel(a.periodKey)})? The KPI measurement will be recomputed without it.`,
                             )
                           )
                             return;

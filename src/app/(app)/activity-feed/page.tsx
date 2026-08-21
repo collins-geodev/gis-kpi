@@ -30,11 +30,13 @@ const MONTH_NAMES = [
   "Dec",
 ];
 
-/** "2026-M07" → "Jul 2026". */
+/** Human label for any period key: "2026-M07" → "Jul 2026", "2026-Q3" → "Q3 2026". */
 function monthLabel(key: string): string {
   const m = /^(\d{4})-M(\d{2})$/.exec(key);
-  if (!m) return key;
-  return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+  if (m) return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+  const q = /^(\d{4})-Q([1-4])$/.exec(key);
+  if (q) return `Q${q[2]} ${q[1]}`;
+  return key;
 }
 
 function timeAgo(ms: number): string {
@@ -124,7 +126,7 @@ export default function ActivityFeedPage() {
                     </Link>
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {a.objective} · {a.periodKey} · logged by {a.actorName}
+                    {a.objective} · {monthLabel(a.periodKey)} · logged by {a.actorName}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
