@@ -13,6 +13,7 @@ import {
   assertEvidenceAccess,
   AuthError,
   getAuthContext,
+  getUserRoles,
   readableEmployeeIds,
   requireRole,
 } from "./authz";
@@ -185,17 +186,21 @@ export const saveEvidence = mutation({
     });
 
     // Submitting for review notifies the oversight group (email + in-app),
-    // and — when someone else submitted on their behalf — the employee whose
-    // KPI it is. Employees never receive colleagues' evidence alerts.
+    // and — when a SYSTEM ADMIN submitted on their behalf — the employee
+    // whose KPI it is. Employees never receive colleagues' evidence alerts.
     const employee = await ctx.db.get(assignment.employeeId);
     const uploaderName = await resolveDisplayName(ctx, user);
     const notices = [];
 
+    const uploaderIsSystemAdmin = (await getUserRoles(ctx, user._id)).includes(
+      "system_admin",
+    );
     const employeeUser = await ctx.db
       .query("users")
       .withIndex("by_employee", (q) => q.eq("employeeId", assignment.employeeId))
       .first();
     if (
+      uploaderIsSystemAdmin &&
       employeeUser?.email &&
       employeeUser.isActive !== false &&
       employeeUser._id !== user._id

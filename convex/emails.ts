@@ -25,6 +25,7 @@ import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { buildKpiUpdateEmail, buildNoticeEmail } from "./lib/emailTemplate";
+import { getUserRoles } from "./authz";
 import { formatPercent } from "./lib/format";
 import { STATUS_BAND_LABELS, type AppRole } from "./lib/types";
 
@@ -152,13 +153,18 @@ export const getKpiUpdatePayload = internalQuery({
     }
     const seen = new Set(recipients.map((r) => r.email.toLowerCase()));
 
-    // The employee the KPI belongs to — emailed even when someone else
-    // (an admin backfilling, a manager) logged the update on their behalf.
+    // The employee the KPI belongs to — emailed when a SYSTEM ADMIN logged
+    // the update on their behalf (admin direction: other roles acting on an
+    // employee's KPI do not trigger this notice).
+    const actorIsSystemAdmin = actor
+      ? (await getUserRoles(ctx, actor._id)).includes("system_admin")
+      : false;
     const employeeUser = await ctx.db
       .query("users")
       .withIndex("by_employee", (q) => q.eq("employeeId", activity.employeeId))
       .first();
     if (
+      actorIsSystemAdmin &&
       employeeUser?.email &&
       employeeUser.isActive !== false &&
       !seen.has(employeeUser.email.toLowerCase())
