@@ -336,6 +336,50 @@ export function scoreScorecard(items: readonly ScorecardItem[]): ScorecardResult
   };
 }
 
+// --- Due-to-date scoring ---------------------------------------------------
+
+export interface DueItem {
+  weight: number;
+  cappedAttainment: number | null;
+  frequency: string;
+}
+
+/**
+ * The fair monthly headline: score against only the weight DUE by the end of
+ * the selected month. Monthly (and daily/weekly) KPIs are always due;
+ * quarterly KPIs fall due in quarter-end months (Mar/Jun/Sep/Dec); annual
+ * KPIs in December. A quarterly/annual KPI that already HAS data counts
+ * immediately — early completion is credited, never ignored. Missing data on
+ * a DUE KPI scores 0 (accountability preserved); a not-yet-due KPI simply
+ * stays out of the denominator instead of unfairly dragging the month.
+ */
+export function scoreDueToDate(
+  items: readonly DueItem[],
+  monthIndex1: number,
+): { dueWeight: number; dueEarned: number; duePct: number } {
+  let dueWeight = 0;
+  let dueEarned = 0;
+  for (const it of items) {
+    const has = it.cappedAttainment !== null;
+    const due =
+      it.frequency === "Quarterly"
+        ? has || monthIndex1 % 3 === 0
+        : it.frequency === "Annually"
+          ? has || monthIndex1 === 12
+          : true;
+    if (!due) continue;
+    dueWeight += it.weight;
+    if (has) dueEarned += weightedContribution(it.cappedAttainment!, it.weight);
+  }
+  dueWeight = round(dueWeight, 4);
+  dueEarned = round(dueEarned, 4);
+  return {
+    dueWeight,
+    dueEarned,
+    duePct: dueWeight === 0 ? 0 : round((dueEarned / dueWeight) * 100, 2),
+  };
+}
+
 // --- Period aggregation ----------------------------------------------------
 
 export interface RatioObservation {

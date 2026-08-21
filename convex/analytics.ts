@@ -9,19 +9,32 @@ import type { QueryCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertEmployeeReadScope, getAuthContext } from "./authz";
-import { scoreScorecard, type ScorecardItem } from "./lib/scoring";
+import { scoreDueToDate, scoreScorecard, type ScorecardItem } from "./lib/scoring";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
 import { LAGOS_OFFSET_MS, cadencePeriodKey, monthKey } from "./lib/periods";
 
 export const dashboard = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    /** Narrow every chart and total to one employee's data. */
+    employeeId: v.optional(v.id("employees")),
+  },
+  handler: async (ctx, args) => {
     await getAuthContext(ctx); // any authenticated user with a role
+    if (args.employeeId) await assertEmployeeReadScope(ctx, args.employeeId);
+    const only = args.employeeId;
 
-    const employees = await ctx.db.query("employees").take(2000);
-    const assignments = await ctx.db.query("kpiAssignments").take(5000);
-    const issues = await ctx.db.query("dataQualityIssues").take(5000);
-    const measurements = await ctx.db.query("kpiMeasurements").take(5000);
+    const employees = (await ctx.db.query("employees").take(2000)).filter(
+      (e) => !only || e._id === only,
+    );
+    const assignments = (await ctx.db.query("kpiAssignments").take(5000)).filter(
+      (a) => !only || a.employeeId === only,
+    );
+    const issues = (await ctx.db.query("dataQualityIssues").take(5000)).filter(
+      (i) => !only || i.employeeId === only,
+    );
+    const measurements = (await ctx.db.query("kpiMeasurements").take(5000)).filter(
+      (m) => !only || m.employeeId === only,
+    );
 
     const countBy = <T>(items: T[], key: (t: T) => string) => {
       const m: Record<string, number> = {};
@@ -67,6 +80,7 @@ export const dashboard = query({
     const scoreTrend = buildScoreTrend(
       snapshots
         .filter((s) => s.scope === "individual" && s.approvalState === "approved")
+        .filter((s) => !only || s.scopeRef === only)
         .map((s) => ({
           scopeRef: s.scopeRef,
           periodKey: s.periodKey,
@@ -192,19 +206,20 @@ export const employeeAnalytics = query({
       id: Id<"employees">;
       displayName: string;
       jobRole: string;
-      overallPct: number;
+      duePct: number;
     }[] = [];
     if (canSelect) {
       const selMonth =
         args.periodKey && /^\d{4}-M(0[1-9]|1[0-2])$/.test(args.periodKey)
           ? args.periodKey
           : monthKey(nowLagos.getUTCFullYear(), nowLagos.getUTCMonth());
+      const selIdx = Number(selMonth.split("-M")[1]);
       const year = await ctx.db
         .query("performanceYears")
         .withIndex("by_year", (q) => q.eq("year", BASELINE_PERFORMANCE_YEAR))
         .first();
       for (const e of await ctx.db.query("employees").take(2000)) {
-        let overallPct = 0;
+        let duePct = 0;
         if (year) {
           const assignments = await ctx.db
             .query("kpiAssignments")
@@ -212,7 +227,7 @@ export const employeeAnalytics = query({
               q.eq("employeeId", e._id).eq("performanceYearId", year._id),
             )
             .collect();
-          const items: ScorecardItem[] = [];
+          const items = [];
           for (const a of assignments) {
             const pk = cadencePeriodKey(a.frequency as Frequency, selMonth);
             const m = await ctx.db
@@ -224,22 +239,20 @@ export const employeeAnalytics = query({
             items.push({
               weight: a.weight,
               cappedAttainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
-              evidenceComplete: false,
-              cadenceCompliant: false,
+              frequency: a.frequency,
             });
           }
-          overallPct = scoreScorecard(items).normalizedScore;
+          duePct = scoreDueToDate(items, selIdx).duePct;
         }
         roster.push({
           id: e._id,
           displayName: e.displayName,
           jobRole: e.jobRole,
-          overallPct,
+          duePct,
         });
       }
       roster.sort(
-        (a, b) =>
-          b.overallPct - a.overallPct || a.displayName.localeCompare(b.displayName),
+        (a, b) => b.duePct - a.duePct || a.displayName.localeCompare(b.displayName),
       );
     }
 
@@ -306,6 +319,10 @@ export async function computeEmployeeAnalytics(
     throw new ConvexError(`Invalid month key: ${periodKey}`);
   }
   const currentMonthKey = periodKey ?? nowMonthKey;
+  const [selYear, selMonth1] = currentMonthKey.split("-M").map(Number) as [
+    number,
+    number,
+  ];
 
   const measurementAt = async (assignmentId: Id<"kpiAssignments">, pk: string) =>
     await ctx.db
@@ -332,7 +349,7 @@ export async function computeEmployeeAnalytics(
   }
 
   // Per-KPI attainment (current cadence bucket) + peer average.
-  const scorecardItems: ScorecardItem[] = [];
+  const scorecardItems: (ScorecardItem & { frequency: string })[] = [];
   const kpis = [];
   for (const a of assignments.sort((x, y) => x.displayOrder - y.displayOrder)) {
     const pk = cadencePeriodKey(a.frequency as Frequency, currentMonthKey);
@@ -351,6 +368,7 @@ export async function computeEmployeeAnalytics(
       cappedAttainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
       evidenceComplete: m?.evidenceComplete ?? false,
       cadenceCompliant: m?.cadenceCompliant ?? false,
+      frequency: a.frequency,
     });
     kpis.push({
       assignmentId: a._id,
@@ -372,6 +390,7 @@ export async function computeEmployeeAnalytics(
     });
   }
   const scorecard = scoreScorecard(scorecardItems);
+  const due = scoreDueToDate(scorecardItems, selMonth1);
 
   // Monthly trend across monthly-tracked KPIs (month-grain measurements).
   const weightByAssignment = new Map(assignments.map((a) => [a._id, a.weight]));
@@ -422,10 +441,6 @@ export async function computeEmployeeAnalytics(
     });
 
   // Selected-month activity count uses the real work-dates.
-  const [selYear, selMonth1] = currentMonthKey.split("-M").map(Number) as [
-    number,
-    number,
-  ];
   const monthStart = Date.UTC(selYear, selMonth1 - 1, 1) - LAGOS_OFFSET_MS;
   const monthEnd = Date.UTC(selYear, selMonth1, 1) - LAGOS_OFFSET_MS;
   const COUNTED = ["submitted", "verified", "approved", "locked"];
@@ -451,6 +466,9 @@ export async function computeEmployeeAnalytics(
       overallPct: scorecard.normalizedScore,
       pointsEarned: scorecard.assignedWeightScore,
       pointsPossible: scorecard.configuredWeight,
+      duePct: due.duePct,
+      dueEarned: due.dueEarned,
+      dueWeight: due.dueWeight,
       // Quality of what HAS been submitted (context, not the headline).
       scoreOnMeasured: scorecard.scoreOnMeasured,
       evidenceCompletionPct: scorecard.evidenceCompletionPct,

@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
+import type { Id } from "@convex/_generated/dataModel";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,7 +17,13 @@ import { STATUS_BAND_LABELS, type StatusBand } from "@convex/lib/types";
 import { EmployeeAnalytics } from "@/components/employee-analytics";
 
 export default function AnalyticsPage() {
-  const data = useQuery(api.analytics.dashboard);
+  // Selecting an employee in the Employee analytics card narrows EVERY chart
+  // and insight below to that person; clearing it restores the team view.
+  const [employeeId, setEmployeeId] = useState<string>("");
+  const data = useQuery(
+    api.analytics.dashboard,
+    employeeId ? { employeeId: employeeId as Id<"employees"> } : {},
+  );
 
   if (data === undefined) {
     return (
@@ -135,8 +143,17 @@ export default function AnalyticsPage() {
         data={data.scoreTrend}
       />
 
-      {/* Per-employee analytics: moderators pick anyone; employees see themselves. */}
-      <EmployeeAnalytics />
+      {/* Per-employee analytics: moderators pick anyone; employees see
+          themselves. The selection also scopes every chart on this page. */}
+      <EmployeeAnalytics selectedId={employeeId} onSelect={setEmployeeId} />
+
+      {employeeId && (
+        <p className="rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-sm">
+          Every chart, gauge, and insight on this page is filtered to the selected
+          employee — choose “Team view” in the employee dropdown to see the whole team
+          again.
+        </p>
+      )}
 
       {/* Insights */}
       <Card className="card-lift border-accent/30">

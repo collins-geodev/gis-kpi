@@ -227,8 +227,8 @@ export default function OverviewPage() {
                     Team leaderboard · {periodLabel(team.periodKey)}
                   </CardTitle>
                   <CardDescription>
-                    Overall score — points earned of the configured 100; unmeasured KPIs
-                    count as 0.
+                    Due-to-date score — points earned against the weight due by this
+                    month; quarterly/annual KPIs join at their deadline or once measured.
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-3">
@@ -254,10 +254,7 @@ export default function OverviewPage() {
               </CardHeader>
               <CardContent className="space-y-1.5">
                 {[...team.rows]
-                  .sort(
-                    (a, b) =>
-                      b.overallPct - a.overallPct || a.displayOrder - b.displayOrder,
-                  )
+                  .sort((a, b) => b.duePct - a.duePct || a.displayOrder - b.displayOrder)
                   .map((e, idx) => (
                     <div
                       key={e.id}
@@ -281,14 +278,13 @@ export default function OverviewPage() {
                       >
                         <div
                           className="h-full rounded-full bg-accent"
-                          style={{ width: `${Math.min(e.overallPct, 100)}%` }}
+                          style={{ width: `${Math.min(e.duePct, 100)}%` }}
                         />
                       </div>
-                      <span className="tabular font-medium">
-                        {e.overallPct.toFixed(1)}%
-                      </span>
+                      <span className="tabular font-medium">{e.duePct.toFixed(1)}%</span>
                       <span className="tabular text-xs text-muted-foreground">
-                        {e.pointsEarned.toFixed(1)} / {e.configuredWeight} pts
+                        {e.dueEarned.toFixed(1)} / {e.dueWeight} pts due ·{" "}
+                        {e.pointsEarned.toFixed(1)} / {e.configuredWeight} yr
                       </span>
                     </div>
                   ))}

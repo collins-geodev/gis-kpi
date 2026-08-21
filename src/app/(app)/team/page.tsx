@@ -43,14 +43,14 @@ export default function TeamPage() {
         (role === "all" || e.jobRole === role) &&
         (location === "all" || e.canonicalLocation === location),
     )
-    // Highest overall score first; ties fall back to the roster order.
-    .sort((a, b) => b.overallPct - a.overallPct || a.displayOrder - b.displayOrder);
+    // Highest due-to-date score first; ties fall back to the roster order.
+    .sort((a, b) => b.duePct - a.duePct || a.displayOrder - b.displayOrder);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Team Performance"
-        description="Role-based scorecards for the GIS Team. The overall score is points earned out of the configured 100 — unmeasured KPIs count as 0 until captured, so sparse submission never inflates a score."
+        description="Role-based scorecards for the GIS Team. The headline is the due-to-date score: points earned against only the weight due by the selected month (quarterly/annual KPIs join at their deadline or as soon as they're measured). Year position shows the same points against the full 100."
       />
 
       <div className="flex flex-wrap gap-3">
@@ -100,7 +100,8 @@ export default function TeamPage() {
                   <TableHead>Employee</TableHead>
                   <TableHead>Job role</TableHead>
                   <TableHead>Location</TableHead>
-                  <TableHead className="text-right">Overall score</TableHead>
+                  <TableHead className="text-right">Score · due to date</TableHead>
+                  <TableHead className="text-right">Year position</TableHead>
                   <TableHead className="text-right">On measured</TableHead>
                   <TableHead className="text-right">Configured weight</TableHead>
                   <TableHead>Status</TableHead>
@@ -122,7 +123,13 @@ export default function TeamPage() {
                     <TableCell className="text-sm">{e.jobRole}</TableCell>
                     <TableCell className="text-sm">{e.canonicalLocation}</TableCell>
                     <TableCell className="tabular text-right">
-                      <span className="font-medium">{e.overallPct.toFixed(1)}%</span>
+                      <span className="font-medium">{e.duePct.toFixed(1)}%</span>
+                      <div className="text-xs text-muted-foreground">
+                        {e.dueEarned.toFixed(1)} / {e.dueWeight} pts due
+                      </div>
+                    </TableCell>
+                    <TableCell className="tabular text-right">
+                      {e.overallPct.toFixed(1)}%
                       <div className="text-xs text-muted-foreground">
                         {e.pointsEarned.toFixed(1)} / {e.configuredWeight} pts
                       </div>

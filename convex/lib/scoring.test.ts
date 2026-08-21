@@ -4,6 +4,7 @@ import {
   aggregateRatios,
   computeAttainment,
   DEFAULT_CAPS,
+  scoreDueToDate,
   scoreScorecard,
   weightedContribution,
   type ScorecardItem,
@@ -369,5 +370,44 @@ describe("period aggregation", () => {
 describe("DEFAULT_CAPS", () => {
   it("defaults to 100% official / 120% stretch", () => {
     expect(DEFAULT_CAPS).toEqual({ officialCap: 1, stretchCap: 1.2 });
+  });
+});
+
+describe("scoreDueToDate", () => {
+  const items = [
+    { weight: 20, cappedAttainment: 1, frequency: "Monthly" },
+    { weight: 15, cappedAttainment: null, frequency: "Monthly" },
+    { weight: 20, cappedAttainment: null, frequency: "Annually" },
+    { weight: 10, cappedAttainment: null, frequency: "Quarterly" },
+  ];
+
+  it("mid-quarter month: only monthly weight is due; missing monthly scores 0", () => {
+    const r = scoreDueToDate(items, 7); // July
+    expect(r.dueWeight).toBe(35); // both monthly KPIs; annual + quarterly not due
+    expect(r.dueEarned).toBe(20);
+    expect(r.duePct).toBeCloseTo(57.14, 1);
+  });
+
+  it("quarter-end pulls quarterly weight into the denominator", () => {
+    const r = scoreDueToDate(items, 9); // September
+    expect(r.dueWeight).toBe(45);
+  });
+
+  it("December makes everything due", () => {
+    const r = scoreDueToDate(items, 12);
+    expect(r.dueWeight).toBe(65);
+  });
+
+  it("early completion of an annual KPI counts immediately", () => {
+    const early = items.map((it) =>
+      it.frequency === "Annually" ? { ...it, cappedAttainment: 1 } : it,
+    );
+    const r = scoreDueToDate(early, 7);
+    expect(r.dueWeight).toBe(55); // annual joins once measured
+    expect(r.dueEarned).toBe(40);
+  });
+
+  it("empty due set scores 0 without dividing by zero", () => {
+    expect(scoreDueToDate([], 7)).toEqual({ dueWeight: 0, dueEarned: 0, duePct: 0 });
   });
 });

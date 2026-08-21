@@ -8,7 +8,7 @@ import { query } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertEmployeeReadScope, getAuthContext, readableEmployeeIds } from "./authz";
-import { scoreScorecard, type ScorecardItem } from "./lib/scoring";
+import { scoreDueToDate, scoreScorecard, type ScorecardItem } from "./lib/scoring";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
 import { LAGOS_OFFSET_MS, cadencePeriodKey, monthKey } from "./lib/periods";
 
@@ -94,7 +94,7 @@ export const listScoped = query({
             )
             .collect()
         : [];
-      const items: ScorecardItem[] = [];
+      const items: (ScorecardItem & { frequency: string })[] = [];
       for (const a of assignments) {
         const pk = cadencePeriodKey(a.frequency as Frequency, selectedMonth);
         const m = await ctx.db
@@ -108,15 +108,20 @@ export const listScoped = query({
           cappedAttainment: m?.hasData ? (m.cappedAttainment ?? null) : null,
           evidenceComplete: m?.evidenceComplete ?? false,
           cadenceCompliant: m?.cadenceCompliant ?? false,
+          frequency: a.frequency,
         });
       }
       const scorecard = scoreScorecard(items);
+      const due = scoreDueToDate(items, Number(selectedMonth.split("-M")[1]));
       rows.push({
         ...employeeDTO(e),
         kpiCount: assignments.length,
         configuredWeight: scorecard.configuredWeight,
         overallPct: scorecard.normalizedScore,
         pointsEarned: scorecard.assignedWeightScore,
+        duePct: due.duePct,
+        dueEarned: due.dueEarned,
+        dueWeight: due.dueWeight,
         scoreOnMeasured: scorecard.scoreOnMeasured,
         itemsWithData: scorecard.itemsWithData,
       });

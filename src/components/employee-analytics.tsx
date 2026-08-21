@@ -46,8 +46,17 @@ const BAR_TONE: Record<string, string> = {
   no_data: "bg-muted-foreground/30",
 };
 
-export function EmployeeAnalytics() {
-  const [selectedId, setSelectedId] = useState<string>("");
+export function EmployeeAnalytics({
+  selectedId: controlledId,
+  onSelect,
+}: {
+  /** Controlled selection: page-level filters (charts, tables) follow it. */
+  selectedId?: string;
+  onSelect?: (employeeId: string) => void;
+} = {}) {
+  const [localId, setLocalId] = useState<string>("");
+  const selectedId = controlledId ?? localId;
+  const setSelectedId = onSelect ?? setLocalId;
   const [period, setPeriod] = useState<string>("");
   const [kpiFilter, setKpiFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -113,16 +122,18 @@ export function EmployeeAnalytics() {
               className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               aria-label="Select an employee"
             >
-              {!data.employee && <option value="">Select an employee…</option>}
+              <option value="">
+                {data.employee ? "— Team view (clear selection)" : "Select an employee…"}
+              </option>
               {data.roster.map(
                 (r: {
                   id: string;
                   displayName: string;
                   jobRole: string;
-                  overallPct: number;
+                  duePct: number;
                 }) => (
                   <option key={r.id} value={r.id}>
-                    {r.overallPct.toFixed(1)}% — {r.displayName} — {r.jobRole}
+                    {r.duePct.toFixed(1)}% — {r.displayName} — {r.jobRole}
                   </option>
                 ),
               )}
@@ -157,11 +168,16 @@ export function EmployeeAnalytics() {
           </div>
 
           {/* Tiles */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
             <MiniStat
-              label="Overall score"
+              label="Score · due to date"
+              value={`${data.tiles.duePct.toFixed(1)}%`}
+              hint={`${data.tiles.dueEarned.toFixed(1)} of ${data.tiles.dueWeight} pts due by ${data.currentPeriodKey ? periodLabel(data.currentPeriodKey) : "now"} — quarterly/annual KPIs join when due or measured`}
+            />
+            <MiniStat
+              label="Year position"
               value={`${data.tiles.overallPct.toFixed(1)}%`}
-              hint={`${data.tiles.pointsEarned.toFixed(1)} of ${data.tiles.pointsPossible} pts — unmeasured KPIs count as 0`}
+              hint={`${data.tiles.pointsEarned.toFixed(1)} of ${data.tiles.pointsPossible} pts — the full-year scorecard; unmeasured KPIs count as 0`}
             />
             <MiniStat
               label="On measured KPIs"
