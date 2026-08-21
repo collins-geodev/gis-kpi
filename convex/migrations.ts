@@ -836,6 +836,113 @@ export const updateUserEmail = internalMutation({
 });
 
 /**
+ * Bring pre-existing auth rows in line with the normalize-at-the-boundary
+ * rule in auth.ts: lowercases every password credential's providerAccountId,
+ * every users.email, and any users.name that merely mirrored the email.
+ * Without this, someone whose credential was stored as "OEboda@…" could
+ * never sign in typing "oeboda@…". Idempotent.
+ */
+export const normalizeAuthEmails = internalMutation({
+  args: {},
+  returns: v.object({ accounts: v.number(), users: v.number() }),
+  handler: async (ctx) => {
+    let accounts = 0;
+    let users = 0;
+    for (const a of await ctx.db.query("authAccounts").take(1000)) {
+      if (a.provider !== "password") continue;
+      const lower = a.providerAccountId.trim().toLowerCase();
+      if (lower === a.providerAccountId) continue;
+      await ctx.db.patch(a._id, { providerAccountId: lower });
+      accounts++;
+    }
+    for (const u of await ctx.db.query("users").take(1000)) {
+      if (!u.email) continue;
+      const lower = u.email.trim().toLowerCase();
+      if (lower === u.email) continue;
+      await ctx.db.patch(u._id, {
+        email: lower,
+        ...(u.name === u.email ? { name: lower } : {}),
+      });
+      users++;
+    }
+    if (accounts + users > 0) {
+      await recordAudit(ctx, {
+        entityType: "user",
+        entityId: "normalize_auth_emails",
+        action: "normalize_auth_emails",
+        reason: "Login emails are matched case-insensitively from now on",
+        after: { accounts, users },
+      });
+    }
+    return { accounts, users };
+  },
+});
+
+/**
+ * Clear a user's password credential and terminate their sessions so they can
+ * register afresh with the SAME email — the createOrUpdateUser callback in
+ * auth.ts links the new sign-up back to their existing account (employee
+ * link and roles intact). For a user who simply forgot their password, prefer
+ * the self-service "Forgot password?" flow on the sign-in page. Idempotent.
+ *
+ *   npx convex run migrations:resetUserLoginCredential \
+ *     '{"email":"someone@ikejaelectric.com"}' --prod
+ */
+export const resetUserLoginCredential = internalMutation({
+  args: { email: v.string() },
+  returns: v.union(
+    v.object({ credentialDeleted: v.boolean(), sessionsDeleted: v.number() }),
+    v.null(),
+  ),
+  handler: async (ctx, { email }) => {
+    const lower = email.trim().toLowerCase();
+    const user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", lower))
+      .first();
+    if (!user) return null;
+
+    let credentialDeleted = false;
+    for (const a of await ctx.db
+      .query("authAccounts")
+      .withIndex("providerAndAccountId", (q) =>
+        q.eq("provider", "password").eq("providerAccountId", lower),
+      )
+      .take(10)) {
+      await ctx.db.delete(a._id);
+      credentialDeleted = true;
+    }
+
+    let sessionsDeleted = 0;
+    for (const s of await ctx.db
+      .query("authSessions")
+      .withIndex("userId", (q) => q.eq("userId", user._id))
+      .take(100)) {
+      for (const t of await ctx.db
+        .query("authRefreshTokens")
+        .withIndex("sessionId", (q) => q.eq("sessionId", s._id))
+        .take(100)) {
+        await ctx.db.delete(t._id);
+      }
+      await ctx.db.delete(s._id);
+      sessionsDeleted++;
+    }
+
+    if (credentialDeleted || sessionsDeleted > 0) {
+      await recordAudit(ctx, {
+        entityType: "user",
+        entityId: user._id,
+        action: "reset_login_credential",
+        reason:
+          "Admin cleared the password credential (CLI) so the employee can re-register with the same email",
+        after: { email: lower, credentialDeleted, sessionsDeleted },
+      });
+    }
+    return { credentialDeleted, sessionsDeleted };
+  },
+});
+
+/**
  * Set (or clear) the performance year's capture go-live. Defaults to
  * 1 July 2026 00:00 Africa/Lagos. Idempotent — safe to re-run.
  *

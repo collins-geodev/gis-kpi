@@ -40,6 +40,7 @@ import type * as lib_types from "../lib/types.js";
 import type * as measurementsModel from "../measurementsModel.js";
 import type * as migrations from "../migrations.js";
 import type * as notifications from "../notifications.js";
+import type * as otp from "../otp.js";
 import type * as overrides from "../overrides.js";
 import type * as overview from "../overview.js";
 import type * as passwords from "../passwords.js";
@@ -90,6 +91,7 @@ declare const fullApi: ApiFromModules<{
   measurementsModel: typeof measurementsModel;
   migrations: typeof migrations;
   notifications: typeof notifications;
+  otp: typeof otp;
   overrides: typeof overrides;
   overview: typeof overview;
   passwords: typeof passwords;
