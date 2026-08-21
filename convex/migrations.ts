@@ -793,6 +793,52 @@ export const addNonCoreKpis = internalMutation({
 });
 
 /**
+ * Change the email address stored on a user account (e.g. wrong casing or a
+ * renamed corporate mailbox). Only `users.email` (and a `name` that mirrored
+ * the old email) is changed — the authAccounts credential row is untouched,
+ * so the user keeps signing in exactly as before. Idempotent.
+ *
+ *   npx convex run migrations:updateUserEmail \
+ *     '{"from":"old@example.com","to":"New@example.com"}' --prod
+ */
+export const updateUserEmail = internalMutation({
+  args: { from: v.string(), to: v.string() },
+  returns: v.union(
+    v.object({ updated: v.boolean(), email: v.string() }),
+    v.null(),
+  ),
+  handler: async (ctx, { from, to }) => {
+    if (!to.includes("@")) throw new Error(`"to" is not an email address: ${to}`);
+    const user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", from))
+      .first();
+    if (!user) {
+      // Already renamed? Then report idempotent success.
+      const done = await ctx.db
+        .query("users")
+        .withIndex("email", (q) => q.eq("email", to))
+        .first();
+      return done ? { updated: false, email: to } : null;
+    }
+    await ctx.db.patch(user._id, {
+      email: to,
+      // Accounts created before profile setup mirror the email into `name`.
+      ...(user.name === from ? { name: to } : {}),
+    });
+    await recordAudit(ctx, {
+      entityType: "user",
+      entityId: user._id,
+      action: "update_user_email",
+      reason: "Admin-corrected account email (CLI)",
+      before: { email: from },
+      after: { email: to },
+    });
+    return { updated: true, email: to };
+  },
+});
+
+/**
  * Set (or clear) the performance year's capture go-live. Defaults to
  * 1 July 2026 00:00 Africa/Lagos. Idempotent — safe to re-run.
  *
