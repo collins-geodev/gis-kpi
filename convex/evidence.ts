@@ -128,6 +128,8 @@ export const saveEvidence = mutation({
      * KPI-update notification covers the reviewers).
      */
     deferNotice: v.optional(v.boolean()),
+    /** The work-date selected in the Activity Capture form (noon-Lagos epoch). */
+    activityAt: v.optional(v.number()),
   },
   returns: v.id("evidenceFiles"),
   handler: async (ctx, args) => {
@@ -167,6 +169,7 @@ export const saveEvidence = mutation({
       category: args.category.slice(0, 80),
       title: args.title.slice(0, 200),
       description: args.description?.slice(0, 2000),
+      activityAt: args.activityAt,
       uploadedByUserId: user._id,
       uploadedAt: Date.now(),
       version: 1,
@@ -678,6 +681,7 @@ export const listForAssignment = query({
         hasFile: e.storageId !== undefined,
         externalUrl: e.externalUrl ?? null,
         uploadedAt: e.uploadedAt,
+        activityAt: e.activityAt ?? null,
       }));
   },
 });

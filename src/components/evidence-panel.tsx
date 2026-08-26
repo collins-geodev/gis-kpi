@@ -25,6 +25,7 @@ export function EvidencePanel({
   kpi,
   deferNotice,
   periodKey,
+  activityAt,
 }: {
   assignmentId: Id<"kpiAssignments">;
   /** When provided, the title/category start with a KPI-aware suggestion. */
@@ -37,6 +38,8 @@ export function EvidencePanel({
   deferNotice?: boolean;
   /** The capture period this evidence supports (e.g. "2026-M07"). */
   periodKey?: string;
+  /** The work-date selected in the capture form — shown beside the file name. */
+  activityAt?: number;
 }) {
   const me = useQuery(api.access.currentUser);
   const evidence = useQuery(api.evidence.listForAssignment, {
@@ -88,6 +91,7 @@ export function EvidencePanel({
         title: title || file.name,
         ...(deferNotice ? { deferNotice: true } : {}),
         ...(periodKey ? { periodKey } : {}),
+        ...(activityAt !== undefined ? { activityAt } : {}),
       });
       setTitle("");
     } catch (e) {
@@ -112,6 +116,7 @@ export function EvidencePanel({
         title: title || "External evidence",
         ...(deferNotice ? { deferNotice: true } : {}),
         ...(periodKey ? { periodKey } : {}),
+        ...(activityAt !== undefined ? { activityAt } : {}),
       });
       setLinkUrl("");
       setTitle("");
@@ -217,17 +222,28 @@ export function EvidencePanel({
                     {e.originalFilename}
                     <span
                       className="ml-2 whitespace-nowrap"
-                      title="Date and time this evidence was attached (Lagos time)"
+                      title={
+                        e.activityAt !== null
+                          ? "The activity date selected when this evidence was captured"
+                          : "Date and time this evidence was attached (Lagos time)"
+                      }
                     >
                       ·{" "}
-                      {new Date(e.uploadedAt).toLocaleString("en-GB", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        timeZone: "Africa/Lagos",
-                      })}
+                      {e.activityAt !== null
+                        ? new Date(e.activityAt).toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            timeZone: "Africa/Lagos",
+                          })
+                        : new Date(e.uploadedAt).toLocaleString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            timeZone: "Africa/Lagos",
+                          })}
                     </span>
                     {e.externalUrl && (
                       <a

@@ -762,6 +762,11 @@ export default function ActivitiesPage() {
                     }}
                     deferNotice
                     periodKey={periodKey}
+                    activityAt={
+                      showDateField && activityDate
+                        ? epochFromLagosDate(activityDate)
+                        : undefined
+                    }
                   />
                 </div>
               )}
