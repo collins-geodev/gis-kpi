@@ -682,6 +682,7 @@ export const listForAssignment = query({
         externalUrl: e.externalUrl ?? null,
         uploadedAt: e.uploadedAt,
         activityAt: e.activityAt ?? null,
+        periodKey: e.periodKey ?? null,
       }));
   },
 });

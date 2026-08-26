@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 import { suggestEvidence } from "@/lib/evidence-suggestions";
+import { periodLabel } from "@convex/lib/format";
 
 const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant"]> = {
   submitted: "muted",
@@ -225,7 +226,9 @@ export function EvidencePanel({
                       title={
                         e.activityAt !== null
                           ? "The activity date selected when this evidence was captured"
-                          : "Date and time this evidence was attached (Lagos time)"
+                          : e.periodKey !== null
+                            ? "The KPI period selected when this evidence was captured"
+                            : "Date and time this evidence was attached (Lagos time)"
                       }
                     >
                       ·{" "}
@@ -236,14 +239,16 @@ export function EvidencePanel({
                             year: "numeric",
                             timeZone: "Africa/Lagos",
                           })
-                        : new Date(e.uploadedAt).toLocaleString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            timeZone: "Africa/Lagos",
-                          })}
+                        : e.periodKey !== null
+                          ? periodLabel(e.periodKey)
+                          : new Date(e.uploadedAt).toLocaleString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              timeZone: "Africa/Lagos",
+                            })}
                     </span>
                     {e.externalUrl && (
                       <a
