@@ -651,7 +651,7 @@ export default function ActivitiesPage() {
                   className={`space-y-2 rounded-md border px-3 py-2.5 text-sm ${
                     duplicateBlocked
                       ? "border-critical/40 bg-critical/10 text-critical"
-                      : "border-warning/40 bg-warning/10 text-warning"
+                      : "border-success/40 bg-success text-success-foreground"
                   }`}
                 >
                   {duplicateBlocked ? (
@@ -662,7 +662,12 @@ export default function ActivitiesPage() {
                       summary — edit it instead of logging it again.
                     </p>
                   ) : (
-                    <p>
+                    <p className="flex items-start gap-2">
+                      <CheckCircle2
+                        className="mt-0.5 h-4 w-4 shrink-0"
+                        aria-hidden
+                      />
+                      <span>
                       Already logged <strong>{existing.count}</strong>{" "}
                       {existing.count === 1 ? "entry" : "entries"} for this period (
                       {existing.entries
@@ -670,6 +675,7 @@ export default function ActivitiesPage() {
                         .join(", ")}
                       ) — entries add up, so only add this if it is{" "}
                       <strong>new work</strong>, not a re-log.
+                      </span>
                     </p>
                   )}
                   {duplicateBlocked && existing.entries[0] && (
