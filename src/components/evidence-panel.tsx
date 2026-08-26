@@ -215,6 +215,20 @@ export function EvidencePanel({
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {e.originalFilename}
+                    <span
+                      className="ml-2 whitespace-nowrap"
+                      title="Date and time this evidence was attached (Lagos time)"
+                    >
+                      ·{" "}
+                      {new Date(e.uploadedAt).toLocaleString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: "Africa/Lagos",
+                      })}
+                    </span>
                     {e.externalUrl && (
                       <a
                         href={e.externalUrl}
