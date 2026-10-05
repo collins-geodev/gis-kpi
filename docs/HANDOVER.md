@@ -19,7 +19,7 @@ role-based access control, cron reminders, an audit trail, and CI.
 |---|---|---|
 | 1 | 15 employees + 75 rows import, reconciliation totals | ✅ seed + Overview/Data-Quality totals; asserted by tests |
 | 2 | All 4 roles & every source field auditable | ✅ verbatim source layer on every assignment; source-vs-canonical KPI view |
-| 3 | Every employee shows 5 KPIs + 80/100 warning | ✅ Overview, Team, Individual, exports |
+| 3 | Every employee shows 5 core KPIs (80 points) + 4 shared non-core KPIs (20 points), with weight completeness | ✅ Overview, Team, Individual, exports (weight note confirms 100 / 100 or names anyone below) |
 | 4 | Row-32 & all anomalies in Data Quality; none auto-corrected | ✅ deterministic detection; asserted by tests |
 | 5 | Percentages 20%/100%, numbers 1/4/20 | ✅ decimal storage + format helpers |
 | 6 | Unit tests: modes, caps, zero-denom, missing baseline, 80-weight, normalization, aggregation | ✅ 57 tests green |

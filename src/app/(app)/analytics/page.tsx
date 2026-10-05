@@ -184,7 +184,7 @@ export default function AnalyticsPage() {
       <div className="stagger-children grid gap-4 lg:grid-cols-2">
         <DonutChartCard
           title="Weight completeness"
-          description="Employees whose 5 KPIs total 80 vs 100"
+          description="Employees whose KPI weights total 100 vs below 100"
           data={data.weightCompleteness}
           centerLabel="employees"
         />

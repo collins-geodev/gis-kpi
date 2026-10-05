@@ -23,7 +23,7 @@ Next.js 15 (App Router, RSC)  ──▶  Convex (DB · queries/mutations/actions
 | Route | Page | Primary roles |
 |---|---|---|
 | `/signin`, `/setup` | Auth + first-run org/profile mapping, access-denied | all / system_admin |
-| `/overview` | Executive Overview (approved team score, 80/100 weight completeness, evidence & cadence coverage, overdue, review backlog, drivers) | manager, executive_viewer, admins |
+| `/overview` | Executive Overview (approved team score, weight completeness — 100 = 80 core + 20 non-core, evidence & cadence coverage, overdue, review backlog, drivers) | manager, executive_viewer, admins |
 | `/team` | Team Performance (sortable scorecards, role/location comparison w/ fair-comparison labels) | manager, reviewer, admins |
 | `/employees/[employeeId]` | Individual Performance (5 KPIs, target/actual/attainment/weight/contribution, activity timeline, evidence gallery, score history, report) | self, manager, reviewer, admins |
 | `/kpi/[assignmentId]` | KPI Detail (definition, formula, **source vs canonical** wording, measurements, evidence lineage, calc, approvals, comments) | scoped |
@@ -100,7 +100,7 @@ Implementation + 47 passing unit tests: [`convex/lib/scoring.ts`](../convex/lib/
 
 ## 7. Deterministic exports
 
-- **PDF** (`@react-pdf/renderer`, Node): branded cover, executive summary, scorecard + 80/100 weight warning, KPI table, charts, achievements/evidence, risks/overdue/weak-evidence/DQ gaps, recommendations, evidence index, methodology + approval trail, footer ("Powered by the GIS Team").
+- **PDF** (`@react-pdf/renderer`, Node): branded cover, executive summary, scorecard + weight note (confirms 100 / 100 or names anyone below), KPI table, charts, achievements/evidence, risks/overdue/weak-evidence/DQ gaps, recommendations, evidence index, methodology + approval trail, footer ("Powered by the GIS Team").
 - **Excel** (`exceljs`, Node, genuine `.xlsx`): sheets `Executive Summary · Team Scorecard · Individual KPI Detail · Activity Register · Evidence Register · Data Quality Issues · KPI Definitions & Methodology`. Title bands, filters, frozen headers, typed numbers/dates/percentages, conditional formatting, identifiers preserved as text, formula-injection-safe cells, visible 80-weight note.
 
 ## 8. Security posture

@@ -28,7 +28,7 @@ Every item below is created as an admin-approvable `dataQualityIssues` record wi
 
 | Category | Count | Blocks scoring? | Detail |
 |---|---|---|---|
-| `weight_incomplete` | 15 | no | Each employee totals **80/100**. Resolve by adding a KPI, changing weights, or explicitly approving normalization (decision is audit-logged). |
+| `weight_incomplete` | 15 | no | At import each employee's five workbook KPIs totalled **80/100**. **Resolved:** the four shared non-core KPIs (5 points each, set by management) were added by the audit-logged `addNonCoreKpis` migration, so every employee now totals **100/100** (80 core + 20 non-core). |
 | `missing_frequency` | 1 | **yes** | Row 32 (`IKD034794`, QA objective) has a blank cadence → proposes **Monthly** (matches the analyst QA template), pending admin approval. |
 | `location_variant` | 5 | no | `Akowonjo BU` (rows 8–12, `IKD041386`) → canonical **`Akowonjo B/U`**; source retained. |
 | `unit_mismatch` | 1 | **yes** | Row 16 (Geo-DB commercial-maintenance): metric reads "reduce errors by 20%" but is typed `Number`/`20`. Resolve target type before scoring. |

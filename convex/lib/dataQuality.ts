@@ -47,7 +47,7 @@ export function detectDataQualityIssues(
 ): SeedDataQualityIssue[] {
   const issues: SeedDataQualityIssue[] = [];
 
-  // --- Per-employee weight completeness (80 / 100) -------------------------
+  // --- Per-employee weight completeness (should total 100) -----------------
   const weightByEmp = new Map<string, number>();
   const nameByEmp = new Map<string, string>();
   for (const r of rows) {

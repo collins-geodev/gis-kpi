@@ -145,7 +145,7 @@ export const DQ_STATUSES = [
 export type DataQualityStatus = (typeof DQ_STATUSES)[number];
 
 export const DQ_CATEGORIES = [
-  "weight_incomplete", // employee weights total 80, not 100
+  "weight_incomplete", // employee weights total below 100
   "missing_frequency", // blank cadence
   "typo_normalization", // canonical text differs from source
   "location_variant", // Akowonjo BU vs Akowonjo B/U

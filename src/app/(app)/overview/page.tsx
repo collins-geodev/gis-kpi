@@ -200,14 +200,16 @@ export default function OverviewPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <AlertTriangle className="h-5 w-5 text-brand" />
-                  Configured weight: {summary.configuredWeightTotal} /{" "}
-                  {summary.fullWeightTotal}
+                  Configured weight below {summary.fullWeightTotal} for some employees
                 </CardTitle>
                 <CardDescription>
-                  Every employee&apos;s five KPIs total{" "}
-                  <strong>{summary.configuredWeightTotal}</strong>, not{" "}
-                  {summary.fullWeightTotal}. The missing 20 points are surfaced, not
-                  invented. Resolve via the{" "}
+                  Each employee should carry {summary.fullWeightTotal} points —{" "}
+                  <strong>{summary.configuredWeightTotal} core</strong> +{" "}
+                  <strong>
+                    {summary.fullWeightTotal - summary.configuredWeightTotal} non-core
+                  </strong>
+                  . Scores stay out of each person&apos;s configured maximum; missing
+                  points are surfaced, not invented. Resolve via the{" "}
                   <Link href="/data-quality" className="text-accent hover:underline">
                     Data Quality queue
                   </Link>{" "}

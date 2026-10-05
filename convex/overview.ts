@@ -1,7 +1,8 @@
 /**
  * Executive-overview aggregates. Full analytics (trends, drivers, backlog) build
  * on scoreSnapshots; this baseline summary powers the landing dashboard and the
- * prominent 80/100 configured-weight warning immediately after seeding.
+ * configured-weight status: a warning while any employee totals below 100
+ * (as right after seeding), a confirmation once all carry 80 core + 20 non-core.
  */
 import { query } from "./_generated/server";
 import { v } from "convex/values";
