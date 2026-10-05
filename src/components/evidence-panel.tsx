@@ -1,7 +1,7 @@
 "use client";
 
 import { errorMessage } from "@/lib/errors";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -62,6 +62,27 @@ export function EvidencePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Outside the capture form no period is implied, so the uploader picks the
+  // month the proof supports — evidence only completes the period it is
+  // tagged with (a quarterly/annual KPI counts its months toward the bucket).
+  const periods = useQuery(api.activities.periods, periodKey ? "skip" : {});
+  const monthOptions = useMemo(
+    () =>
+      (periods ?? [])
+        .filter((p) => p.grain === "month" && p.startAt <= Date.now())
+        .reverse(),
+    [periods],
+  );
+  const [pickedPeriod, setPickedPeriod] = useState("");
+  useEffect(() => {
+    if (periodKey || pickedPeriod || monthOptions.length === 0) return;
+    // Early in a month, proof usually belongs to the month just closed.
+    const [current, previous] = monthOptions;
+    const early = Date.now() < current!.startAt + 5 * 24 * 60 * 60 * 1000;
+    setPickedPeriod((early && previous ? previous : current)!.periodKey);
+  }, [periodKey, pickedPeriod, monthOptions]);
+  const uploadPeriod = periodKey ?? (pickedPeriod || undefined);
+
   // Pre-describe the evidence from the KPI it supports (always editable).
   useEffect(() => {
     const s = suggestEvidence(kpi?.canonicalKey, kpi?.objective);
@@ -91,7 +112,7 @@ export function EvidencePanel({
         category,
         title: title || file.name,
         ...(deferNotice ? { deferNotice: true } : {}),
-        ...(periodKey ? { periodKey } : {}),
+        ...(uploadPeriod ? { periodKey: uploadPeriod } : {}),
         ...(activityAt !== undefined ? { activityAt } : {}),
       });
       setTitle("");
@@ -116,7 +137,7 @@ export function EvidencePanel({
         category,
         title: title || "External evidence",
         ...(deferNotice ? { deferNotice: true } : {}),
-        ...(periodKey ? { periodKey } : {}),
+        ...(uploadPeriod ? { periodKey: uploadPeriod } : {}),
         ...(activityAt !== undefined ? { activityAt } : {}),
       });
       setLinkUrl("");
@@ -188,6 +209,24 @@ export function EvidencePanel({
               Attach link
             </Button>
           </div>
+          {!periodKey && monthOptions.length > 0 && (
+            <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              Evidence for
+              <select
+                value={pickedPeriod}
+                onChange={(e) => setPickedPeriod(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                aria-label="Period this evidence supports"
+              >
+                {monthOptions.map((p) => (
+                  <option key={p.periodKey} value={p.periodKey}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <span>— evidence only counts toward the period it supports.</span>
+            </label>
+          )}
           {error && <p className="text-xs text-critical">{error}</p>}
           <p className="text-xs text-muted-foreground">
             Max 25 MB. Files stream through an authenticated, audited path — never a

@@ -19,6 +19,8 @@ import {
 } from "./authz";
 import { recordAudit } from "./audit";
 import { recomputeMeasurement } from "./measurementsModel";
+import { evidenceSupportsPeriod } from "./lib/evidencePeriod";
+import type { Frequency } from "./lib/types";
 import { vConfidentiality } from "./validators";
 
 function sanitizeFilename(name: string): string {
@@ -295,9 +297,16 @@ export const saveEvidence = mutation({
  * send the employee a single combined notification.
  */
 export const approveAllForAssignment = mutation({
-  args: { kpiAssignmentId: v.id("kpiAssignments") },
+  args: {
+    kpiAssignmentId: v.id("kpiAssignments"),
+    /**
+     * Limit to the evidence supporting this (cadence) period — the review
+     * queue row passes its own period. Omitted = every pending item.
+     */
+    periodKey: v.optional(v.string()),
+  },
   returns: v.object({ approved: v.number() }),
-  handler: async (ctx, { kpiAssignmentId }) => {
+  handler: async (ctx, { kpiAssignmentId, periodKey: onlyPeriod }) => {
     const { user } = await requireRole(ctx, [
       "reviewer",
       "manager",
@@ -312,8 +321,12 @@ export const approveAllForAssignment = mutation({
       .query("evidenceFiles")
       .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
       .take(500);
-    const pending = evidence.filter((e) =>
-      ["submitted", "verified"].includes(e.reviewStatus),
+    const pending = evidence.filter(
+      (e) =>
+        e.retentionState !== "deleted" &&
+        ["submitted", "verified"].includes(e.reviewStatus) &&
+        (onlyPeriod === undefined ||
+          evidenceSupportsPeriod(assignment.frequency as Frequency, e, onlyPeriod)),
     );
     if (pending.length === 0) return { approved: 0 };
 

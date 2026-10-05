@@ -9,7 +9,7 @@ import { BASELINE_PERFORMANCE_YEAR, FULL_WEIGHT_TOTAL, JOB_ROLES } from "./lib/t
 import { v } from "convex/values";
 import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
-import { recomputeMeasurement } from "./measurementsModel";
+import { periodEvidence, recomputeMeasurement } from "./measurementsModel";
 import { vCanonicalKpiKey } from "./validators";
 import { cadencePeriodKey } from "./lib/periods";
 import { reopenApprovedPeriod } from "./approvals";
@@ -659,6 +659,72 @@ export const backfillEvidencePeriods = internalMutation({
       });
     }
     return { tagged, fromActivity, fromNearest, untagged };
+  },
+});
+
+/**
+ * Repair job for the period-aware evidence gate: re-derive each measurement's
+ * stored `evidenceComplete` from approved evidence for ITS OWN period (flags
+ * written by the old assignment-wide rule could tick a month with no proof).
+ * Only that one field is patched — no full recompute, so cadence compliance
+ * and scores are untouched. Official (approved) rows are skipped unless
+ * `includeOfficial` is set. `dryRun` reports without writing.
+ *
+ *   npx convex run migrations:repairEvidenceGates '{"dryRun":true}' --prod
+ */
+export const repairEvidenceGates = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    includeOfficial: v.optional(v.boolean()),
+  },
+  returns: v.object({
+    scanned: v.number(),
+    cleared: v.number(),
+    set: v.number(),
+    changes: v.array(
+      v.object({
+        employee: v.string(),
+        objective: v.string(),
+        periodKey: v.string(),
+        official: v.boolean(),
+        evidenceComplete: v.boolean(),
+      }),
+    ),
+  }),
+  handler: async (ctx, { dryRun, includeOfficial }) => {
+    let scanned = 0;
+    let cleared = 0;
+    let set = 0;
+    const changes = [];
+    for (const m of await ctx.db.query("kpiMeasurements").take(2000)) {
+      if (!m.isProvisional && !includeOfficial) continue;
+      const assignment = await ctx.db.get(m.kpiAssignmentId);
+      if (!assignment) continue;
+      scanned++;
+      const { complete } = await periodEvidence(ctx, assignment, m.periodKey);
+      if (complete === m.evidenceComplete) continue;
+      if (complete) set++;
+      else cleared++;
+      const employee = await ctx.db.get(m.employeeId);
+      changes.push({
+        employee: employee?.displayName ?? String(m.employeeId),
+        objective: assignment.objective.slice(0, 80),
+        periodKey: m.periodKey,
+        official: !m.isProvisional,
+        evidenceComplete: complete,
+      });
+      if (!dryRun) await ctx.db.patch(m._id, { evidenceComplete: complete });
+    }
+    if (!dryRun && changes.length > 0) {
+      await recordAudit(ctx, {
+        entityType: "kpiMeasurement",
+        entityId: "repair_evidence_gates",
+        action: "repair_evidence_gates",
+        reason: "Evidence completeness is now decided per period",
+        after: { scanned, cleared, set, includeOfficial: includeOfficial ?? false },
+      });
+    }
+    return { scanned, cleared, set, changes: changes.slice(0, 200) };
   },
 });
 

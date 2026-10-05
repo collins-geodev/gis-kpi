@@ -29,6 +29,7 @@ import type * as kpis from "../kpis.js";
 import type * as lib_catalogue from "../lib/catalogue.js";
 import type * as lib_dataQuality from "../lib/dataQuality.js";
 import type * as lib_emailTemplate from "../lib/emailTemplate.js";
+import type * as lib_evidencePeriod from "../lib/evidencePeriod.js";
 import type * as lib_format from "../lib/format.js";
 import type * as lib_measure from "../lib/measure.js";
 import type * as lib_periods from "../lib/periods.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "lib/catalogue": typeof lib_catalogue;
   "lib/dataQuality": typeof lib_dataQuality;
   "lib/emailTemplate": typeof lib_emailTemplate;
+  "lib/evidencePeriod": typeof lib_evidencePeriod;
   "lib/format": typeof lib_format;
   "lib/measure": typeof lib_measure;
   "lib/periods": typeof lib_periods;

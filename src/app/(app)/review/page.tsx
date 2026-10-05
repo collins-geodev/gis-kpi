@@ -47,6 +47,7 @@ export default function ReviewPage() {
   const deleteSubmission = useMutation(api.approvals.deleteSubmission);
   const recallRejection = useMutation(api.approvals.recallRejection);
   const recallApproval = useMutation(api.approvals.recallPeriodApproval);
+  const recallEntry = useMutation(api.approvals.recallActivityApproval);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{
@@ -70,9 +71,15 @@ export default function ReviewPage() {
     }
   }
 
-  async function doReject(assignmentId: string, periodKey: string) {
+  async function doReject(assignmentId: string, periodKey: string, approvedCount = 0) {
     const reason = window.prompt(
-      "Reason for rejecting this submission (required — it is emailed to the employee):",
+      `Reason for rejecting this submission (required — it is emailed to the employee):${
+        approvedCount > 0
+          ? `
+
+${approvedCount} already-approved ${approvedCount === 1 ? "entry is" : "entries are"} included and will also return to the employee for changes.`
+          : ""
+      }`,
     );
     if (!reason?.trim()) return;
     setBusy(assignmentId);
@@ -93,22 +100,55 @@ export default function ReviewPage() {
         },
       });
     } catch (e) {
-      setError(errorMessage(e, "Rejection failed."));
+      setError(errorMessage(e, "Rejection failed — refresh the queue and try again."));
     } finally {
       setBusy(null);
     }
   }
 
-  async function doApproveEvidence(assignmentId: string) {
+  async function doApproveEvidence(assignmentId: string, periodKey: string) {
     setBusy(assignmentId);
     setError(null);
     try {
       await approveEvidence({
         kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
+        periodKey,
       });
-      setNotice({ text: "Evidence approved — the employee has been notified." });
+      setNotice({
+        text: `Evidence for ${periodLabel(periodKey)} approved — the employee has been notified.`,
+      });
     } catch (e) {
       setError(errorMessage(e, "Evidence approval failed."));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doRecallEntry(
+    assignmentId: string,
+    entry: { id: string; title: string },
+    periodKey: string,
+  ) {
+    const reason = window.prompt(
+      `Return the approved entry “${entry.title.slice(0, 80)}” (${periodLabel(periodKey)}) to the employee for changes?
+
+Only this entry is returned — other entries are untouched. The KPI goes back into the queue for re-approval. Reason (required — it is emailed to the employee):`,
+    );
+    if (!reason?.trim()) return;
+    setBusy(assignmentId);
+    setError(null);
+    try {
+      await recallEntry({
+        activityIds: [entry.id as Id<"activities">],
+        reason: reason.trim(),
+      });
+      setNotice({
+        text: `Returned — “${entry.title.slice(0, 60)}” is back with the employee for changes and they have been notified.`,
+      });
+    } catch (e) {
+      setError(
+        errorMessage(e, "Could not return the entry — refresh the queue and try again."),
+      );
     } finally {
       setBusy(null);
     }
@@ -357,7 +397,12 @@ export default function ReviewPage() {
                           <StatusBadge status={i.status as never} />
                           {i.evidenceRequired &&
                             (i.evidenceComplete ? (
-                              <Badge variant="success">evidence ✓</Badge>
+                              <Badge
+                                variant="success"
+                                title={`Approved evidence covers ${periodLabel(i.periodKey)}`}
+                              >
+                                evidence ✓
+                              </Badge>
                             ) : i.pendingEvidence > 0 ? (
                               <>
                                 <Badge variant="info">
@@ -367,15 +412,34 @@ export default function ReviewPage() {
                                   size="sm"
                                   variant="outline"
                                   disabled={busy === i.assignmentId}
-                                  title={`Approve the ${i.pendingEvidence} pending evidence item${i.pendingEvidence === 1 ? "" : "s"} — the employee is notified`}
-                                  onClick={() => doApproveEvidence(i.assignmentId)}
+                                  title={`Approve the ${i.pendingEvidence} pending evidence item${i.pendingEvidence === 1 ? "" : "s"} for ${periodLabel(i.periodKey)} — the employee is notified`}
+                                  onClick={() =>
+                                    doApproveEvidence(i.assignmentId, i.periodKey)
+                                  }
                                 >
                                   <FileCheck2 className="h-4 w-4" /> Approve evidence
                                 </Button>
                               </>
                             ) : (
-                              <Badge variant="warning">evidence needed</Badge>
+                              <Badge
+                                variant="warning"
+                                title={
+                                  i.evidenceElsewhere.length > 0
+                                    ? `Approved evidence exists only for: ${i.evidenceElsewhere.map((p) => periodLabel(p)).join(", ")}. Evidence counts toward the period it is tagged with (untagged files: their work-date, else upload month).`
+                                    : "No evidence has been approved for this KPI yet."
+                                }
+                              >
+                                no evidence for this period
+                              </Badge>
                             ))}
+                          {i.evidenceRequired && i.lateEvidence > 0 && (
+                            <Badge
+                              variant="warning"
+                              title="Evidence for this period was uploaded after the period's submission deadline"
+                            >
+                              evidence late ({i.lateEvidence})
+                            </Badge>
+                          )}
                           {!i.cadenceCompliant && (
                             <Badge variant="warning">submitted late</Badge>
                           )}
@@ -391,7 +455,13 @@ export default function ReviewPage() {
                               className="text-muted-foreground hover:text-critical"
                               disabled={busy === i.assignmentId}
                               title="Reject this submission — the reason is emailed to the employee"
-                              onClick={() => doReject(i.assignmentId, i.periodKey)}
+                              onClick={() =>
+                                doReject(
+                                  i.assignmentId,
+                                  i.periodKey,
+                                  i.approvedEntryCount,
+                                )
+                              }
                             >
                               <XCircle className="h-4 w-4" /> Reject
                             </Button>
@@ -442,6 +512,19 @@ export default function ReviewPage() {
                                 <span className="max-w-sm truncate">{e.title}</span>
                                 <span className="tabular font-medium">{e.values}</span>
                                 <span className="text-muted-foreground">{e.status}</span>
+                                {canApprove && e.status === "approved" && (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:text-critical hover:underline disabled:opacity-50"
+                                    disabled={busy === i.assignmentId}
+                                    title="Return this approved entry to the employee for changes (reason required; audited and notified)"
+                                    onClick={() =>
+                                      doRecallEntry(i.assignmentId, e, i.periodKey)
+                                    }
+                                  >
+                                    <Undo2 className="h-3 w-3" /> Return
+                                  </button>
+                                )}
                               </li>
                             ))}
                             {i.entryCount > i.entries.length && (

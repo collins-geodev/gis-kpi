@@ -2,13 +2,73 @@
  * Shared measurement recompute used by activity capture and evidence review.
  * Deterministic engine only — the AI model never computes an official number.
  */
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { aggregateActivityInputs } from "./lib/measure";
+import { evidenceCadenceKey, evidenceSupportsPeriod } from "./lib/evidencePeriod";
+import type { Frequency } from "./lib/types";
 import { CALC_VERSION, computeAttainment, weightedContribution } from "./lib/scoring";
 import { statusFromAttainment } from "./lib/thresholds";
 
 const COUNTED_STATES = ["submitted", "verified", "approved"];
+
+/**
+ * Evidence state of ONE (assignment, period). Only live (not deleted) files
+ * whose resolved period falls in this cadence bucket count — see
+ * lib/evidencePeriod.ts for how untagged files are dated. Approved proof in
+ * another period never completes this one; it is reported separately so the
+ * reviewer can see why the tick is missing.
+ */
+export async function periodEvidence(
+  ctx: Pick<QueryCtx, "db">,
+  assignment: Doc<"kpiAssignments">,
+  periodKey: string,
+): Promise<{
+  complete: boolean;
+  approved: number;
+  pending: number;
+  /** In-period files uploaded after the period's submission deadline. */
+  late: number;
+  /** Other cadence periods that DO hold approved evidence (sorted). */
+  approvedElsewhere: string[];
+}> {
+  const freq = assignment.frequency as Frequency;
+  const files = (
+    await ctx.db
+      .query("evidenceFiles")
+      .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", assignment._id))
+      .take(500)
+  ).filter((e) => e.retentionState !== "deleted");
+  const inPeriod = files.filter((e) => evidenceSupportsPeriod(freq, e, periodKey));
+  const approved = inPeriod.filter((e) => e.reviewStatus === "approved").length;
+  const pending = inPeriod.filter((e) =>
+    ["submitted", "verified"].includes(e.reviewStatus),
+  ).length;
+
+  const period = await ctx.db
+    .query("trackingPeriods")
+    .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
+    .first();
+  const late =
+    period && period.cadenceGrace !== true
+      ? inPeriod.filter((e) => e.uploadedAt > period.dueAt).length
+      : 0;
+
+  const elsewhere = new Set<string>();
+  for (const e of files) {
+    if (e.reviewStatus !== "approved") continue;
+    if (evidenceSupportsPeriod(freq, e, periodKey)) continue;
+    elsewhere.add(evidenceCadenceKey(freq, e));
+  }
+
+  return {
+    complete: assignment.evidenceRequired ? approved > 0 : true,
+    approved,
+    pending,
+    late,
+    approvedElsewhere: [...elsewhere].sort(),
+  };
+}
 
 /** Recompute the provisional measurement for one (assignment, period). */
 export async function recomputeMeasurement(
@@ -72,12 +132,8 @@ export async function recomputeMeasurement(
         ? result.attainment
         : (result.cappedAttainment ?? assignment.scoreCap);
 
-  const evidence = await ctx.db
-    .query("evidenceFiles")
-    .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", assignment._id))
-    .take(500);
-  const hasApprovedEvidence = evidence.some((e) => e.reviewStatus === "approved");
-  const evidenceComplete = assignment.evidenceRequired ? hasApprovedEvidence : true;
+  // Period-aware: only approved evidence for THIS period completes the gate.
+  const { complete: evidenceComplete } = await periodEvidence(ctx, assignment, periodKey);
 
   const period = await ctx.db
     .query("trackingPeriods")

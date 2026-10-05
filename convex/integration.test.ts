@@ -273,6 +273,7 @@ describe("activity → measurement, evidence gate & approval (#7, #9)", () => {
       fileSize: 0,
       category: "qa_log",
       title: "QA log",
+      periodKey: "2026-M08",
     });
     await mgr.mutation(api.evidence.reviewEvidence, {
       evidenceId,
@@ -465,6 +466,7 @@ describe("admin lifecycle: revoke/unlink/deactivate + activity delete", () => {
       fileSize: 0,
       category: "qa_log",
       title: "Integration log",
+      periodKey: "2026-M08",
     });
 
     await expect(
@@ -1264,6 +1266,7 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
       fileSize: 0,
       category: "qa_log",
       title: "Integration log",
+      periodKey: "2026-M08",
     });
     await emp.mutation(api.activities.create, {
       kpiAssignmentId: assignmentId,
@@ -1422,6 +1425,7 @@ describe("review queue: bulk evidence approve + admin submission delete", () => 
       fileSize: 0,
       category: "qa_log",
       title: "Integration log",
+      periodKey: "2026-M08",
     });
     await admin.mutation(api.evidence.approveAllForAssignment, {
       kpiAssignmentId: assignmentId,
@@ -2185,5 +2189,376 @@ describe("evidence-first capture rule", () => {
     await expect(
       emp.mutation(api.activities.create, { ...base, title: "Another batch" }),
     ).rejects.toThrow(/requires evidence/i);
+  });
+});
+
+describe("period-aware evidence gate", () => {
+  // Approved proof only completes the period it supports — the Timothy case:
+  // approved files tagged Jul/Aug (+ one tagged Oct) must not tick September.
+  const SEP_2026 = Date.UTC(2026, 8, 15, 11);
+
+  test("approved evidence in other periods does not complete a later period", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "tim@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin, userId: adminUserId } = await makeUser(t, {
+      email: "pa@x.com",
+      roles: ["system_admin"],
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+
+    // Approved evidence tagged July, August and October; plus an untagged
+    // approved file uploaded on 5 Oct 2026 (dated by its upload month).
+    await t.run(async (ctx) => {
+      const base = {
+        employeeId: empId,
+        kpiAssignmentId: assignmentId,
+        mimeType: "text/uri-list",
+        fileSize: 0,
+        category: "qa_log",
+        uploadedByUserId: adminUserId,
+        version: 1,
+        confidentiality: "internal" as const,
+        reviewStatus: "approved" as const,
+        retentionState: "active" as const,
+      };
+      for (const pk of ["2026-M07", "2026-M08", "2026-M10"]) {
+        await ctx.db.insert("evidenceFiles", {
+          ...base,
+          periodKey: pk,
+          externalUrl: `https://example.com/${pk}`,
+          originalFilename: pk,
+          title: `Proof ${pk}`,
+          uploadedAt: Date.UTC(2026, 9, 1),
+        });
+      }
+      await ctx.db.insert("evidenceFiles", {
+        ...base,
+        externalUrl: "https://example.com/untagged",
+        originalFilename: "untagged",
+        title: "Untagged proof",
+        uploadedAt: Date.UTC(2026, 9, 5, 9),
+      });
+    });
+
+    for (const [periodKey, activityAt] of [
+      ["2026-M08", AUG_2026],
+      ["2026-M09", SEP_2026],
+    ] as const) {
+      await emp.mutation(api.activities.create, {
+        kpiAssignmentId: assignmentId,
+        periodKey,
+        activityAt,
+        title: `Integrated assets ${periodKey}`,
+        description: "batch",
+        numerator: 9,
+        denominator: 10,
+      });
+    }
+
+    const measurement = (periodKey: string) =>
+      t.run(async (ctx) =>
+        ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignmentId).eq("periodKey", periodKey),
+          )
+          .first(),
+      );
+    const row = async (periodKey: string) =>
+      (await admin.query(api.approvals.reviewQueue, {})).find(
+        (r) => r.assignmentId === assignmentId && r.periodKey === periodKey,
+      )!;
+
+    expect((await measurement("2026-M08"))?.evidenceComplete).toBe(true);
+    expect((await measurement("2026-M09"))?.evidenceComplete).toBe(false);
+    const sep = await row("2026-M09");
+    expect(sep.evidenceComplete).toBe(false);
+    expect(sep.ready).toBe(false);
+    expect(sep.pendingEvidence).toBe(0);
+    expect(sep.evidenceElsewhere).toEqual(["2026-M07", "2026-M08", "2026-M10"]);
+    await expect(
+      admin.mutation(api.approvals.approveEmployeePeriod, {
+        employeeId: empId,
+        periodKey: "2026-M09",
+      }),
+    ).rejects.toThrow(/evidence/i);
+
+    // Pending proof is counted for its own period only.
+    for (const pk of ["2026-M09", "2026-M10"]) {
+      await emp.mutation(api.evidence.saveEvidence, {
+        kpiAssignmentId: assignmentId,
+        periodKey: pk,
+        externalUrl: `https://example.com/pending-${pk}`,
+        originalFilename: `pending-${pk}`,
+        mimeType: "text/uri-list",
+        fileSize: 0,
+        category: "qa_log",
+        title: `Pending ${pk}`,
+      });
+    }
+    expect((await row("2026-M09")).pendingEvidence).toBe(1);
+    expect((await row("2026-M08")).pendingEvidence).toBe(0);
+
+    // Approving September's evidence flips September only; October's pending
+    // item is left for its own period.
+    const res = await admin.mutation(api.evidence.approveAllForAssignment, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M09",
+    });
+    expect(res.approved).toBe(1);
+    expect((await measurement("2026-M09"))?.evidenceComplete).toBe(true);
+    expect((await measurement("2026-M08"))?.evidenceComplete).toBe(true);
+    const octPending = await t.run(async (ctx) =>
+      (await ctx.db.query("evidenceFiles").collect()).find(
+        (e) => e.title === "Pending 2026-M10",
+      ),
+    );
+    expect(octPending?.reviewStatus).toBe("submitted");
+    expect((await row("2026-M09")).ready).toBe(true);
+  });
+
+  test("repairEvidenceGates clears stale assignment-wide ticks (dry run first)", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp, userId } = await makeUser(t, {
+      email: "tim2@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    await unlockCapture(t, assignmentId);
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M09",
+      activityAt: SEP_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+    // Simulate a flag written by the old rule (July proof ticking September).
+    const mId = await t.run(async (ctx) => {
+      await ctx.db.insert("evidenceFiles", {
+        employeeId: empId,
+        kpiAssignmentId: assignmentId,
+        periodKey: "2026-M07",
+        externalUrl: "https://example.com/jul",
+        originalFilename: "jul",
+        mimeType: "text/uri-list",
+        fileSize: 0,
+        category: "qa_log",
+        title: "July proof",
+        uploadedByUserId: userId,
+        uploadedAt: Date.UTC(2026, 7, 2),
+        version: 1,
+        confidentiality: "internal",
+        reviewStatus: "approved",
+        retentionState: "active",
+      });
+      const m = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M09"),
+        )
+        .first();
+      await ctx.db.patch(m!._id, { evidenceComplete: true });
+      return m!._id;
+    });
+    const flag = () => t.run(async (ctx) => (await ctx.db.get(mId))!.evidenceComplete);
+
+    const dry = await t.mutation(internal.migrations.repairEvidenceGates, {
+      dryRun: true,
+    });
+    expect(dry.cleared).toBe(1);
+    expect(await flag()).toBe(true);
+    const real = await t.mutation(internal.migrations.repairEvidenceGates, {});
+    expect(real.cleared).toBe(1);
+    expect(await flag()).toBe(false);
+    const again = await t.mutation(internal.migrations.repairEvidenceGates, {});
+    expect(again.cleared).toBe(0);
+  });
+});
+
+describe("returning already-approved entries", () => {
+  // A quarterly count KPI accepts several entries per period.
+  async function approvedTwoEntries() {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { assignmentId, empId, biz } = await t.run(async (ctx) => {
+      const all = await ctx.db.query("kpiAssignments").take(200);
+      const a = all.find((x) => x.canonicalKey === "mentorship_training")!;
+      await ctx.db.patch(a._id, { scoringBlocked: false });
+      const e = (await ctx.db.get(a.employeeId))!;
+      return { assignmentId: a._id, empId: a.employeeId, biz: e.employeeId };
+    });
+    const { as: emp, userId: empUserId } = await makeUser(t, {
+      email: "ruth@x.com",
+      roles: ["employee"],
+      employeeBusinessId: biz,
+    });
+    const { as: admin } = await makeUser(t, { email: "ra@x.com", roles: ["manager"] });
+    // Approved proof for Q3 (tagged August) so the period can be approved.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("evidenceFiles", {
+        employeeId: empId,
+        kpiAssignmentId: assignmentId,
+        periodKey: "2026-M08",
+        externalUrl: "https://example.com/register",
+        originalFilename: "register",
+        mimeType: "text/uri-list",
+        fileSize: 0,
+        category: "attendance",
+        title: "Attendance register",
+        uploadedByUserId: empUserId,
+        uploadedAt: Date.UTC(2026, 7, 20),
+        version: 1,
+        confidentiality: "internal",
+        reviewStatus: "approved",
+        retentionState: "active",
+      });
+    });
+    const ids: Id<"activities">[] = [];
+    for (const title of ["Session one", "Session two"]) {
+      ids.push(
+        await emp.mutation(api.activities.create, {
+          kpiAssignmentId: assignmentId,
+          periodKey: "2026-Q3",
+          activityAt: AUG_2026,
+          title,
+          description: "onboarding",
+          quantity: 1,
+        }),
+      );
+    }
+    await admin.mutation(api.approvals.approveEmployeePeriod, {
+      employeeId: empId,
+      periodKey: "2026-M08",
+    });
+    const status = (id: Id<"activities">) =>
+      t.run(async (ctx) => (await ctx.db.get(id))!.status);
+    const measurement = () =>
+      t.run(async (ctx) =>
+        ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-Q3"),
+          )
+          .first(),
+      );
+    const snapshots = () =>
+      t.run(async (ctx) =>
+        ctx.db
+          .query("scoreSnapshots")
+          .withIndex("by_scope_period", (q) =>
+            q.eq("scope", "individual").eq("scopeRef", empId).eq("periodKey", "2026-M08"),
+          )
+          .take(10),
+      );
+    expect(await status(ids[0]!)).toBe("approved");
+    expect(await status(ids[1]!)).toBe("approved");
+    expect((await measurement())?.isProvisional).toBe(false);
+    return { t, emp, admin, assignmentId, ids, status, measurement, snapshots };
+  }
+
+  test("entry-level recall returns one approved entry and leaves the others", async () => {
+    const { t, emp, admin, ids, status, measurement, snapshots } =
+      await approvedTwoEntries();
+
+    await expect(
+      admin.mutation(api.approvals.recallActivityApproval, {
+        activityIds: [ids[0]!],
+        reason: "  ",
+      }),
+    ).rejects.toThrow(/reason/i);
+    await expect(
+      emp.mutation(api.approvals.recallActivityApproval, {
+        activityIds: [ids[0]!],
+        reason: "self-serve",
+      }),
+    ).rejects.toThrow();
+
+    const res = await admin.mutation(api.approvals.recallActivityApproval, {
+      activityIds: [ids[0]!],
+      reason: "Attendance sheet is unsigned",
+    });
+    expect(res.returned).toBe(1);
+    expect(await status(ids[0]!)).toBe("needs_changes");
+    expect(await status(ids[1]!)).toBe("approved");
+
+    // The KPI reopens for re-approval with only the remaining entry counted;
+    // the period snapshot is kept on record.
+    const m = await measurement();
+    expect(m?.isProvisional).toBe(true);
+    expect(m?.rawActual).toBe(1);
+    expect((await snapshots()).length).toBe(1);
+
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).filter(
+        (l) => l.action === "recall_activity_approval",
+      ),
+    );
+    expect(audit.length).toBe(1);
+    expect(audit[0]!.reason).toMatch(/unsigned/);
+    const notice = await t.run(async (ctx) =>
+      (await ctx.db.system.query("_scheduled_functions").collect()).find(
+        (f) =>
+          (f.args[0] as { auditAction?: string } | undefined)?.auditAction ===
+          "activity_approval_recalled",
+      ),
+    );
+    expect(notice).toBeDefined();
+
+    // Recalling an entry that is no longer approved explains itself.
+    await expect(
+      admin.mutation(api.approvals.recallActivityApproval, {
+        activityIds: [ids[0]!],
+        reason: "again",
+      }),
+    ).rejects.toThrow(/only approved entries/i);
+  });
+
+  test("rejecting a submission whose entries are all approved returns them all", async () => {
+    const { admin, assignmentId, ids, status, measurement, snapshots } =
+      await approvedTwoEntries();
+
+    const res = await admin.mutation(api.approvals.rejectSubmission, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-Q3",
+      reason: "Sessions not on the training calendar",
+    });
+    expect(res.returned).toBe(2);
+    expect(await status(ids[0]!)).toBe("needs_changes");
+    expect(await status(ids[1]!)).toBe("needs_changes");
+    // Nothing counted remains, so the measurement clears from the queue.
+    expect(await measurement()).toBeNull();
+    expect((await snapshots()).length).toBe(1);
+
+    // A second reject says why, instead of a misleading message.
+    await expect(
+      admin.mutation(api.approvals.rejectSubmission, {
+        kpiAssignmentId: assignmentId,
+        periodKey: "2026-Q3",
+        reason: "again",
+      }),
+    ).rejects.toThrow(/already returned/i);
   });
 });

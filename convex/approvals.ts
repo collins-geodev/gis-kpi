@@ -8,7 +8,7 @@
  */
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { assertEmployeeReadScope, readableEmployeeIds, requireRole } from "./authz";
@@ -16,7 +16,7 @@ import { recordAudit } from "./audit";
 import { resolveDisplayName } from "./emails";
 import { formatPercent } from "./lib/format";
 import { CALC_VERSION, scoreScorecard, type ScorecardItem } from "./lib/scoring";
-import { recomputeMeasurement } from "./measurementsModel";
+import { periodEvidence, recomputeMeasurement } from "./measurementsModel";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
 import { cadencePeriodKey } from "./lib/periods";
 import { describeActivityInputs, describeSelfReport } from "./lib/selfReport";
@@ -47,17 +47,21 @@ export const reviewQueue = query({
       const assignment = await ctx.db.get(m.kpiAssignmentId);
       const employee = await ctx.db.get(m.employeeId);
       if (!assignment || !employee) continue;
-      // Evidence that exists but awaits review — the queue can offer a
-      // one-click approve instead of a misleading "evidence needed".
+      // Evidence for THIS row's period only. Pending items let the queue offer
+      // a one-click approve; approved proof in other periods is surfaced so
+      // the reviewer sees why this period has no tick. Provisional rows read
+      // the live state (so a stale stored flag can never show a false ✓);
+      // official rows keep the flag frozen at approval.
+      let evidenceComplete = m.evidenceComplete;
       let pendingEvidence = 0;
-      if (assignment.evidenceRequired && !m.evidenceComplete) {
-        const ev = await ctx.db
-          .query("evidenceFiles")
-          .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", assignment._id))
-          .take(200);
-        pendingEvidence = ev.filter((e) =>
-          ["submitted", "verified"].includes(e.reviewStatus),
-        ).length;
+      let lateEvidence = 0;
+      let evidenceElsewhere: string[] = [];
+      if (assignment.evidenceRequired) {
+        const ev = await periodEvidence(ctx, assignment, m.periodKey);
+        if (m.isProvisional) evidenceComplete = ev.complete;
+        pendingEvidence = ev.pending;
+        lateEvidence = ev.late;
+        evidenceElsewhere = ev.approvedElsewhere;
       }
 
       // What the employee self-reported: the raw counted entries behind the
@@ -82,6 +86,7 @@ export const reviewQueue = query({
           acts,
         ),
         entryCount: acts.length,
+        approvedEntryCount: acts.filter((a) => a.status === "approved").length,
         entries: acts.slice(0, 8).map((a) => ({
           id: a._id,
           activityAt: a.activityAt,
@@ -99,13 +104,15 @@ export const reviewQueue = query({
         weightedContribution: m.weightedContribution,
         status: m.status,
         evidenceRequired: assignment.evidenceRequired,
-        evidenceComplete: m.evidenceComplete,
+        evidenceComplete,
         pendingEvidence,
+        lateEvidence,
+        evidenceElsewhere,
         kpiCategory: assignment.kpiCategory ?? "core",
         cadenceCompliant: m.cadenceCompliant,
         scoringBlocked: assignment.scoringBlocked,
         ready:
-          (!assignment.evidenceRequired || m.evidenceComplete) &&
+          (!assignment.evidenceRequired || evidenceComplete) &&
           !assignment.scoringBlocked,
       });
     }
@@ -338,11 +345,35 @@ export const deleteSubmission = mutation({
   },
 });
 
+/** Entry states a reviewer can return to the employee for changes. */
+const REJECTABLE_STATES = ["submitted", "verified", "approved"];
+
 /**
- * Reject a KPI submission after review: every submitted/verified activity for
- * that (KPI, period) returns to `needs_changes`, a review record captures the
- * required reason, and the employee is emailed the reason. Editing the entry
- * re-submits it for review.
+ * Recompute an (assignment, period) after entries were returned. An official
+ * (approved) measurement is first reopened to provisional so the recompute can
+ * update it — or remove it when nothing counted remains — and the period
+ * reappears in the review queue for re-approval.
+ */
+async function reopenAndRecompute(
+  ctx: MutationCtx,
+  assignment: Doc<"kpiAssignments">,
+  periodKey: string,
+): Promise<void> {
+  const m = await ctx.db
+    .query("kpiMeasurements")
+    .withIndex("by_assignment_period", (q) =>
+      q.eq("kpiAssignmentId", assignment._id).eq("periodKey", periodKey),
+    )
+    .first();
+  if (m && !m.isProvisional) await ctx.db.patch(m._id, { isProvisional: true });
+  await recomputeMeasurement(ctx, assignment, periodKey);
+}
+
+/**
+ * Reject a KPI submission after review: every submitted/verified/approved
+ * activity for that (KPI, period) returns to `needs_changes`, a review record
+ * captures the required reason, and the employee is emailed the reason.
+ * Editing the entry re-submits it for review.
  */
 export const rejectSubmission = mutation({
   args: {
@@ -366,9 +397,14 @@ export const rejectSubmission = mutation({
         q.eq("kpiAssignmentId", kpiAssignmentId).eq("periodKey", periodKey),
       )
       .take(200);
+    // Already-approved entries are returnable too (a reviewer may spot a
+    // problem after the period was approved); the frozen score snapshot stays
+    // on record until the period is approved again.
     let returned = 0;
+    let returnedApproved = 0;
     for (const a of activities) {
-      if (!["submitted", "verified"].includes(a.status)) continue;
+      if (!REJECTABLE_STATES.includes(a.status)) continue;
+      if (a.status === "approved") returnedApproved++;
       await ctx.db.patch(a._id, {
         status: "needs_changes",
         updatedByUserId: user._id,
@@ -377,15 +413,18 @@ export const rejectSubmission = mutation({
       returned++;
     }
     if (returned === 0) {
+      const alreadyReturned = activities.some((a) => a.status === "needs_changes");
       throw new ConvexError(
-        "Nothing left to reject — this submission was already rejected (or deleted). The entries are back with the employee; the row clears once measurements recompute.",
+        alreadyReturned
+          ? "Nothing left to reject — the entries for this KPI and period were already returned to the employee. Use Undo / recall rejection if that was a mistake."
+          : "No rejectable entries for this KPI and period (none are submitted, verified or approved). Refresh the queue — they may have been deleted.",
       );
     }
 
-    // Returned entries no longer count — the provisional measurement recomputes
-    // (and disappears when nothing counted remains), so the queue reflects the
+    // Returned entries no longer count — the measurement recomputes (and
+    // disappears when nothing counted remains), so the queue reflects the
     // rejection immediately.
-    await recomputeMeasurement(ctx, assignment, periodKey);
+    await reopenAndRecompute(ctx, assignment, periodKey);
 
     await ctx.db.insert("reviews", {
       subjectType: "measurement",
@@ -405,7 +444,11 @@ export const rejectSubmission = mutation({
       action: "reject_submission",
       actorUserId: user._id,
       reason: cleanReason,
-      after: { periodKey, activitiesReturned: returned },
+      after: {
+        periodKey,
+        activitiesReturned: returned,
+        approvedReturned: returnedApproved,
+      },
     });
 
     // Email + in-app: tell the employee why, and how to fix it.
@@ -533,6 +576,139 @@ export const recallRejection = mutation({
       });
     }
     return { restored };
+  },
+});
+
+/**
+ * Entry-level recall: return one or more already-APPROVED entries of a single
+ * (KPI, period) to the employee as `needs_changes`, without recalling the
+ * whole period. Other entries are untouched. The measurement recomputes (and,
+ * if it was official, reopens for re-approval — the earlier frozen snapshot
+ * stays on record until the period is approved again). Reason required;
+ * audited per entry; the employee is notified.
+ */
+export const recallActivityApproval = mutation({
+  args: {
+    activityIds: v.array(v.id("activities")),
+    reason: v.string(),
+  },
+  returns: v.object({ returned: v.number() }),
+  handler: async (ctx, { activityIds, reason }) => {
+    const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
+    const cleanReason = reason.trim();
+    if (!cleanReason) {
+      throw new ConvexError("A reason is required to return an approved entry.");
+    }
+    const ids = [...new Set(activityIds)];
+    if (ids.length === 0) throw new ConvexError("Select at least one entry to return.");
+    if (ids.length > 200) throw new ConvexError("Return at most 200 entries at a time.");
+
+    const acts = [];
+    for (const id of ids) {
+      const a = await ctx.db.get(id);
+      if (!a) throw new ConvexError("An entry was not found — it may have been deleted.");
+      acts.push(a);
+    }
+    const first = acts[0]!;
+    if (
+      acts.some(
+        (a) =>
+          a.kpiAssignmentId !== first.kpiAssignmentId || a.periodKey !== first.periodKey,
+      )
+    ) {
+      throw new ConvexError("Return entries for one KPI and period at a time.");
+    }
+    const assignment = await ctx.db.get(first.kpiAssignmentId);
+    if (!assignment) throw new ConvexError("KPI assignment not found");
+    await assertEmployeeReadScope(ctx, assignment.employeeId);
+    const periodKey = first.periodKey;
+
+    const notApproved = acts.filter((a) => a.status !== "approved");
+    if (notApproved.length > 0) {
+      throw new ConvexError(
+        notApproved.length === acts.length
+          ? "Only approved entries can be recalled here — use Reject for entries still awaiting review."
+          : `${notApproved.length} of the selected entries are not approved — only approved entries can be recalled here.`,
+      );
+    }
+
+    for (const a of acts) {
+      await ctx.db.patch(a._id, {
+        status: "needs_changes",
+        updatedByUserId: user._id,
+        updatedAt: Date.now(),
+      });
+      await recordAudit(ctx, {
+        entityType: "activity",
+        entityId: a._id,
+        action: "recall_activity_approval",
+        actorUserId: user._id,
+        reason: cleanReason,
+        before: { status: a.status, periodKey, title: a.title },
+        after: { status: "needs_changes" },
+      });
+    }
+
+    await reopenAndRecompute(ctx, assignment, periodKey);
+
+    await ctx.db.insert("reviews", {
+      subjectType: "measurement",
+      subjectId: `${assignment._id}:${periodKey}`,
+      kpiAssignmentId: assignment._id,
+      employeeId: assignment.employeeId,
+      periodKey,
+      reviewerUserId: user._id,
+      decision: "request_changes",
+      comment: cleanReason.slice(0, 1000),
+      createdAt: Date.now(),
+    });
+
+    const reviewerName = await resolveDisplayName(ctx, user);
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", assignment.employeeId))
+      .take(10);
+    const n = acts.length;
+    const entriesLabel = `${n} approved ${n === 1 ? "entry" : "entries"}`;
+    const notices = [];
+    for (const target of linked) {
+      if (!target.email || target.isActive === false || target._id === user._id) continue;
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Approved ${n === 1 ? "entry" : "entries"} returned for changes (${periodKey})`,
+        intro: `*${reviewerName}* returned ${entriesLabel} from your ${periodKey} submission for “${assignment.objective.slice(0, 120)}”. Please read the reason, edit the returned ${n === 1 ? "entry" : "entries"} from Activity Capture, and ${n === 1 ? "it" : "they"} will re-submit automatically.`,
+        panelTitle: "Approval recalled",
+        rows: [
+          { label: "KPI objective", value: assignment.objective.slice(0, 200) },
+          { label: "Period", value: periodKey },
+          {
+            label: n === 1 ? "Entry" : "Entries",
+            value: acts
+              .map((a) => a.title)
+              .join("; ")
+              .slice(0, 300),
+            strong: true,
+          },
+          { label: "Reason", value: cleanReason.slice(0, 500) },
+          { label: "Returned by", value: reviewerName },
+        ],
+        ctaLabel: "Open the KPI",
+        ctaPath: `/kpi/${assignment._id}`,
+        inAppTitle: `${entriesLabel} returned — ${periodKey}`,
+        inAppBody: cleanReason.slice(0, 180),
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "kpiAssignment",
+        entityId: assignment._id,
+        auditAction: "activity_approval_recalled",
+        notices,
+      });
+    }
+    return { returned: n };
   },
 });
 
@@ -718,8 +894,15 @@ export const approveEmployeePeriod = mutation({
           q.eq("kpiAssignmentId", assignment._id).eq("periodKey", lookupKey),
         )
         .first();
+      // Re-check evidence live for this period: a flag stored before the
+      // period-aware rule (or before a file was removed) must not let an
+      // unproven period through.
+      const evidenceComplete =
+        m && assignment.evidenceRequired
+          ? (await periodEvidence(ctx, assignment, lookupKey)).complete
+          : (m?.evidenceComplete ?? false);
       if (m && m.hasData) {
-        if (assignment.evidenceRequired && !m.evidenceComplete) {
+        if (assignment.evidenceRequired && !evidenceComplete) {
           blockers.push(`${assignment.objective.slice(0, 48)}: evidence not approved`);
         }
         if (assignment.scoringBlocked) {
@@ -732,7 +915,7 @@ export const approveEmployeePeriod = mutation({
         cappedAttainment: m?.cappedAttainment ?? null,
         weightedContribution: m?.weightedContribution ?? 0,
         status: m?.status ?? "no_data",
-        evidenceComplete: m?.evidenceComplete ?? false,
+        evidenceComplete,
         cadenceCompliant: m?.cadenceCompliant ?? false,
       });
     }
@@ -746,7 +929,10 @@ export const approveEmployeePeriod = mutation({
     // immediately visible on their side too.
     for (const it of items) {
       if (!it.measurementId) continue;
-      await ctx.db.patch(it.measurementId as never, { isProvisional: false });
+      await ctx.db.patch(it.measurementId as never, {
+        isProvisional: false,
+        evidenceComplete: it.evidenceComplete,
+      });
       const lookupKey = cadencePeriodKey(it.assignment.frequency as Frequency, periodKey);
       const acts = await ctx.db
         .query("activities")
