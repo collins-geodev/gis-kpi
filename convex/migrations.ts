@@ -12,6 +12,7 @@ import { isStillBlocked } from "./dataQuality";
 import { periodEvidence, recomputeMeasurement } from "./measurementsModel";
 import { vCanonicalKpiKey } from "./validators";
 import { LAGOS_OFFSET_MS, cadencePeriodKey } from "./lib/periods";
+import { lagosMonthKeyOf } from "./lib/evidencePeriod";
 import { reopenApprovedPeriod } from "./approvals";
 import type { Frequency } from "./lib/types";
 import { computeEmployeeAnalytics } from "./analytics";
@@ -593,72 +594,185 @@ export const grantCadenceGrace = internalMutation({
 });
 
 /**
- * Backfill the KPI period on evidence uploaded before periods were tagged at
- * capture. Preference order: the linked activity's period; else the period of
- * the KPI's activity whose work-date is nearest the upload moment (an August
- * upload proving July work adopts July). Untagged rows stay on their upload
- * month in the Evidence Centre. Idempotent — only null periods are touched.
+ * Backfill the KPI period on evidence uploaded without one (Evidence Centre /
+ * KPI-page uploads before the period picker). Untagged files otherwise count
+ * toward their UPLOAD month, so a 2 Sep upload proving August work would
+ * support September. Files that already have a work-date are skipped — that
+ * date already places them.
+ *
+ * Each file adopts, in order of confidence:
+ *  - "linked":      the period of its linked activity;
+ *  - "logged_with": the period of the KPI entry logged closest to the upload
+ *                   moment, within 24 h (the evidence-first rule means proof
+ *                   is attached just before the work is logged);
+ *  - "nearest":     the period of the KPI entry whose WORK DATE is nearest
+ *                   the upload — a guess; review these in the dry run.
+ * Files with no entry on their KPI stay untagged (upload month applies).
+ *
+ * `dryRun` lists every proposal without writing; `confidentOnly` skips
+ * "nearest" guesses. Idempotent — only untagged rows are touched. Re-run
+ * repairEvidenceGates afterwards so stored ticks follow the new tags.
+ *
+ *   npx convex run migrations:backfillEvidencePeriods '{"dryRun":true}' --prod
  */
 export const backfillEvidencePeriods = internalMutation({
-  args: {},
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confidentOnly: v.optional(v.boolean()),
+  },
   returns: v.object({
+    candidates: v.number(),
     tagged: v.number(),
-    fromActivity: v.number(),
-    fromNearest: v.number(),
-    untagged: v.number(),
+    linked: v.number(),
+    loggedWith: v.number(),
+    nearest: v.number(),
+    skippedNearest: v.number(),
+    noEntries: v.number(),
+    /** Proposals whose period differs from the upload month they count toward today. */
+    movesPeriod: v.number(),
+    proposals: v.array(
+      v.object({
+        employee: v.string(),
+        kpi: v.string(),
+        title: v.string(),
+        reviewStatus: v.string(),
+        uploaded: v.string(),
+        countsTowardNow: v.string(),
+        proposed: v.string(),
+        confidence: v.string(),
+      }),
+    ),
   }),
-  handler: async (ctx) => {
-    const evidence = await ctx.db.query("evidenceFiles").take(2000);
+  handler: async (ctx, { dryRun, confidentOnly }) => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const evidence = await ctx.db.query("evidenceFiles").take(4000);
+    const actsByAssignment = new Map<string, Doc<"activities">[]>();
+    const names = new Map<string, string>();
+    let candidates = 0;
     let tagged = 0;
-    let fromActivity = 0;
-    let fromNearest = 0;
-    let untagged = 0;
+    let linked = 0;
+    let loggedWith = 0;
+    let nearest = 0;
+    let skippedNearest = 0;
+    let noEntries = 0;
+    let movesPeriod = 0;
+    const proposals = [];
     for (const e of evidence) {
       if (e.periodKey || e.retentionState === "deleted") continue;
+      if (typeof e.activityAt === "number") continue;
+      candidates++;
+      const assignment = e.kpiAssignmentId ? await ctx.db.get(e.kpiAssignmentId) : null;
+
       let pk: string | undefined;
+      let confidence: "linked" | "logged_with" | "nearest" | undefined;
       if (e.activityId) {
         const act = await ctx.db.get(e.activityId);
         if (act) {
           pk = act.periodKey;
-          fromActivity++;
+          confidence = "linked";
         }
       }
       if (!pk && e.kpiAssignmentId) {
-        const acts = await ctx.db
-          .query("activities")
-          .withIndex("by_assignment_period", (q) =>
-            q.eq("kpiAssignmentId", e.kpiAssignmentId!),
-          )
-          .take(500);
+        let acts = actsByAssignment.get(e.kpiAssignmentId);
+        if (!acts) {
+          acts = await ctx.db
+            .query("activities")
+            .withIndex("by_assignment_period", (q) =>
+              q.eq("kpiAssignmentId", e.kpiAssignmentId!),
+            )
+            .take(500);
+          actsByAssignment.set(e.kpiAssignmentId, acts);
+        }
         if (acts.length > 0) {
-          const nearest = acts.reduce((best, a) =>
-            Math.abs(a.activityAt - e.uploadedAt) <
-            Math.abs(best.activityAt - e.uploadedAt)
+          const byLogged = acts.reduce((best, a) =>
+            Math.abs(a._creationTime - e.uploadedAt) <
+            Math.abs(best._creationTime - e.uploadedAt)
               ? a
               : best,
           );
-          pk = nearest.periodKey;
-          fromNearest++;
+          if (Math.abs(byLogged._creationTime - e.uploadedAt) <= DAY) {
+            pk = byLogged.periodKey;
+            confidence = "logged_with";
+          } else {
+            const byWork = acts.reduce((best, a) =>
+              Math.abs(a.activityAt - e.uploadedAt) <
+              Math.abs(best.activityAt - e.uploadedAt)
+                ? a
+                : best,
+            );
+            pk = byWork.periodKey;
+            confidence = "nearest";
+          }
         }
       }
-      if (pk) {
-        await ctx.db.patch(e._id, { periodKey: pk });
-        tagged++;
-      } else {
-        untagged++;
+      if (!pk || !confidence) {
+        noEntries++;
+        continue;
       }
+      if (confidence === "nearest" && confidentOnly) {
+        skippedNearest++;
+        continue;
+      }
+
+      const countsTowardNow = lagosMonthKeyOf(e.uploadedAt);
+      const freq = (assignment?.frequency ?? "Monthly") as Frequency;
+      if (cadencePeriodKey(freq, pk) !== cadencePeriodKey(freq, countsTowardNow)) {
+        movesPeriod++;
+      }
+      if (confidence === "linked") linked++;
+      else if (confidence === "logged_with") loggedWith++;
+      else nearest++;
+      tagged++;
+
+      if (proposals.length < 400) {
+        let employee = names.get(e.employeeId);
+        if (employee === undefined) {
+          employee =
+            (await ctx.db.get(e.employeeId))?.displayName ?? String(e.employeeId);
+          names.set(e.employeeId, employee);
+        }
+        proposals.push({
+          employee,
+          kpi: assignment?.canonicalKey ?? "—",
+          title: e.title.slice(0, 60),
+          reviewStatus: e.reviewStatus,
+          uploaded: new Date(e.uploadedAt).toISOString().slice(0, 16),
+          countsTowardNow,
+          proposed: pk,
+          confidence,
+        });
+      }
+      if (!dryRun) await ctx.db.patch(e._id, { periodKey: pk });
     }
-    if (tagged > 0) {
+    if (!dryRun && tagged > 0) {
       await recordAudit(ctx, {
         entityType: "evidenceFile",
         entityId: "backfill_periods",
         action: "backfill_evidence_periods",
         reason:
-          "Evidence uploaded before period tagging adopts the period of the work it supports",
-        after: { tagged, fromActivity, fromNearest, untagged },
+          "Untagged evidence adopts the period of the work it supports (linked entry, entry logged with it, or nearest work date)",
+        after: {
+          tagged,
+          linked,
+          loggedWith,
+          nearest,
+          skippedNearest,
+          noEntries,
+          movesPeriod,
+        },
       });
     }
-    return { tagged, fromActivity, fromNearest, untagged };
+    return {
+      candidates,
+      tagged,
+      linked,
+      loggedWith,
+      nearest,
+      skippedNearest,
+      noEntries,
+      movesPeriod,
+      proposals,
+    };
   },
 });
 

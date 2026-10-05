@@ -2805,3 +2805,108 @@ describe("evidence integrity flags", () => {
     ).rejects.toThrow(/1 to 28/);
   });
 });
+
+describe("backfilling periods on untagged evidence", () => {
+  test("dry run proposes, confidentOnly skips guesses, apply tags once", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp, userId } = await makeUser(t, {
+      email: "bf@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { assignmentId, idleAssignment } = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return {
+        assignmentId: list.find((a) => a.canonicalKey === "asset_integration")!._id,
+        idleAssignment: list.find((a) => a.canonicalKey !== "asset_integration")!._id,
+      };
+    });
+    await unlockCapture(t, assignmentId); // untagged, uploaded "now"
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+    const insert = (fields: {
+      kpiAssignmentId: Id<"kpiAssignments">;
+      title: string;
+      uploadedAt: number;
+      activityAt?: number;
+    }) =>
+      t.run(async (ctx) =>
+        ctx.db.insert("evidenceFiles", {
+          employeeId: empId,
+          externalUrl: `https://example.com/${fields.title}`,
+          originalFilename: fields.title,
+          mimeType: "text/uri-list",
+          fileSize: 0,
+          category: "qa_log",
+          uploadedByUserId: userId,
+          version: 1,
+          confidentiality: "internal",
+          reviewStatus: "approved",
+          retentionState: "active",
+          ...fields,
+        }),
+      );
+    // Uploaded 2 Sep, long before the entry was logged → nearest work date (Aug).
+    const guessed = await insert({
+      kpiAssignmentId: assignmentId,
+      title: "early-sept",
+      uploadedAt: Date.UTC(2026, 8, 2, 9),
+    });
+    // Already dated by its work-date → left alone.
+    await insert({
+      kpiAssignmentId: assignmentId,
+      title: "dated",
+      uploadedAt: Date.UTC(2026, 8, 2, 9),
+      activityAt: AUG_2026,
+    });
+    // No entries on its KPI → stays untagged.
+    await insert({
+      kpiAssignmentId: idleAssignment,
+      title: "idle",
+      uploadedAt: Date.UTC(2026, 8, 2, 9),
+    });
+    const periodOf = (id: Id<"evidenceFiles">) =>
+      t.run(async (ctx) => (await ctx.db.get(id))!.periodKey);
+
+    const dry = await t.mutation(internal.migrations.backfillEvidencePeriods, {
+      dryRun: true,
+    });
+    expect(dry.candidates).toBe(3);
+    expect(dry.loggedWith).toBe(1); // the stub, uploaded alongside the entry
+    expect(dry.nearest).toBe(1);
+    expect(dry.noEntries).toBe(1);
+    const proposal = dry.proposals.find((p) => p.title === "early-sept")!;
+    expect(proposal).toMatchObject({
+      countsTowardNow: "2026-M09",
+      proposed: "2026-M08",
+      confidence: "nearest",
+    });
+    expect((await periodOf(guessed)) ?? null).toBeNull();
+
+    const confident = await t.mutation(internal.migrations.backfillEvidencePeriods, {
+      confidentOnly: true,
+    });
+    expect(confident.tagged).toBe(1);
+    expect(confident.skippedNearest).toBe(1);
+    expect((await periodOf(guessed)) ?? null).toBeNull();
+
+    const rest = await t.mutation(internal.migrations.backfillEvidencePeriods, {});
+    expect(rest.tagged).toBe(1);
+    expect(await periodOf(guessed)).toBe("2026-M08");
+    const again = await t.mutation(internal.migrations.backfillEvidencePeriods, {});
+    expect(again.candidates).toBe(1); // only the KPI with no entries remains
+    expect(again.tagged).toBe(0);
+  });
+});
