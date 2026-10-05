@@ -26,7 +26,8 @@ const fixture: ReportDataset = {
     scoringBlocked: 1,
     dqOpen: 3,
     dqBlockers: 1,
-    weightWarning: "Configured weight totals 80 / 100 per employee.",
+    weightsComplete: false,
+    weightWarning: "1 of 1 employees' configured weights total below 100: Timothy (80).",
   },
   employees: [
     {

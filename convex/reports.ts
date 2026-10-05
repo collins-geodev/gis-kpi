@@ -15,11 +15,9 @@ import {
 import { recordAudit } from "./audit";
 import { scoreDueToDate, scoreScorecard, type ScorecardItem } from "./lib/scoring";
 import { ROLE_TEMPLATES } from "./lib/catalogue";
-import { BASELINE_PERFORMANCE_YEAR, type JobRole } from "./lib/types";
+import { BASELINE_PERFORMANCE_YEAR, FULL_WEIGHT_TOTAL, type JobRole } from "./lib/types";
+import { weightNote } from "./lib/weights";
 import { vReportScope } from "./validators";
-
-const WEIGHT_WARNING =
-  "Configured weights total 80 / 100 per employee — the missing 20 points are surfaced, not invented.";
 
 /** Record report-generation provenance (format, and AI model details if used). */
 export const logGeneration = mutation({
@@ -247,6 +245,8 @@ export const dataset = query({
       }
     }
 
+    const weights = weightNote(employeeRows);
+
     return {
       meta: {
         title: "GIS Team KPI Performance Report",
@@ -257,8 +257,8 @@ export const dataset = query({
         periodLabel: period?.label ?? periodKey,
         year: BASELINE_PERFORMANCE_YEAR,
         timezone: year.timezone,
-        configuredWeightTotal: 80,
-        fullWeightTotal: 100,
+        configuredWeightTotal: weights.lowestConfiguredWeight,
+        fullWeightTotal: FULL_WEIGHT_TOTAL,
         normalizationEnabled: year.normalizationEnabled,
         reportVersion: 1,
       },
@@ -268,7 +268,8 @@ export const dataset = query({
         scoringBlocked,
         dqOpen,
         dqBlockers,
-        weightWarning: WEIGHT_WARNING,
+        weightsComplete: weights.weightsComplete,
+        weightWarning: weights.weightWarning,
       },
       employees: employeeRows,
       kpis: kpiRows,

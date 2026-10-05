@@ -29,7 +29,7 @@ Open a KPI (from Individual Performance) and use the **Evidence** panel to uploa
 - Upload your own work. The same file submitted by two people is flagged to administrators.
 
 ### Read your score
-On **Individual Performance** you'll see, per KPI: target, weight, attainment, contribution, and status. Your configured weight is **80 / 100** — the score is shown out of the true configured maximum and is never silently rebased to 100.
+On **Individual Performance** you'll see, per KPI: target, weight, attainment, contribution, and status. Your KPIs total **100** points: **80** from your role's core KPIs and **20** from the four shared non-core KPIs (hazard reporting, compliance recertification, internal customer satisfaction, training hours), which you log on Activity Capture like any other KPI. Your score is shown out of your configured maximum and never silently rebased.
 
 ## For reviewers & managers
 

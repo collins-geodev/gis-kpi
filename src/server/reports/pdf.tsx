@@ -317,9 +317,9 @@ export async function buildReportPdf(
           </View>
           <View style={s.weightBanner}>
             <Text style={{ fontSize: 10 }}>
-              ⚠ Configured weight {ds.meta.configuredWeightTotal} /{" "}
-              {ds.meta.fullWeightTotal} per employee. Scores are never rebased to 100
-              without an explicit, labelled normalization.
+              {ds.executiveSummary.weightsComplete ? "✓" : "⚠"}{" "}
+              {ds.executiveSummary.weightWarning} Scores are never rebased without an
+              explicit, labelled normalization.
             </Text>
           </View>
         </View>
@@ -502,13 +502,14 @@ export async function buildReportPdf(
           attainment = f(mode, inputs, target, direction); cappedAttainment =
           clamp(attainment, 0, officialCap 100%); weightedContribution = cappedAttainment
           × weight; assignedWeightScore = Σ contributions (out of the true configured
-          maximum, {ds.meta.configuredWeightTotal}); normalizedScore = assignedWeightScore
-          / configured × 100 (shown {ds.meta.normalizationEnabled ? "with" : "without"}{" "}
-          normalization enabled). Due-to-date % scores against only the weight due by the
-          report period: monthly KPIs always; quarterly at quarter ends; annual in
-          December — each joining earlier the moment it is measured. Ratio KPIs aggregate
-          numerators/denominators; zero denominator or missing baseline reads as No Data.
-          Percentages are decimals. Timezone {ds.meta.timezone}.
+          maximum — {ds.meta.fullWeightTotal} when weights are complete); normalizedScore
+          = assignedWeightScore / configured × 100 (shown{" "}
+          {ds.meta.normalizationEnabled ? "with" : "without"} normalization enabled).
+          Due-to-date % scores against only the weight due by the report period: monthly
+          KPIs always; quarterly at quarter ends; annual in December — each joining
+          earlier the moment it is measured. Ratio KPIs aggregate numerators/denominators;
+          zero denominator or missing baseline reads as No Data. Percentages are decimals.
+          Timezone {ds.meta.timezone}.
         </Text>
         {narrative && <Text style={s.p}>{narrative.methodologyNotes}</Text>}
         {narrative && narrative.citations.length > 0 && (

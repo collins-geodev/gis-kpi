@@ -171,7 +171,9 @@ export async function buildWorkbook(ds: ReportDataset, stampMs: number): Promise
     { k: "KPI assignments", v: ds.executiveSummary.assignments },
     {
       k: "Configured weight total",
-      v: `${ds.meta.configuredWeightTotal} / ${ds.meta.fullWeightTotal}`,
+      v: ds.executiveSummary.weightsComplete
+        ? `${ds.meta.fullWeightTotal} / ${ds.meta.fullWeightTotal} (all employees)`
+        : `Below ${ds.meta.fullWeightTotal} for some employees (lowest ${ds.meta.configuredWeightTotal}) — see Weight note`,
     },
     { k: "Normalization enabled", v: ds.meta.normalizationEnabled ? "Yes" : "No" },
     { k: "Open data-quality issues", v: ds.executiveSummary.dqOpen },

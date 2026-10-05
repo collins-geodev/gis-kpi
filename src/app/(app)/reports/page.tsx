@@ -37,7 +37,8 @@ export default function ReportsPage() {
           <CardDescription>
             Multi-sheet workbook: Executive Summary, Team Scorecard, Individual KPI
             Detail, Activity &amp; Evidence Registers, Data Quality Issues, and KPI
-            Definitions &amp; Methodology — with a visible 80/100 weight note.
+            Definitions &amp; Methodology — with a weight note confirming each employee
+            totals 100 (or naming anyone below).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

@@ -24,9 +24,9 @@ Every workbook anomaly is a reviewable issue — **nothing is auto-corrected**. 
 
 Resolving a **blocking** issue (missing row-32 frequency, the row-16 unit mismatch, the row-54 mismatch, the row-30 truncation, the innovation rubric) recomputes whether the affected KPI is still `scoring blocked`. A KPI can't be approved into an official score until its blockers clear.
 
-## 4. The 80 / 100 weight gap
+## 4. Weight completeness (100 points)
 
-Each employee's five KPIs total **80**, not 100. This is surfaced everywhere (Overview, Team, Individual, exports). Resolve per organization policy by either: adding a KPI, changing weights, or explicitly enabling normalization on the performance year (`performanceYears.normalizationEnabled`). Whatever you choose is audit-logged. Until then, the score is shown out of the true configured maximum (80) and never silently rebased to 100.
+Each employee totals **100**: their role's core KPIs (**80**) plus the four shared non-core KPIs (**20**, 5 each — set and handled by management; don't change the template). KPI Settings → *Weight completeness* shows each total; reports confirm "all employees total 100 / 100" or name anyone below. If someone falls short, fix their KPIs or weights. Normalization (`performanceYears.normalizationEnabled`, audit-logged) scales a short total up to 100 and labels it; keep it off while weights are complete. Scores are always shown out of the configured maximum and never silently rebased.
 
 ## 5. Scoring, caps & thresholds
 

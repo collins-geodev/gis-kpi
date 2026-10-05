@@ -114,7 +114,7 @@ export const dashboard = query({
       measurementStatus: byStatus,
       scoreTrend,
       weightCompleteness: [
-        { label: "80 / 100 (baseline)", value: incomplete },
+        { label: "Below 100", value: incomplete },
         { label: "100 / 100", value: complete },
       ],
       coverage: {

@@ -12,6 +12,7 @@ export interface ReportMeta {
   periodLabel: string;
   year: number;
   timezone: string;
+  /** Lowest configured weight total among the employees in scope (100 when complete). */
   configuredWeightTotal: number;
   fullWeightTotal: number;
   normalizationEnabled: boolean;
@@ -105,6 +106,8 @@ export interface ReportDataset {
     scoringBlocked: number;
     dqOpen: number;
     dqBlockers: number;
+    /** Every employee in scope has configured weights totalling 100. */
+    weightsComplete: boolean;
     weightWarning: string;
   };
   employees: ReportEmployeeRow[];
