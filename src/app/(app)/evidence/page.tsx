@@ -39,7 +39,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
-import { periodLabel, formatDate } from "@convex/lib/format";
+import { periodLabel, formatDateTime } from "@convex/lib/format";
 import { errorMessage } from "@/lib/errors";
 
 const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant"]> = {
@@ -382,7 +382,7 @@ export default function EvidenceCentrePage() {
                   <TableHead>Category</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Size</TableHead>
-                  <TableHead>Uploaded</TableHead>
+                  <TableHead title="Upload date and time (Lagos)">Uploaded</TableHead>
                   <TableHead>Open</TableHead>
                 </TableRow>
               </TableHeader>
@@ -463,7 +463,7 @@ export default function EvidenceCentrePage() {
                       {formatSize(r.fileSize)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {formatDate(r.uploadedAt)}
+                      {formatDateTime(r.uploadedAt)}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
