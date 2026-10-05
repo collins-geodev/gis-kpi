@@ -1056,11 +1056,22 @@ async function replaySubmittedAt(
  * trail get `submittedAt` backfilled so later recomputes agree.
  *
  * `dryRun` lists every proposal without writing; `confidentOnly` skips
- * measurements with an entry whose audit trail is incomplete. Idempotent.
+ * measurements with an entry whose audit trail is incomplete. `late` lists
+ * the measurements that stay late. Idempotent.
  *
  *   npx convex run migrations:repairLateFlags '{"dryRun":true}' --prod
  *   npx convex run migrations:repairLateFlags '{"periodKey":"2026-M08"}' --prod
  */
+const vLateFlagRow = v.object({
+  employee: v.string(),
+  kpi: v.string(),
+  periodKey: v.string(),
+  due: v.string(),
+  lastSubmitted: v.string(),
+  official: v.boolean(),
+  confidence: v.union(v.literal("recorded"), v.literal("audit"), v.literal("guess")),
+});
+
 export const repairLateFlags = internalMutation({
   args: {
     periodKey: v.optional(v.string()),
@@ -1074,21 +1085,9 @@ export const repairLateFlags = internalMutation({
     skippedUncertain: v.number(),
     wouldBecomeLate: v.number(),
     entriesBackfilled: v.number(),
-    proposals: v.array(
-      v.object({
-        employee: v.string(),
-        kpi: v.string(),
-        periodKey: v.string(),
-        due: v.string(),
-        lastSubmitted: v.string(),
-        official: v.boolean(),
-        confidence: v.union(
-          v.literal("recorded"),
-          v.literal("audit"),
-          v.literal("guess"),
-        ),
-      }),
-    ),
+    proposals: v.array(vLateFlagRow),
+    /** Measurements that stay late (submitted or edited after the deadline). */
+    late: v.array(vLateFlagRow),
   }),
   handler: async (ctx, { periodKey, dryRun, confidentOnly }) => {
     const measurements = (await ctx.db.query("kpiMeasurements").take(4000)).filter(
@@ -1102,6 +1101,7 @@ export const repairLateFlags = internalMutation({
     let wouldBecomeLate = 0;
     let entriesBackfilled = 0;
     const proposals = [];
+    const late = [];
     for (const m of measurements) {
       if (!periods.has(m.periodKey)) {
         periods.set(
@@ -1124,7 +1124,11 @@ export const repairLateFlags = internalMutation({
       if (counted.length === 0) continue;
       checked++;
 
-      const times = [];
+      const times: {
+        activity: Doc<"activities">;
+        at: number;
+        confidence: "recorded" | "audit" | "guess";
+      }[] = [];
       for (const a of counted) {
         if (a.submittedAt !== undefined) {
           times.push({ activity: a, at: a.submittedAt, confidence: "recorded" as const });
@@ -1149,14 +1153,6 @@ export const repairLateFlags = internalMutation({
           entriesBackfilled++;
         }
       }
-      if (m.cadenceCompliant) {
-        if (!onTime) wouldBecomeLate++;
-        continue;
-      }
-      if (!onTime) {
-        stillLate++;
-        continue;
-      }
       const confidence: "recorded" | "audit" | "guess" = times.some(
         (x) => x.confidence === "guess",
       )
@@ -1164,24 +1160,32 @@ export const repairLateFlags = internalMutation({
         : times.some((x) => x.confidence === "audit")
           ? "audit"
           : "recorded";
+      const row = async () => ({
+        employee: (await ctx.db.get(m.employeeId))?.displayName ?? String(m.employeeId),
+        kpi:
+          (await ctx.db.get(m.kpiAssignmentId))?.objective ?? String(m.kpiAssignmentId),
+        periodKey: m.periodKey,
+        due: period ? new Date(period.dueAt).toISOString() : "none",
+        lastSubmitted: new Date(Math.max(...times.map((x) => x.at))).toISOString(),
+        official: !m.isProvisional,
+        confidence,
+      });
+
+      if (m.cadenceCompliant) {
+        if (!onTime) wouldBecomeLate++;
+        continue;
+      }
+      if (!onTime) {
+        stillLate++;
+        if (late.length < 200) late.push(await row());
+        continue;
+      }
       if (confidentOnly && confidence === "guess") {
         skippedUncertain++;
         continue;
       }
       nowOnTime++;
-      if (proposals.length < 200) {
-        const assignment = await ctx.db.get(m.kpiAssignmentId);
-        const employee = await ctx.db.get(m.employeeId);
-        proposals.push({
-          employee: employee?.displayName ?? String(m.employeeId),
-          kpi: assignment?.objective ?? String(m.kpiAssignmentId),
-          periodKey: m.periodKey,
-          due: period ? new Date(period.dueAt).toISOString() : "none",
-          lastSubmitted: new Date(Math.max(...times.map((x) => x.at))).toISOString(),
-          official: !m.isProvisional,
-          confidence,
-        });
-      }
+      if (proposals.length < 200) proposals.push(await row());
       if (!dryRun) await ctx.db.patch(m._id, { cadenceCompliant: true });
     }
     if (!dryRun && (nowOnTime > 0 || entriesBackfilled > 0)) {
@@ -1201,6 +1205,7 @@ export const repairLateFlags = internalMutation({
       wouldBecomeLate,
       entriesBackfilled,
       proposals,
+      late,
     };
   },
 });

@@ -3329,6 +3329,11 @@ describe("submitted-late is judged on submission time", () => {
       const res = await t.mutation(internal.migrations.repairLateFlags, {});
       expect(res.nowOnTime).toBe(0);
       expect(res.stillLate).toBe(1);
+      expect(res.late).toHaveLength(1);
+      expect(res.late[0]!.periodKey).toBe("2026-M08");
+      expect(Date.parse(res.late[0]!.lastSubmitted)).toBeGreaterThan(
+        Date.parse(res.late[0]!.due),
+      );
       expect(await compliant()).toBe(false);
     });
 
