@@ -32,6 +32,7 @@ import {
   TARGET_TYPES,
   type AppRole,
 } from "@convex/lib/types";
+import { formatDate } from "@convex/lib/format";
 import { CheckCircle2, Loader2, Lock, Save } from "lucide-react";
 
 export default function KpiSettingsPage() {
@@ -84,9 +85,16 @@ function YearSettingsCard({ settings }: { settings: Settings | null | undefined 
   const update = useMutation(api.kpiSettings.updateYearSettings);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  // The date picker shows the browser's locale format ("07/01/2026" reads as
+  // either 7 Jan or 1 Jul), so the chosen day is also spelled out beside it.
+  const [captureDraft, setCaptureDraft] = useState<string | null>(null);
 
   if (settings === undefined) return <Skeleton className="h-40" />;
   if (settings === null) return null;
+  const savedCapture = settings.captureStartAt
+    ? new Date(settings.captureStartAt + 60 * 60 * 1000).toISOString().slice(0, 10)
+    : "";
+  const captureValue = captureDraft ?? savedCapture;
 
   return (
     <Card>
@@ -128,7 +136,7 @@ function YearSettingsCard({ settings }: { settings: Settings | null | undefined 
               defaultChecked={settings.normalizationEnabled}
               className="h-4 w-4"
             />
-            Enable 80→100 normalization (labelled)
+            Scale totals below 100 up to 100 (normalization, labelled)
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">
@@ -159,15 +167,19 @@ function YearSettingsCard({ settings }: { settings: Settings | null | undefined 
             <input
               type="date"
               name="captureStart"
-              defaultValue={
-                settings.captureStartAt
-                  ? new Date(settings.captureStartAt + 60 * 60 * 1000)
-                      .toISOString()
-                      .slice(0, 10)
-                  : ""
-              }
+              value={captureValue}
+              onChange={(e) => setCaptureDraft(e.target.value)}
+              aria-describedby="capture-opens-on"
               className="h-9 w-40 rounded-md border border-input bg-background px-2 text-sm"
             />
+            <span
+              id="capture-opens-on"
+              className="mt-1 block text-xs text-muted-foreground"
+            >
+              {captureValue
+                ? `Opens ${formatDate(Date.parse(`${captureValue}T00:00:00+01:00`))}`
+                : "Open all year"}
+            </span>
           </label>
           <Button type="submit" disabled={busy}>
             {busy ? (
@@ -207,8 +219,9 @@ function WeightCompletenessCard({
           Weight completeness — pick an employee to edit their KPIs
         </CardTitle>
         <CardDescription>
-          Every employee totals 80 / 100 in the baseline. Adjust weights to reach 100, or
-          leave 80 and enable normalization above.
+          Every employee should total 100: their role&apos;s 80 core points plus the 20
+          shared non-core points. If a total falls short, adjust the weights to reach 100
+          or enable normalization above to scale scores up to 100.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">

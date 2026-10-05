@@ -79,6 +79,8 @@ export default function ReviewPage() {
   const recallEntry = useMutation(api.approvals.recallActivityApproval);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // KPI rows whose entry list is expanded (to pick an entry to return).
+  const [openEntries, setOpenEntries] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<{
     text: string;
     undo?: () => Promise<void>;
@@ -159,7 +161,7 @@ ${approvedCount} already-approved ${approvedCount === 1 ? "entry is" : "entries 
     periodKey: string,
   ) {
     const reason = window.prompt(
-      `Recall the approval of “${entry.title.slice(0, 80)}” (${periodLabel(periodKey)}) and send it back to the employee for changes?
+      `Return “${entry.title.slice(0, 80)}” (${periodLabel(periodKey)}) to the employee for changes? Its approval is withdrawn.
 
 Only this entry is returned — other entries are untouched. The KPI goes back into the queue for re-approval. Reason (required — it is emailed to the employee):`,
     );
@@ -172,11 +174,11 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
         reason: reason.trim(),
       });
       setNotice({
-        text: `Entry recalled — “${entry.title.slice(0, 60)}” is back with the employee for changes and they have been notified.`,
+        text: `Entry returned — “${entry.title.slice(0, 60)}” is back with the employee for changes and they have been notified.`,
       });
     } catch (e) {
       setError(
-        errorMessage(e, "Could not recall the entry — refresh the queue and try again."),
+        errorMessage(e, "Could not return the entry — refresh the queue and try again."),
       );
     } finally {
       setBusy(null);
@@ -530,6 +532,45 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                               <XCircle className="h-4 w-4" /> Reject all
                             </Button>
                           )}
+                          {canApprove &&
+                            i.isProvisional === false &&
+                            i.approvedEntryCount > 0 && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-muted-foreground hover:text-critical"
+                                disabled={busy === i.assignmentId}
+                                title={
+                                  i.approvedEntryCount === 1
+                                    ? "Return this KPI's approved entry to the employee for changes — other KPIs stay approved (reason required; audited and notified)"
+                                    : "Choose which approved entry to return to the employee for changes — the others stay approved"
+                                }
+                                onClick={() => {
+                                  const approved = i.entries.filter(
+                                    (e) => e.status === "approved",
+                                  );
+                                  if (
+                                    i.approvedEntryCount === 1 &&
+                                    approved.length === 1
+                                  ) {
+                                    void doRecallEntry(
+                                      i.assignmentId,
+                                      approved[0]!,
+                                      i.periodKey,
+                                    );
+                                  } else {
+                                    setOpenEntries((prev) =>
+                                      new Set(prev).add(i.measurementId),
+                                    );
+                                  }
+                                }}
+                              >
+                                <Undo2 className="h-4 w-4" />
+                                {i.approvedEntryCount === 1
+                                  ? "Return entry"
+                                  : "Return an entry…"}
+                              </Button>
+                            )}
                           {isAdmin && (
                             <Button
                               size="sm"
@@ -548,7 +589,20 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                       </div>
                       {/* What the employee self-reported, before trusting the
                           computed number — expandable to the raw entries. */}
-                      <details className="group">
+                      <details
+                        className="group"
+                        open={openEntries.has(i.measurementId)}
+                        onToggle={(ev) => {
+                          const isOpen = (ev.currentTarget as HTMLDetailsElement).open;
+                          setOpenEntries((prev) => {
+                            if (prev.has(i.measurementId) === isOpen) return prev;
+                            const next = new Set(prev);
+                            if (isOpen) next.add(i.measurementId);
+                            else next.delete(i.measurementId);
+                            return next;
+                          });
+                        }}
+                      >
                         <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-xs text-muted-foreground [&::-webkit-details-marker]:hidden">
                           <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" />
                           <span className="font-medium text-foreground/80">
@@ -581,12 +635,12 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                                     type="button"
                                     className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:text-critical hover:underline disabled:opacity-50"
                                     disabled={busy === i.assignmentId}
-                                    title="Recall the approval of THIS entry only — it goes back to the employee for changes; other entries stay as they are (reason required; audited and notified)"
+                                    title="Return THIS entry only — its approval is withdrawn and it goes back to the employee for changes; other entries stay as they are (reason required; audited and notified)"
                                     onClick={() =>
                                       doRecallEntry(i.assignmentId, e, i.periodKey)
                                     }
                                   >
-                                    <Undo2 className="h-3 w-3" /> Recall entry
+                                    <Undo2 className="h-3 w-3" /> Return
                                   </button>
                                 )}
                               </li>

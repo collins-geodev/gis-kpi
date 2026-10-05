@@ -38,7 +38,7 @@ Each employee's five KPIs total **80**, not 100. This is surfaced everywhere (Ov
 
 - Provisional measurements appear grouped by employee + period.
 - **Approve period** is blocked until required evidence is approved **for that period** and no data-quality issue blocks the KPI. Approval finalizes the measurements and freezes a reproducible `scoreSnapshot` (calc version + inputs).
-- Reviewers can send work back after approval: **Reject all** returns all entries for a KPI/period (approved ones included); **Recall entry** on a single approved entry sends back only that entry (`approvals:recallActivityApproval`). Both need a reason, are audited and notify the employee. The KPI re-enters the queue; its earlier snapshot stays until the period is re-approved.
+- Reviewers can send work back after approval: **Reject all** returns all entries for a KPI/period (approved ones included); **Return entry** on an approved row (or **Return** beside one entry in its *Self-reported* list) sends back only that entry (`approvals:recallActivityApproval`). Both need a reason, are audited and notify the employee. The KPI re-enters the queue; its earlier snapshot stays until the period is re-approved.
 
 ### Evidence rules (period-aware)
 

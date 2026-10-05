@@ -53,7 +53,7 @@ Evidence badges on each row are for **that row's period**:
 ### Send work back after approval
 - If **Approve period** is blocked, the line under the employee's name says why (evidence awaiting approval, no evidence for the period, or a data-quality block).
 - **Reject all** (on a pending row) sends every entry for that KPI and period — including already-approved ones — back to the employee with your reason.
-- **Recall entry** (next to an approved entry in the row's *Self-reported* list) recalls the approval of just that entry. Other entries are untouched; the KPI re-enters the queue for re-approval, and the earlier frozen score stays on record until the period is approved again.
+- **Return entry** (on an approved row) sends just one approved entry back to the employee for changes. With one approved entry it returns that entry; with several it opens the row's *Self-reported* list, where each approved entry has its own **Return**. Other entries are untouched; the KPI re-enters the queue for re-approval, and the earlier frozen score stays on record until the period is approved again.
 - Both require a reason, are audit-logged, and notify the employee. **Undo** after a reject restores the entries to *submitted*.
 
 ### Fair comparisons
