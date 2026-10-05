@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatPercent } from "@convex/lib/format";
+import { formatPercent, formatDate } from "@convex/lib/format";
 import { Scale, Trash2 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 
@@ -154,10 +154,7 @@ export function ScoreOverridePanel({
                     </span>
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    {o.reason} — {o.by},{" "}
-                    {new Date(o.createdAt).toLocaleDateString("en-GB", {
-                      timeZone: "Africa/Lagos",
-                    })}
+                    {o.reason} — {o.by}, {formatDate(o.createdAt)}
                   </div>
                 </div>
                 <button

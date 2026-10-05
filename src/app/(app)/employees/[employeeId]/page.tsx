@@ -19,7 +19,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatKpiTarget, formatNumber, formatPercent } from "@convex/lib/format";
+import {
+  formatKpiTarget,
+  formatNumber,
+  formatPercent,
+  formatDate,
+} from "@convex/lib/format";
 import { ArrowLeft, History, Lock, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AppRole } from "@convex/lib/types";
@@ -222,11 +227,7 @@ export default function IndividualPage() {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {h.approvedBy ?? "—"}
-                      <span className="block">
-                        {new Date(h.createdAt).toLocaleDateString("en-GB", {
-                          timeZone: "Africa/Lagos",
-                        })}
-                      </span>
+                      <span className="block">{formatDate(h.createdAt)}</span>
                     </TableCell>
                   </TableRow>
                 ))}

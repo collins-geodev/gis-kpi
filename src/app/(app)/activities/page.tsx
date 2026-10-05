@@ -28,10 +28,16 @@ import {
   X,
 } from "lucide-react";
 import { EvidencePanel } from "@/components/evidence-panel";
+import { PeriodDeadlines } from "@/components/deadlines";
 import { StatusBadge } from "@/components/status-badge";
 import { aggregateActivityInputs } from "@convex/lib/measure";
 import { computeAttainment } from "@convex/lib/scoring";
-import { formatPercent, normalizeReductionTarget, periodLabel } from "@convex/lib/format";
+import {
+  formatPercent,
+  normalizeReductionTarget,
+  periodLabel,
+  formatDate,
+} from "@convex/lib/format";
 import type { Direction, Frequency, MeasurementMode } from "@convex/lib/types";
 import { LAGOS_OFFSET_MS, captureGrainForFrequency } from "@convex/lib/periods";
 import { suggestActivityTitle } from "@/lib/evidence-suggestions";
@@ -547,6 +553,9 @@ export default function ActivitiesPage() {
                     </option>
                   ))}
                 </select>
+                {selectedPeriod && (
+                  <PeriodDeadlines period={selectedPeriod} className="mt-1.5" />
+                )}
               </Row>
 
               <Row label="Title (auto-generated)" required>
@@ -825,10 +834,7 @@ export default function ActivitiesPage() {
                         <Badge variant="muted">{a.status}</Badge>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {periodLabel(a.periodKey)} ·{" "}
-                        {new Date(a.activityAt).toLocaleDateString("en-GB", {
-                          timeZone: "Africa/Lagos",
-                        })}
+                        {periodLabel(a.periodKey)} · {formatDate(a.activityAt)}
                       </div>
                     </Link>
                     {deletable && (

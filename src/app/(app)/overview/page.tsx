@@ -16,6 +16,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { CountUp } from "@/components/count-up";
+import { UpcomingDeadlines } from "@/components/deadlines";
 import { APP_ROLE_LABELS, type AppRole } from "@convex/lib/types";
 import { periodLabel } from "@convex/lib/format";
 import {
@@ -112,6 +113,8 @@ export default function OverviewPage() {
           ))}
         </div>
       )}
+
+      {hasRoles && <UpcomingDeadlines />}
 
       {summary === undefined ? (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

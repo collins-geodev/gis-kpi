@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { AccessDenied } from "@/components/access-denied";
 import { formatPercent, periodLabel } from "@convex/lib/format";
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronRight,
   FileCheck2,
@@ -26,6 +27,34 @@ import {
   XCircle,
 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+
+type QueueRow = {
+  ready: boolean;
+  evidenceRequired: boolean;
+  evidenceComplete: boolean;
+  pendingEvidence: number;
+  scoringBlocked: boolean;
+};
+
+/** Plain-language reasons a period's Approve button is blocked. */
+function blockerReasons(items: QueueRow[], periodKey: string): string[] {
+  const n = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+  const notReady = items.filter((i) => !i.ready);
+  const awaiting = notReady.filter(
+    (i) => i.evidenceRequired && !i.evidenceComplete && i.pendingEvidence > 0,
+  ).length;
+  const missing = notReady.filter(
+    (i) => i.evidenceRequired && !i.evidenceComplete && i.pendingEvidence === 0,
+  ).length;
+  const dq = notReady.filter((i) => i.scoringBlocked).length;
+  const reasons: string[] = [];
+  if (awaiting > 0) reasons.push(`${n(awaiting, "KPI")} with evidence awaiting approval`);
+  if (missing > 0) {
+    reasons.push(`${n(missing, "KPI")} with no evidence for ${periodLabel(periodKey)}`);
+  }
+  if (dq > 0) reasons.push(`${n(dq, "KPI")} blocked by a data-quality issue`);
+  return reasons;
+}
 
 export default function ReviewPage() {
   const me = useQuery(api.access.currentUser);
@@ -73,7 +102,7 @@ export default function ReviewPage() {
 
   async function doReject(assignmentId: string, periodKey: string, approvedCount = 0) {
     const reason = window.prompt(
-      `Reason for rejecting this submission (required — it is emailed to the employee):${
+      `Reject ALL entries for this KPI and period? Reason (required — it is emailed to the employee):${
         approvedCount > 0
           ? `
 
@@ -130,7 +159,7 @@ ${approvedCount} already-approved ${approvedCount === 1 ? "entry is" : "entries 
     periodKey: string,
   ) {
     const reason = window.prompt(
-      `Return the approved entry “${entry.title.slice(0, 80)}” (${periodLabel(periodKey)}) to the employee for changes?
+      `Recall the approval of “${entry.title.slice(0, 80)}” (${periodLabel(periodKey)}) and send it back to the employee for changes?
 
 Only this entry is returned — other entries are untouched. The KPI goes back into the queue for re-approval. Reason (required — it is emailed to the employee):`,
     );
@@ -143,11 +172,11 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
         reason: reason.trim(),
       });
       setNotice({
-        text: `Returned — “${entry.title.slice(0, 60)}” is back with the employee for changes and they have been notified.`,
+        text: `Entry recalled — “${entry.title.slice(0, 60)}” is back with the employee for changes and they have been notified.`,
       });
     } catch (e) {
       setError(
-        errorMessage(e, "Could not return the entry — refresh the queue and try again."),
+        errorMessage(e, "Could not recall the entry — refresh the queue and try again."),
       );
     } finally {
       setBusy(null);
@@ -304,6 +333,8 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
             const allReady = g.items.every((i) => i.ready);
             const official = g.items.every((i) => i.isProvisional === false);
             const gk = `${g.employeeId}::${g.periodKey}`;
+            const blockers =
+              official || allReady ? [] : blockerReasons(g.items, g.periodKey);
             return (
               <Card key={gk}>
                 <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
@@ -324,6 +355,12 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                         </Badge>
                       )}
                     </CardTitle>
+                    {blockers.length > 0 && (
+                      <p className="mt-1 flex items-start gap-1.5 text-xs text-warning">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>Can&apos;t approve yet: {blockers.join("; ")}.</span>
+                      </p>
+                    )}
                   </div>
                   {canApprove &&
                     (official ? (
@@ -362,6 +399,11 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                         size="sm"
                         variant={allReady ? "default" : "outline"}
                         disabled={!allReady || busy === gk}
+                        title={
+                          blockers.length > 0
+                            ? `Blocked: ${blockers.join("; ")}`
+                            : "Approve the period — the score is frozen and the employee notified"
+                        }
                         onClick={() => doApprove(g.employeeId, g.periodKey)}
                       >
                         <CheckCircle2 className="h-4 w-4" />
@@ -429,9 +471,23 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                                     : "No evidence has been approved for this KPI yet."
                                 }
                               >
-                                no evidence for this period
+                                no evidence for {periodLabel(i.periodKey)}
                               </Badge>
                             ))}
+                          {i.evidenceRequired &&
+                            !i.evidenceComplete &&
+                            i.wrongPeriodEvidence > 0 && (
+                              <Link href={`/kpi/${i.assignmentId}` as never}>
+                                <Badge
+                                  variant="warning"
+                                  title={`${i.wrongPeriodEvidence} evidence item${i.wrongPeriodEvidence === 1 ? " is" : "s are"} on this KPI tagged to ${i.wrongPeriods.map((p) => periodLabel(p)).join(", ")}, where no work is logged. If ${i.wrongPeriodEvidence === 1 ? "it belongs" : "they belong"} to ${periodLabel(i.periodKey)}, open the KPI and change the period.`}
+                                >
+                                  <AlertTriangle className="h-3 w-3" /> wrong period?
+                                  tagged{" "}
+                                  {i.wrongPeriods.map((p) => periodLabel(p)).join(", ")}
+                                </Badge>
+                              </Link>
+                            )}
                           {i.evidenceRequired && i.lateEvidence > 0 && (
                             <Badge
                               variant="warning"
@@ -462,7 +518,7 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                               variant="ghost"
                               className="text-muted-foreground hover:text-critical"
                               disabled={busy === i.assignmentId}
-                              title="Reject this submission — the reason is emailed to the employee"
+                              title="Reject ALL entries for this KPI and period (approved ones included) — they go back to the employee with your reason"
                               onClick={() =>
                                 doReject(
                                   i.assignmentId,
@@ -471,7 +527,7 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                                 )
                               }
                             >
-                              <XCircle className="h-4 w-4" /> Reject
+                              <XCircle className="h-4 w-4" /> Reject all
                             </Button>
                           )}
                           {isAdmin && (
@@ -525,12 +581,12 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                                     type="button"
                                     className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:text-critical hover:underline disabled:opacity-50"
                                     disabled={busy === i.assignmentId}
-                                    title="Return this approved entry to the employee for changes (reason required; audited and notified)"
+                                    title="Recall the approval of THIS entry only — it goes back to the employee for changes; other entries stay as they are (reason required; audited and notified)"
                                     onClick={() =>
                                       doRecallEntry(i.assignmentId, e, i.periodKey)
                                     }
                                   >
-                                    <Undo2 className="h-3 w-3" /> Return
+                                    <Undo2 className="h-3 w-3" /> Recall entry
                                   </button>
                                 )}
                               </li>

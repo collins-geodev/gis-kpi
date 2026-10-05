@@ -920,6 +920,88 @@ export const setEvidenceDeadlines = internalMutation({
 });
 
 /**
+ * Move MONTHLY entry (submission) deadlines to 23:59 Lagos on day N of the
+ * following month (or one `periodKey` of any grain). Quarter/year periods
+ * keep their own deadlines unless named explicitly.
+ *
+ * Moving a deadline later also:
+ *  - reopens a period the overdue job had flagged "grace" when the new
+ *    deadline has not passed yet;
+ *  - clears "submitted late" on measurements last computed before the new
+ *    deadline (they were on time under it). Nothing is ever made late.
+ *
+ *   npx convex run migrations:setSubmissionDeadlines '{"dayOfNextMonth":5,"dryRun":true}' --prod
+ */
+export const setSubmissionDeadlines = internalMutation({
+  args: {
+    dayOfNextMonth: v.number(),
+    periodKey: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+  },
+  returns: v.object({
+    updated: v.number(),
+    reopened: v.number(),
+    measurementsNowOnTime: v.number(),
+    sample: v.array(
+      v.object({ periodKey: v.string(), from: v.string(), to: v.string() }),
+    ),
+  }),
+  handler: async (ctx, { dayOfNextMonth, periodKey, dryRun }) => {
+    if (!Number.isInteger(dayOfNextMonth) || dayOfNextMonth < 1 || dayOfNextMonth > 28) {
+      throw new Error("dayOfNextMonth must be a whole number from 1 to 28.");
+    }
+    const now = Date.now();
+    const periods = (await ctx.db.query("trackingPeriods").take(1000)).filter((p) =>
+      periodKey === undefined ? p.grain === "month" : p.periodKey === periodKey,
+    );
+    const measurements = await ctx.db.query("kpiMeasurements").take(4000);
+    let updated = 0;
+    let reopened = 0;
+    let measurementsNowOnTime = 0;
+    const sample = [];
+    for (const p of periods) {
+      const next = new Date(p.endAt + 1 + LAGOS_OFFSET_MS);
+      const due =
+        Date.UTC(next.getUTCFullYear(), next.getUTCMonth(), dayOfNextMonth + 1) -
+        LAGOS_OFFSET_MS -
+        1;
+      if (p.dueAt === due) continue;
+      updated++;
+      if (sample.length < 30) {
+        sample.push({
+          periodKey: p.periodKey,
+          from: new Date(p.dueAt).toISOString(),
+          to: new Date(due).toISOString(),
+        });
+      }
+      const reopen = p.status === "grace" && due >= now;
+      if (reopen) reopened++;
+      if (!dryRun) {
+        await ctx.db.patch(p._id, { dueAt: due, ...(reopen ? { status: "open" } : {}) });
+      }
+      if (due > p.dueAt) {
+        for (const m of measurements) {
+          if (m.periodKey !== p.periodKey || m.cadenceCompliant) continue;
+          if (m.computedAt > due) continue;
+          measurementsNowOnTime++;
+          if (!dryRun) await ctx.db.patch(m._id, { cadenceCompliant: true });
+        }
+      }
+    }
+    if (!dryRun && updated > 0) {
+      await recordAudit(ctx, {
+        entityType: "trackingPeriod",
+        entityId: periodKey ?? "months",
+        action: "set_submission_deadlines",
+        reason: `Entries due by 23:59 on day ${dayOfNextMonth} of the following month`,
+        after: { updated, reopened, measurementsNowOnTime },
+      });
+    }
+    return { updated, reopened, measurementsNowOnTime, sample };
+  },
+});
+
+/**
  * Repair job: before evidence decisions left approved periods alone, every
  * evidence approve/reject/remove re-ran ALL of a KPI's measurements and
  * flipped approved ones back to provisional — the period reappeared in the

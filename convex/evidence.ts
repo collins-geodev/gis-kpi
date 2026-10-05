@@ -19,8 +19,13 @@ import {
   requireRole,
 } from "./authz";
 import { recordAudit } from "./audit";
-import { recomputeMeasurement } from "./measurementsModel";
-import { evidenceSupportsPeriod } from "./lib/evidencePeriod";
+import { recomputeMeasurement, workPeriodsOf } from "./measurementsModel";
+import {
+  evidenceCadenceKey,
+  evidencePeriodOf,
+  evidenceSupportsPeriod,
+} from "./lib/evidencePeriod";
+import { cadencePeriodKey } from "./lib/periods";
 import { crossEmployeeDuplicates } from "./lib/duplicates";
 import type { Frequency } from "./lib/types";
 import { vConfidentiality } from "./validators";
@@ -557,6 +562,85 @@ function canDeleteEvidence(
 }
 
 /**
+ * Who may change the period an evidence item supports: reviewers/managers and
+ * admins (within scope) at any time; the owner only before it is approved.
+ */
+function canRetagEvidence(
+  evidence: {
+    retentionState: string;
+    reviewStatus: string;
+    employeeId: string;
+    uploadedByUserId: string;
+  },
+  user: { _id: string; employeeId?: string },
+  roles: string[],
+): boolean {
+  if (evidence.retentionState === "deleted") return false;
+  if (
+    roles.some((r) => ["reviewer", "manager", "kpi_admin", "system_admin"].includes(r))
+  ) {
+    return true;
+  }
+  const isOwner =
+    (user.employeeId && user.employeeId === evidence.employeeId) ||
+    evidence.uploadedByUserId === user._id;
+  return Boolean(isOwner) && !["approved", "verified"].includes(evidence.reviewStatus);
+}
+
+/**
+ * Move an evidence item to the period it actually supports (fixes a wrong or
+ * missing month tag). Audited; the old and new periods' evidence ticks are
+ * recomputed — approved periods stay as approved.
+ */
+export const setEvidencePeriod = mutation({
+  args: { evidenceId: v.id("evidenceFiles"), periodKey: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { evidenceId, periodKey }) => {
+    const evidence = await ctx.db.get(evidenceId);
+    if (!evidence || evidence.retentionState === "deleted") {
+      throw new ConvexError("Evidence not found — it may have been deleted.");
+    }
+    const { user, roles } = await assertEmployeeReadScope(ctx, evidence.employeeId);
+    if (!canRetagEvidence(evidence, user, roles)) {
+      throw new ConvexError(
+        "Only a reviewer or admin can change the period of approved evidence.",
+      );
+    }
+    const period = await ctx.db
+      .query("trackingPeriods")
+      .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
+      .first();
+    if (!period) throw new ConvexError(`Unknown period: ${periodKey}`);
+    const before = evidencePeriodOf(evidence).periodKey;
+    if (evidence.periodKey === periodKey) return null;
+
+    await ctx.db.patch(evidenceId, { periodKey });
+    await recordAudit(ctx, {
+      entityType: "evidenceFile",
+      entityId: evidenceId,
+      action: "set_evidence_period",
+      actorUserId: user._id,
+      before: { periodKey: evidence.periodKey ?? null, countedFor: before },
+      after: { periodKey },
+    });
+
+    if (evidence.kpiAssignmentId) {
+      const assignment = await ctx.db.get(evidence.kpiAssignmentId);
+      if (assignment) {
+        const freq = assignment.frequency as Frequency;
+        for (const pk of new Set([
+          cadencePeriodKey(freq, before),
+          cadencePeriodKey(freq, periodKey),
+        ])) {
+          await recomputeMeasurement(ctx, assignment, pk, { keepOfficial: true });
+        }
+      }
+    }
+    return null;
+  },
+});
+
+/**
  * Delete an evidence item. Owners may remove their own while it is still
  * pre-approval (submitted/needs_changes/rejected); KPI/System Admins anything
  * except legal holds. Soft-delete: the stored file is destroyed, the metadata
@@ -719,11 +803,18 @@ export const listForAssignment = query({
       .query("evidenceFiles")
       .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
       .take(200);
+    const freq = assignment.frequency as Frequency;
+    const work = await workPeriodsOf(ctx, assignment);
     return rows
       .filter((e) => e.retentionState !== "deleted")
       .map((e) => ({
         id: e._id,
         canDelete: canDeleteEvidence(e, user, roles),
+        canRetag: canRetagEvidence(e, user, roles),
+        /** The period this file counts toward (tag → work-date → upload month). */
+        countsFor: evidencePeriodOf(e).periodKey,
+        /** True when no work is logged in that period — likely the wrong month. */
+        noWorkInPeriod: !work.has(evidenceCadenceKey(freq, e)),
         title: e.title,
         category: e.category,
         originalFilename: e.originalFilename,

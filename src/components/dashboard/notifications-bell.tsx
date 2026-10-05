@@ -7,6 +7,7 @@ import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { Bell, CheckCheck, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatDateTime } from "@convex/lib/format";
 
 /** Topbar bell: unread badge with a soft pulse, dropdown feed, mark-read. */
 export function NotificationsBell() {
@@ -102,11 +103,7 @@ export function NotificationsBell() {
                               {n.body}
                             </div>
                             <div className="mt-0.5 text-[10px] text-muted-foreground">
-                              {new Date(n.createdAt).toLocaleString("en-GB", {
-                                timeZone: "Africa/Lagos",
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              })}
+                              {formatDateTime(n.createdAt)}
                             </div>
                           </div>
                         </div>

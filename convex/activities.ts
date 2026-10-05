@@ -646,6 +646,12 @@ export const periods = query({
           grain: p.grain,
           startAt: p.startAt,
           endAt: p.endAt,
+          /** Entries due (submission deadline). */
+          dueAt: p.dueAt,
+          /** Evidence due — falls back to the submission deadline. */
+          evidenceDueAt: p.evidenceDueAt ?? p.dueAt,
+          /** Admin grace: nothing in this period is flagged late. */
+          cadenceGrace: p.cadenceGrace === true,
         }))
     );
   },

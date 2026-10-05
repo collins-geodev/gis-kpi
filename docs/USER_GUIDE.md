@@ -24,7 +24,8 @@ Open a KPI (from Individual Performance) and use the **Evidence** panel to uploa
 - In **Activity Capture**, attachments automatically carry the period you are logging.
 - On the **KPI page** or in the **Evidence Centre**, choose the month in **Evidence for**. Early in a month it defaults to the month just closed (where proof usually belongs) — check it before uploading.
 - Quarterly and annual KPIs: evidence for any month inside the quarter/year counts toward it.
-- Upload evidence before the period's deadline; late uploads still count but are flagged to your reviewer.
+- **Deadlines** are shown on the Overview page and under the Period field in Activity Capture: monthly entries and evidence are both due by **23:59 on the 5th of the following month** (Lagos time). Quarterly entries are due on the 10th, annual entries on 15 January. Late uploads still count but are flagged to your reviewer.
+- Each file in the Evidence panel shows the period it counts **for**. If it's the wrong month (a *no work logged for …* badge is a strong hint), change it there — you can until it is approved; after that, ask your reviewer.
 - Upload your own work. The same file submitted by two people is flagged to administrators.
 
 ### Read your score
@@ -44,13 +45,15 @@ Evidence badges on each row are for **that row's period**:
 | --- | --- |
 | **evidence ✓** | Approved evidence covers this period. |
 | **evidence submitted (n)** + **Approve evidence** | Evidence for this period awaits review; the button approves only this period's items. |
-| **no evidence for this period** | Nothing approved for this period. Hover to see which periods *do* have approved evidence — usually a sign it was tagged to the wrong month. |
+| **no evidence for Sep 2026** | Nothing approved for this period. Hover to see which periods *do* have approved evidence. |
+| **wrong period? tagged Oct 2026** | Evidence on this KPI is tagged to a period with no logged work — it probably belongs here. Click to open the KPI and change its period. |
 | **evidence late (n)** | Evidence for this period arrived after its deadline (it still counts). |
 | **duplicate evidence (n)** | *Admins only:* the same file was also uploaded by another employee. Check it in the Evidence Centre. |
 
 ### Send work back after approval
-- **Reject** (on a pending row) returns every entry for that KPI and period — including already-approved ones — to the employee with your reason.
-- **Return** (next to an approved entry in the row's *Self-reported* list) sends back just that entry. Other entries are untouched; the KPI re-enters the queue for re-approval, and the earlier frozen score stays on record until the period is approved again.
+- If **Approve period** is blocked, the line under the employee's name says why (evidence awaiting approval, no evidence for the period, or a data-quality block).
+- **Reject all** (on a pending row) sends every entry for that KPI and period — including already-approved ones — back to the employee with your reason.
+- **Recall entry** (next to an approved entry in the row's *Self-reported* list) recalls the approval of just that entry. Other entries are untouched; the KPI re-enters the queue for re-approval, and the earlier frozen score stays on record until the period is approved again.
 - Both require a reason, are audit-logged, and notify the employee. **Undo** after a reject restores the entries to *submitted*.
 
 ### Fair comparisons

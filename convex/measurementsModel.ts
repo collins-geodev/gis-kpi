@@ -6,6 +6,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { aggregateActivityInputs } from "./lib/measure";
 import { evidenceCadenceKey, evidenceSupportsPeriod } from "./lib/evidencePeriod";
+import { cadencePeriodKey } from "./lib/periods";
 import type { Frequency } from "./lib/types";
 import { CALC_VERSION, computeAttainment, weightedContribution } from "./lib/scoring";
 import { statusFromAttainment } from "./lib/thresholds";
@@ -33,6 +34,13 @@ export async function periodEvidence(
   approvedElsewhere: string[];
   /** Ids of the live files supporting this period. */
   fileIds: string[];
+  /**
+   * Likely mis-tagged: live, non-rejected files on this KPI dated to ANOTHER
+   * period in which no work is logged (e.g. proof tagged October when only
+   * September has entries). Cadence keys, sorted.
+   */
+  noWorkPeriods: string[];
+  misplaced: number;
 }> {
   const freq = assignment.frequency as Frequency;
   const files = (
@@ -73,7 +81,46 @@ export async function periodEvidence(
     late,
     approvedElsewhere: [...elsewhere].sort(),
     fileIds: inPeriod.map((e) => e._id),
+    ...(await misplacedEvidence(ctx, assignment, files, periodKey)),
   };
+}
+
+/** Cadence periods of this KPI that have counted (logged) work. */
+export async function workPeriodsOf(
+  ctx: Pick<QueryCtx, "db">,
+  assignment: Doc<"kpiAssignments">,
+): Promise<Set<string>> {
+  const freq = assignment.frequency as Frequency;
+  const acts = await ctx.db
+    .query("activities")
+    .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", assignment._id))
+    .take(1000);
+  return new Set(
+    acts
+      .filter((a) => COUNTED_STATES.includes(a.status))
+      .map((a) => cadencePeriodKey(freq, a.periodKey)),
+  );
+}
+
+async function misplacedEvidence(
+  ctx: Pick<QueryCtx, "db">,
+  assignment: Doc<"kpiAssignments">,
+  files: Doc<"evidenceFiles">[],
+  periodKey: string,
+): Promise<{ noWorkPeriods: string[]; misplaced: number }> {
+  const freq = assignment.frequency as Frequency;
+  const work = await workPeriodsOf(ctx, assignment);
+  const keys = new Set<string>();
+  let misplaced = 0;
+  for (const e of files) {
+    if (e.reviewStatus === "rejected") continue;
+    if (evidenceSupportsPeriod(freq, e, periodKey)) continue;
+    const k = evidenceCadenceKey(freq, e);
+    if (work.has(k)) continue;
+    keys.add(k);
+    misplaced++;
+  }
+  return { noWorkPeriods: [...keys].sort(), misplaced };
 }
 
 /**

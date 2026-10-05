@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AccessDenied } from "@/components/access-denied";
 import { StatusBadge } from "@/components/status-badge";
-import { formatPercent, periodLabel } from "@convex/lib/format";
+import { formatPercent, periodLabel, formatDateTime } from "@convex/lib/format";
 import { Activity, ClipboardList, Mail } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 
@@ -22,7 +22,7 @@ function timeAgo(ms: number): string {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
-  return new Date(ms).toLocaleString("en-GB", { timeZone: "Africa/Lagos" });
+  return formatDateTime(ms);
 }
 
 export default function ActivityFeedPage() {

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { ExternalLink, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
 import { suggestEvidence } from "@/lib/evidence-suggestions";
-import { periodLabel } from "@convex/lib/format";
+import { formatDate, formatDateTime, periodLabel } from "@convex/lib/format";
 
 /** SHA-256 of a file (hex) — lets admins spot the same file uploaded twice. */
 async function sha256Hex(file: File): Promise<string | undefined> {
@@ -62,6 +62,8 @@ export function EvidencePanel({
   const saveEvidence = useMutation(api.evidence.saveEvidence);
   const reviewEvidence = useMutation(api.evidence.reviewEvidence);
   const removeEvidence = useMutation(api.evidence.removeEvidence);
+  const setEvidencePeriod = useMutation(api.evidence.setEvidencePeriod);
+  const [retagging, setRetagging] = useState<string | null>(null);
 
   const roles = (me?.roles ?? []) as AppRole[];
   const canReview = roles.some((r) =>
@@ -77,7 +79,7 @@ export function EvidencePanel({
   // Outside the capture form no period is implied, so the uploader picks the
   // month the proof supports — evidence only completes the period it is
   // tagged with (a quarterly/annual KPI counts its months toward the bucket).
-  const periods = useQuery(api.activities.periods, periodKey ? "skip" : {});
+  const periods = useQuery(api.activities.periods);
   const monthOptions = useMemo(
     () =>
       (periods ?? [])
@@ -94,6 +96,27 @@ export function EvidencePanel({
     setPickedPeriod((early && previous ? previous : current)!.periodKey);
   }, [periodKey, pickedPeriod, monthOptions]);
   const uploadPeriod = periodKey ?? (pickedPeriod || undefined);
+
+  // Months a file can be moved to (newest first), keeping its current period
+  // selectable even when it is a quarter/year or outside the list.
+  const retagOptions = (current: string) => {
+    const keys = monthOptions.map((p) => p.periodKey);
+    return keys.includes(current) ? keys : [current, ...keys];
+  };
+  async function retag(evidenceId: string, newPeriod: string) {
+    setRetagging(evidenceId);
+    setError(null);
+    try {
+      await setEvidencePeriod({
+        evidenceId: evidenceId as Id<"evidenceFiles">,
+        periodKey: newPeriod,
+      });
+    } catch (e) {
+      setError(errorMessage(e, "Could not change the evidence period."));
+    } finally {
+      setRetagging(null);
+    }
+  }
 
   // Pre-describe the evidence from the KPI it supports (always editable).
   useEffect(() => {
@@ -278,31 +301,47 @@ export function EvidencePanel({
                       className="ml-2 whitespace-nowrap"
                       title={
                         e.activityAt !== null
-                          ? "The activity date selected when this evidence was captured"
-                          : e.periodKey !== null
-                            ? "The KPI period selected when this evidence was captured"
-                            : "Date and time this evidence was attached (Lagos time)"
+                          ? "The work date selected when this evidence was captured"
+                          : "When this evidence was attached (Lagos time)"
                       }
                     >
                       ·{" "}
                       {e.activityAt !== null
-                        ? new Date(e.activityAt).toLocaleDateString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            timeZone: "Africa/Lagos",
-                          })
-                        : e.periodKey !== null
-                          ? periodLabel(e.periodKey)
-                          : new Date(e.uploadedAt).toLocaleString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              timeZone: "Africa/Lagos",
-                            })}
+                        ? formatDate(e.activityAt)
+                        : `uploaded ${formatDateTime(e.uploadedAt)}`}
                     </span>
+                    <span
+                      className="ml-2 whitespace-nowrap"
+                      title="The KPI period this evidence counts toward — evidence only completes its own period"
+                    >
+                      · for{" "}
+                      {e.canRetag ? (
+                        <select
+                          value={e.countsFor}
+                          disabled={retagging === e.id}
+                          onChange={(ev) => retag(e.id, ev.target.value)}
+                          aria-label={`Period for ${e.title}`}
+                          className="h-6 rounded border border-input bg-background px-1 text-xs text-foreground"
+                        >
+                          {retagOptions(e.countsFor).map((p) => (
+                            <option key={p} value={p}>
+                              {periodLabel(p)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        periodLabel(e.countsFor)
+                      )}
+                    </span>
+                    {e.noWorkInPeriod && (
+                      <Badge
+                        variant="warning"
+                        className="ml-2"
+                        title="No work is logged on this KPI for that period — this evidence may be tagged to the wrong month"
+                      >
+                        no work logged for {periodLabel(e.countsFor)}
+                      </Badge>
+                    )}
                     {e.externalUrl && (
                       <a
                         href={e.externalUrl}

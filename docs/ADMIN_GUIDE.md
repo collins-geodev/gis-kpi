@@ -38,12 +38,13 @@ Each employee's five KPIs total **80**, not 100. This is surfaced everywhere (Ov
 
 - Provisional measurements appear grouped by employee + period.
 - **Approve period** is blocked until required evidence is approved **for that period** and no data-quality issue blocks the KPI. Approval finalizes the measurements and freezes a reproducible `scoreSnapshot` (calc version + inputs).
-- Reviewers can send work back after approval: **Reject** returns all entries for a KPI/period (approved ones included); **Return** on a single approved entry sends back only that entry (`approvals:recallActivityApproval`). Both need a reason, are audited and notify the employee. The KPI re-enters the queue; its earlier snapshot stays until the period is re-approved.
+- Reviewers can send work back after approval: **Reject all** returns all entries for a KPI/period (approved ones included); **Recall entry** on a single approved entry sends back only that entry (`approvals:recallActivityApproval`). Both need a reason, are audited and notify the employee. The KPI re-enters the queue; its earlier snapshot stays until the period is re-approved.
 
 ### Evidence rules (period-aware)
 
 - Evidence completes only the period it supports. Its period is, in order: the **period tag** chosen at upload → the **work date** picked in Activity Capture → the **upload month** (legacy, untagged files). Months roll up into quarterly/annual KPIs. Deleted evidence never counts. See `convex/lib/evidencePeriod.ts`.
 - Evidence decisions (approve / reject / remove) never reopen a period that is already approved.
+- **Wrong-period flag:** evidence dated to a period with no logged work on its KPI shows *no work logged for …* in the Evidence panel and *wrong period? tagged …* on `/review`. Reviewers/admins can change any file's period in the Evidence panel (owners only before approval) — audited as `set_evidence_period` (`evidence:setEvidencePeriod`).
 - **Late flag:** an upload after the period's evidence deadline is flagged *evidence late* on `/review` (it still counts). The deadline is the period's `evidenceDueAt` if set, otherwise its submission `dueAt`; cadence grace waives it.
 - **Duplicate flag:** admins see *duplicate* in the Evidence Centre and *duplicate evidence (n)* on `/review` when the same file was uploaded by another employee — same SHA-256 checksum (computed in the browser at upload), same link, or same filename and size.
 
@@ -58,8 +59,13 @@ npx convex run migrations:repairEvidenceGates '{"dryRun":true}' --prod
 # Re-mark approved periods that an evidence action wrongly reopened (only rows unchanged since approval)
 npx convex run migrations:repairReopenedApprovals '{"dryRun":true}' --prod
 
-# Evidence due by the 3rd of the following month (all periods, or add "periodKey":"2026-M09")
-npx convex run migrations:setEvidenceDeadlines '{"dayOfNextMonth":3,"dryRun":true}' --prod
+# Evidence due by 23:59 on the 5th of the following month — the current setting
+# (all periods, or add "periodKey":"2026-M09")
+npx convex run migrations:setEvidenceDeadlines '{"dayOfNextMonth":5,"dryRun":true}' --prod
+
+# Monthly entry deadlines: 23:59 on the 5th of the following month — the current setting
+# (also reopens periods flagged "grace" too early and clears stale "submitted late" flags)
+npx convex run migrations:setSubmissionDeadlines '{"dayOfNextMonth":5,"dryRun":true}' --prod
 
 # Remove evidence deadlines (the period due date applies again)
 npx convex run migrations:setEvidenceDeadlines '{"clear":true}' --prod

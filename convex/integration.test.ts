@@ -2910,3 +2910,203 @@ describe("backfilling periods on untagged evidence", () => {
     expect(again.tagged).toBe(0);
   });
 });
+
+describe("wrong-period evidence: flag and fix", () => {
+  test("proof tagged to a month without work is flagged; changing its period completes the right month", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "wp@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "wa@x.com",
+      roles: ["system_admin"],
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    // September work, but the proof was tagged October by mistake.
+    const evidenceId = await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M10",
+      externalUrl: "https://example.com/sep-proof",
+      originalFilename: "sep-proof",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "qa_log",
+      title: "September batch report",
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M09",
+      activityAt: Date.UTC(2026, 8, 15, 11),
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+
+    const row = async () =>
+      (await admin.query(api.approvals.reviewQueue, {})).find(
+        (r) => r.assignmentId === assignmentId && r.periodKey === "2026-M09",
+      )!;
+    let r = await row();
+    expect(r.pendingEvidence).toBe(0);
+    expect(r.wrongPeriodEvidence).toBe(1);
+    expect(r.wrongPeriods).toEqual(["2026-M10"]);
+    const listed = await emp.query(api.evidence.listForAssignment, {
+      kpiAssignmentId: assignmentId,
+    });
+    const item = listed.find((e) => e.id === evidenceId)!;
+    expect(item).toMatchObject({ countsFor: "2026-M10", noWorkInPeriod: true });
+    expect(item.canRetag).toBe(true);
+
+    // The owner fixes the month before approval; it's audited.
+    await expect(
+      emp.mutation(api.evidence.setEvidencePeriod, { evidenceId, periodKey: "2026-M99" }),
+    ).rejects.toThrow(/unknown period/i);
+    await emp.mutation(api.evidence.setEvidencePeriod, {
+      evidenceId,
+      periodKey: "2026-M09",
+    });
+    r = await row();
+    expect(r.pendingEvidence).toBe(1);
+    expect(r.wrongPeriodEvidence).toBe(0);
+    const audit = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLogs").collect()).filter(
+        (l) => l.action === "set_evidence_period",
+      ),
+    );
+    expect(audit.length).toBe(1);
+
+    // Once approved, only a reviewer/admin may move it.
+    await admin.mutation(api.evidence.reviewEvidence, {
+      evidenceId,
+      decision: "approve",
+    });
+    expect((await row()).evidenceComplete).toBe(true);
+    await expect(
+      emp.mutation(api.evidence.setEvidencePeriod, { evidenceId, periodKey: "2026-M08" }),
+    ).rejects.toThrow(/reviewer or admin/i);
+    await admin.mutation(api.evidence.setEvidencePeriod, {
+      evidenceId,
+      periodKey: "2026-M08",
+    });
+    expect((await row()).evidenceComplete).toBe(false);
+  });
+
+  test("periods carry entry and evidence deadlines (evidence falls back to entries)", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: emp } = await makeUser(t, {
+      email: "pd@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const sep = (await emp.query(api.activities.periods, {})).find(
+      (p) => p.periodKey === "2026-M09",
+    )!;
+    expect(sep.evidenceDueAt).toBe(sep.dueAt);
+    await t.mutation(internal.migrations.setEvidenceDeadlines, {
+      dayOfNextMonth: 5,
+      periodKey: "2026-M09",
+    });
+    const after = (await emp.query(api.activities.periods, {})).find(
+      (p) => p.periodKey === "2026-M09",
+    )!;
+    expect(after.evidenceDueAt).toBe(Date.UTC(2026, 9, 5, 22, 59, 59, 999));
+    expect(after.dueAt).toBe(sep.dueAt);
+  });
+});
+
+describe("monthly entry deadline", () => {
+  test("new years use 23:59 on the 5th; the migration moves old deadlines and clears stale late flags", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const period = (pk: string) =>
+      t.run(async (ctx) =>
+        ctx.db
+          .query("trackingPeriods")
+          .withIndex("by_periodKey", (q) => q.eq("periodKey", pk))
+          .first(),
+      );
+    const endOf5Sep = Date.UTC(2026, 8, 5, 22, 59, 59, 999);
+    expect((await period("2026-M08"))!.dueAt).toBe(endOf5Sep);
+    const q3Due = (await period("2026-Q3"))!.dueAt;
+
+    // An older deployment: August due at 00:00 on 5 Sep, flagged grace, and a
+    // measurement recomputed on 5 Sep (on time under the new rule) marked late,
+    // another recomputed on 6 Sep (late under both).
+    const startOf5Sep = Date.UTC(2026, 8, 5) - 60 * 60 * 1000;
+    const [onTimeId, lateId] = await t.run(async (ctx) => {
+      const p = (await ctx.db
+        .query("trackingPeriods")
+        .withIndex("by_periodKey", (q) => q.eq("periodKey", "2026-M08"))
+        .first())!;
+      await ctx.db.patch(p._id, { dueAt: startOf5Sep, status: "grace" });
+      const assignments = await ctx.db.query("kpiAssignments").take(2);
+      const ids = [];
+      for (const [i, a] of assignments.entries()) {
+        ids.push(
+          await ctx.db.insert("kpiMeasurements", {
+            kpiAssignmentId: a._id,
+            employeeId: a.employeeId,
+            periodKey: "2026-M08",
+            measurementMode: a.measurementMode,
+            inputs: {},
+            rawActual: 1,
+            target: a.target,
+            attainment: 1,
+            cappedAttainment: 1,
+            weightedContribution: a.weight,
+            status: "on_target",
+            hasData: true,
+            evidenceComplete: true,
+            cadenceCompliant: false,
+            isProvisional: true,
+            computedAt: i === 0 ? Date.UTC(2026, 8, 5, 12) : Date.UTC(2026, 8, 6, 12),
+            calcVersion: "test",
+          } as never),
+        );
+      }
+      return ids;
+    });
+    const compliant = (id: Id<"kpiMeasurements">) =>
+      t.run(async (ctx) => (await ctx.db.get(id))!.cadenceCompliant);
+
+    const dry = await t.mutation(internal.migrations.setSubmissionDeadlines, {
+      dayOfNextMonth: 5,
+      dryRun: true,
+    });
+    expect(dry.updated).toBe(1);
+    expect(dry.measurementsNowOnTime).toBe(1);
+    expect((await period("2026-M08"))!.dueAt).toBe(startOf5Sep);
+
+    const res = await t.mutation(internal.migrations.setSubmissionDeadlines, {
+      dayOfNextMonth: 5,
+    });
+    expect(res.updated).toBe(1);
+    const aug = (await period("2026-M08"))!;
+    expect(aug.dueAt).toBe(endOf5Sep);
+    // Reopened only if the new deadline is still ahead of the real clock.
+    expect(aug.status).toBe(endOf5Sep >= Date.now() ? "open" : "grace");
+    expect(await compliant(onTimeId!)).toBe(true);
+    expect(await compliant(lateId!)).toBe(false);
+    // Quarters keep their own deadline.
+    expect((await period("2026-Q3"))!.dueAt).toBe(q3Due);
+    expect(
+      (
+        await t.mutation(internal.migrations.setSubmissionDeadlines, {
+          dayOfNextMonth: 5,
+        })
+      ).updated,
+    ).toBe(0);
+  });
+});

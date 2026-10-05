@@ -144,3 +144,42 @@ export function periodLabel(pk: string): string {
   if (q) return `Q${q[2]} ${q[1]}`;
   return pk;
 }
+
+// --- Dates (Africa/Lagos, fixed UTC+1, no DST) ------------------------------
+// Rendered by hand, not via toLocaleString, so every screen and export shows
+// the same unambiguous "5 Oct 2026" (never "05/10/2026", which reads as May).
+
+const LAGOS_MS = 60 * 60 * 1000;
+
+function lagosParts(ms: number) {
+  const d = new Date(ms + LAGOS_MS);
+  return {
+    day: d.getUTCDate(),
+    month: MONTH_NAMES[d.getUTCMonth()]!,
+    year: d.getUTCFullYear(),
+    hh: String(d.getUTCHours()).padStart(2, "0"),
+    mm: String(d.getUTCMinutes()).padStart(2, "0"),
+  };
+}
+
+/** "5 Oct 2026" (Lagos calendar date). */
+export function formatDate(ms: number): string {
+  const p = lagosParts(ms);
+  return `${p.day} ${p.month} ${p.year}`;
+}
+
+/** "5 Oct 2026, 14:30" (Lagos time, 24-hour). */
+export function formatDateTime(ms: number): string {
+  const p = lagosParts(ms);
+  return `${p.day} ${p.month} ${p.year}, ${p.hh}:${p.mm}`;
+}
+
+/**
+ * A deadline as the last moment it can be met: a deadline stored as midnight
+ * at the START of a day is shown as 23:59 the day before, so "due 4 Oct 2026,
+ * 23:59" never reads as "you still have all of 5 Oct".
+ */
+export function formatDeadline(ms: number): string {
+  const p = lagosParts(ms);
+  return p.hh === "00" && p.mm === "00" ? formatDateTime(ms - 1) : formatDateTime(ms);
+}

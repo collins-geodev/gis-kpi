@@ -67,6 +67,8 @@ export const reviewQueue = query({
       let lateEvidence = 0;
       let evidenceElsewhere: string[] = [];
       let duplicateEvidence = 0;
+      let wrongPeriodEvidence = 0;
+      let wrongPeriods: string[] = [];
       if (assignment.evidenceRequired || duplicates) {
         const ev = await periodEvidence(ctx, assignment, m.periodKey);
         if (assignment.evidenceRequired) {
@@ -74,6 +76,8 @@ export const reviewQueue = query({
           pendingEvidence = ev.pending;
           lateEvidence = ev.late;
           evidenceElsewhere = ev.approvedElsewhere;
+          wrongPeriodEvidence = ev.misplaced;
+          wrongPeriods = ev.noWorkPeriods;
         }
         if (duplicates) {
           duplicateEvidence = ev.fileIds.filter((id) => duplicates.has(id)).length;
@@ -125,6 +129,8 @@ export const reviewQueue = query({
         lateEvidence,
         evidenceElsewhere,
         duplicateEvidence,
+        wrongPeriodEvidence,
+        wrongPeriods,
         kpiCategory: assignment.kpiCategory ?? "core",
         cadenceCompliant: m.cadenceCompliant,
         scoringBlocked: assignment.scoringBlocked,

@@ -92,7 +92,8 @@ export function generateYearPeriods(year: number): SeedPeriod[] {
       label: `${MONTHS[m]} ${year}`,
       startAt: lagos(year, m, 1),
       endAt: lagos(year, m + 1, 1) - 1,
-      dueAt: lagos(year, m + 1, 5),
+      // Entries due by 23:59 on the 5th of the following month (Lagos).
+      dueAt: lagos(year, m + 1, 6) - 1,
     });
   }
 

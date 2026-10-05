@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { CalendarClock, CheckCircle2, Lock, LockOpen, UserRoundX } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+import { formatDeadline } from "@convex/lib/format";
 
 const PERIOD_STATUS_VARIANT: Record<
   string,
@@ -98,10 +99,7 @@ export default function CompliancePage() {
         )}
         {data?.period && (
           <span className="text-xs text-muted-foreground">
-            due{" "}
-            {new Date(data.period.dueAt).toLocaleDateString("en-GB", {
-              timeZone: "Africa/Lagos",
-            })}
+            entries due {formatDeadline(data.period.dueAt)}
           </span>
         )}
         <label className="ml-2 flex items-center gap-1.5 text-sm text-muted-foreground">

@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AccessDenied } from "@/components/access-denied";
 import { Loader2, Trash2 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+import { formatDateTime } from "@convex/lib/format";
 
 export default function AuditPage() {
   const me = useQuery(api.access.currentUser);
@@ -99,9 +100,7 @@ export default function AuditPage() {
               {logs.results.map((l) => (
                 <TableRow key={l.id}>
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                    {new Date(l.at).toLocaleString("en-GB", {
-                      timeZone: "Africa/Lagos",
-                    })}
+                    {formatDateTime(l.at)}
                   </TableCell>
                   <TableCell className="text-sm">{l.actor ?? "system"}</TableCell>
                   <TableCell>
