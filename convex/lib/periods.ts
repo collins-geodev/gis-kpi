@@ -68,7 +68,8 @@ export function generateYearPeriods(year: number): SeedPeriod[] {
     label: `${year}`,
     startAt: lagos(year, 0, 1),
     endAt: lagos(year + 1, 0, 1) - 1,
-    dueAt: lagos(year + 1, 0, 15),
+    // Due by 23:59 on 5 January (Lagos), like every other period.
+    dueAt: lagos(year + 1, 0, 6) - 1,
   });
 
   // Quarters.
@@ -80,7 +81,8 @@ export function generateYearPeriods(year: number): SeedPeriod[] {
       label: `Q${q + 1} ${year}`,
       startAt: lagos(year, startMonth, 1),
       endAt: lagos(year, startMonth + 3, 1) - 1,
-      dueAt: lagos(year, startMonth + 3, 10),
+      // Due by 23:59 on the 5th of the month after the quarter (Lagos).
+      dueAt: lagos(year, startMonth + 3, 6) - 1,
     });
   }
 

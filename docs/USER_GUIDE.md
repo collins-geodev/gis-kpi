@@ -24,7 +24,7 @@ Open a KPI (from Individual Performance) and use the **Evidence** panel to uploa
 - In **Activity Capture**, attachments automatically carry the period you are logging.
 - On the **KPI page** or in the **Evidence Centre**, choose the month in **Evidence for**. Early in a month it defaults to the month just closed (where proof usually belongs) — check it before uploading.
 - Quarterly and annual KPIs: evidence for any month inside the quarter/year counts toward it.
-- **Deadlines** are shown on the Overview page and under the Period field in Activity Capture: monthly entries and evidence are both due by **23:59 on the 5th of the following month** (Lagos time). Quarterly entries are due on the 10th, annual entries on 15 January. Late uploads still count but are flagged to your reviewer.
+- **Deadlines** are shown on the Overview page and under the Period field in Activity Capture: entries and evidence for every period — monthly, quarterly and annual — are due by **23:59 on the 5th of the following month** (Lagos time); e.g. Q3 by 5 October, the year by 5 January. Late uploads still count but are flagged to your reviewer.
 - Each file in the Evidence panel shows the period it counts **for**. If it's the wrong month (a *no work logged for …* badge is a strong hint), change it there — you can until it is approved; after that, ask your reviewer.
 - Upload your own work. The same file submitted by two people is flagged to administrators.
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAGOS_OFFSET_MS,
+  generateYearPeriods,
   lagosDayKeyOf,
   lagosWeekKeyOf,
   lagosWeekLabelOf,
@@ -37,5 +38,17 @@ describe("lagosWeekKeyOf / lagosWeekStartOf", () => {
   });
   it("labels the week by its Lagos Monday–Sunday span", () => {
     expect(lagosWeekLabelOf(atLagos(2026, 8, 18))).toBe("Mon 17 Aug – Sun 23 Aug");
+  });
+});
+
+describe("deadlines", () => {
+  it("every period is due by 23:59 Lagos on the 5th of the following month", () => {
+    const due = (pk: string) =>
+      generateYearPeriods(2026).find((p) => p.periodKey === pk)!.dueAt;
+    // 23:59:59.999 Lagos (UTC+1) = 22:59:59.999 UTC.
+    expect(due("2026-M09")).toBe(Date.UTC(2026, 9, 5, 22, 59, 59, 999));
+    expect(due("2026-Q3")).toBe(Date.UTC(2026, 9, 5, 22, 59, 59, 999));
+    expect(due("2026-Q4")).toBe(Date.UTC(2027, 0, 5, 22, 59, 59, 999));
+    expect(due("2026")).toBe(Date.UTC(2027, 0, 5, 22, 59, 59, 999));
   });
 });
