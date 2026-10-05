@@ -11,7 +11,7 @@ import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
 import { periodEvidence, recomputeMeasurement } from "./measurementsModel";
 import { vCanonicalKpiKey } from "./validators";
-import { cadencePeriodKey } from "./lib/periods";
+import { LAGOS_OFFSET_MS, cadencePeriodKey } from "./lib/periods";
 import { reopenApprovedPeriod } from "./approvals";
 import type { Frequency } from "./lib/types";
 import { computeEmployeeAnalytics } from "./analytics";
@@ -725,6 +725,173 @@ export const repairEvidenceGates = internalMutation({
       });
     }
     return { scanned, cleared, set, changes: changes.slice(0, 200) };
+  },
+});
+
+/**
+ * Set (or clear) a dedicated evidence-upload deadline on tracking periods:
+ * the end of day N (Lagos time) of the month after each period ends — e.g.
+ * `dayOfNextMonth: 3` makes August evidence due by 23:59 on 3 September and
+ * Q3 evidence due by 3 October. Uploads after it are flagged "evidence late"
+ * on the review queue (they still count). Without a deadline the period's
+ * submission `dueAt` applies. Optionally scope to one `periodKey`.
+ *
+ *   npx convex run migrations:setEvidenceDeadlines '{"dayOfNextMonth":3,"dryRun":true}' --prod
+ *   npx convex run migrations:setEvidenceDeadlines '{"clear":true}' --prod
+ */
+export const setEvidenceDeadlines = internalMutation({
+  args: {
+    dayOfNextMonth: v.optional(v.number()),
+    periodKey: v.optional(v.string()),
+    clear: v.optional(v.boolean()),
+    dryRun: v.optional(v.boolean()),
+  },
+  returns: v.object({
+    updated: v.number(),
+    sample: v.array(
+      v.object({ periodKey: v.string(), evidenceDueAt: v.union(v.string(), v.null()) }),
+    ),
+  }),
+  handler: async (ctx, { dayOfNextMonth, periodKey, clear, dryRun }) => {
+    if (!clear) {
+      if (
+        dayOfNextMonth === undefined ||
+        !Number.isInteger(dayOfNextMonth) ||
+        dayOfNextMonth < 1 ||
+        dayOfNextMonth > 28
+      ) {
+        throw new Error(
+          "dayOfNextMonth must be a whole number from 1 to 28 (or pass clear).",
+        );
+      }
+    }
+    const periods = (await ctx.db.query("trackingPeriods").take(1000)).filter(
+      (p) => periodKey === undefined || p.periodKey === periodKey,
+    );
+    let updated = 0;
+    const sample = [];
+    for (const p of periods) {
+      let due: number | undefined;
+      if (!clear) {
+        // First instant of the following month, in Lagos wall-clock terms.
+        const next = new Date(p.endAt + 1 + LAGOS_OFFSET_MS);
+        due =
+          Date.UTC(next.getUTCFullYear(), next.getUTCMonth(), dayOfNextMonth! + 1) -
+          LAGOS_OFFSET_MS -
+          1;
+      }
+      if (p.evidenceDueAt === due) continue;
+      updated++;
+      if (sample.length < 30) {
+        sample.push({
+          periodKey: p.periodKey,
+          evidenceDueAt: due === undefined ? null : new Date(due).toISOString(),
+        });
+      }
+      if (!dryRun) await ctx.db.patch(p._id, { evidenceDueAt: due });
+    }
+    if (!dryRun && updated > 0) {
+      await recordAudit(ctx, {
+        entityType: "trackingPeriod",
+        entityId: periodKey ?? "all",
+        action: clear ? "clear_evidence_deadlines" : "set_evidence_deadlines",
+        reason: clear
+          ? "Evidence deadlines cleared — the period due date applies"
+          : `Evidence due by day ${dayOfNextMonth} of the following month`,
+        after: { updated, dayOfNextMonth: dayOfNextMonth ?? null },
+      });
+    }
+    return { updated, sample };
+  },
+});
+
+/**
+ * Repair job: before evidence decisions left approved periods alone, every
+ * evidence approve/reject/remove re-ran ALL of a KPI's measurements and
+ * flipped approved ones back to provisional — the period reappeared in the
+ * review queue while its frozen snapshot stayed. This re-marks as official a
+ * provisional measurement only when nothing changed since approval: every
+ * counted entry is still "approved", none was returned for changes, and its
+ * score equals the one frozen in the latest snapshot covering the period.
+ * Anything else (new, edited or returned entries) is left for review.
+ *
+ *   npx convex run migrations:repairReopenedApprovals '{"dryRun":true}' --prod
+ */
+export const repairReopenedApprovals = internalMutation({
+  args: { dryRun: v.optional(v.boolean()) },
+  returns: v.object({
+    scanned: v.number(),
+    restored: v.number(),
+    rows: v.array(
+      v.object({ employee: v.string(), objective: v.string(), periodKey: v.string() }),
+    ),
+  }),
+  handler: async (ctx, { dryRun }) => {
+    let scanned = 0;
+    let restored = 0;
+    const rows = [];
+    for (const m of await ctx.db.query("kpiMeasurements").take(2000)) {
+      if (!m.isProvisional || !m.hasData) continue;
+      scanned++;
+      const assignment = await ctx.db.get(m.kpiAssignmentId);
+      if (!assignment) continue;
+      const acts = await ctx.db
+        .query("activities")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", m.kpiAssignmentId).eq("periodKey", m.periodKey),
+        )
+        .take(500);
+      if (acts.some((a) => a.status === "needs_changes")) continue;
+      const counted = acts.filter((a) =>
+        ["submitted", "verified", "approved"].includes(a.status),
+      );
+      if (counted.length === 0 || counted.some((a) => a.status !== "approved")) continue;
+
+      const snapshots = await ctx.db
+        .query("scoreSnapshots")
+        .withIndex("by_scope_period", (q) =>
+          q.eq("scope", "individual").eq("scopeRef", m.employeeId),
+        )
+        .take(200);
+      const latest = snapshots
+        .filter(
+          (s) =>
+            cadencePeriodKey(assignment.frequency as Frequency, s.periodKey) ===
+            m.periodKey,
+        )
+        .sort((a, b) => b.createdAt - a.createdAt)[0];
+      const frozen = (
+        latest?.payload as
+          | { items?: { assignmentId: string; cappedAttainment: number | null }[] }
+          | undefined
+      )?.items?.find((it) => it.assignmentId === m.kpiAssignmentId);
+      if (!frozen) continue;
+      const same =
+        frozen.cappedAttainment === null || m.cappedAttainment === null
+          ? frozen.cappedAttainment === m.cappedAttainment
+          : Math.abs(frozen.cappedAttainment - m.cappedAttainment) < 1e-9;
+      if (!same) continue;
+
+      restored++;
+      const employee = await ctx.db.get(m.employeeId);
+      rows.push({
+        employee: employee?.displayName ?? String(m.employeeId),
+        objective: assignment.objective.slice(0, 80),
+        periodKey: m.periodKey,
+      });
+      if (!dryRun) await ctx.db.patch(m._id, { isProvisional: false });
+    }
+    if (!dryRun && restored > 0) {
+      await recordAudit(ctx, {
+        entityType: "kpiMeasurement",
+        entityId: "repair_reopened_approvals",
+        action: "repair_reopened_approvals",
+        reason:
+          "Approved measurements reopened only by an evidence recompute are official again",
+        after: { scanned, restored },
+      });
+    }
+    return { scanned, restored, rows: rows.slice(0, 200) };
   },
 });
 

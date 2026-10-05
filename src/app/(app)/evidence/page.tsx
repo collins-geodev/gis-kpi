@@ -449,6 +449,15 @@ export default function EvidenceCentrePage() {
                       <Badge variant={REVIEW_VARIANT[r.reviewStatus] ?? "muted"}>
                         {r.reviewStatus}
                       </Badge>
+                      {r.duplicateWith.length > 0 && (
+                        <Badge
+                          variant="warning"
+                          className="mt-1"
+                          title={`The same file was also uploaded by: ${r.duplicateWith.join(", ")}`}
+                        >
+                          <AlertTriangle className="h-3 w-3" /> duplicate
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="tabular text-right text-sm">
                       {formatSize(r.fileSize)}

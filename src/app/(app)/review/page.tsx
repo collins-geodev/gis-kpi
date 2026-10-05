@@ -435,9 +435,17 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                           {i.evidenceRequired && i.lateEvidence > 0 && (
                             <Badge
                               variant="warning"
-                              title="Evidence for this period was uploaded after the period's submission deadline"
+                              title="Evidence for this period was uploaded after its evidence deadline — it still counts"
                             >
                               evidence late ({i.lateEvidence})
+                            </Badge>
+                          )}
+                          {i.duplicateEvidence > 0 && (
+                            <Badge
+                              variant="warning"
+                              title="The same file was also uploaded by another employee — check it in the Evidence Centre"
+                            >
+                              duplicate evidence ({i.duplicateEvidence})
                             </Badge>
                           )}
                           {!i.cadenceCompliant && (

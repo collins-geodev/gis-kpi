@@ -17,6 +17,7 @@ import { resolveDisplayName } from "./emails";
 import { formatPercent } from "./lib/format";
 import { CALC_VERSION, scoreScorecard, type ScorecardItem } from "./lib/scoring";
 import { periodEvidence, recomputeMeasurement } from "./measurementsModel";
+import { duplicateEvidenceIndex } from "./evidence";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
 import { cadencePeriodKey } from "./lib/periods";
 import { describeActivityInputs, describeSelfReport } from "./lib/selfReport";
@@ -34,8 +35,17 @@ export const reviewQueue = query({
     ),
   },
   handler: async (ctx, { view }) => {
-    await requireRole(ctx, ["manager", "reviewer", "kpi_admin", "system_admin"]);
+    const { roles } = await requireRole(ctx, [
+      "manager",
+      "reviewer",
+      "kpi_admin",
+      "system_admin",
+    ]);
     const mode = view ?? "pending";
+    // Admins are warned when a row's evidence was also uploaded by someone else.
+    const duplicates = roles.some((r) => ["kpi_admin", "system_admin"].includes(r))
+      ? await duplicateEvidenceIndex(ctx)
+      : null;
     const scope = await readableEmployeeIds(ctx);
     const measurements = await ctx.db.query("kpiMeasurements").take(2000);
     const rows = [];
@@ -56,12 +66,18 @@ export const reviewQueue = query({
       let pendingEvidence = 0;
       let lateEvidence = 0;
       let evidenceElsewhere: string[] = [];
-      if (assignment.evidenceRequired) {
+      let duplicateEvidence = 0;
+      if (assignment.evidenceRequired || duplicates) {
         const ev = await periodEvidence(ctx, assignment, m.periodKey);
-        if (m.isProvisional) evidenceComplete = ev.complete;
-        pendingEvidence = ev.pending;
-        lateEvidence = ev.late;
-        evidenceElsewhere = ev.approvedElsewhere;
+        if (assignment.evidenceRequired) {
+          if (m.isProvisional) evidenceComplete = ev.complete;
+          pendingEvidence = ev.pending;
+          lateEvidence = ev.late;
+          evidenceElsewhere = ev.approvedElsewhere;
+        }
+        if (duplicates) {
+          duplicateEvidence = ev.fileIds.filter((id) => duplicates.has(id)).length;
+        }
       }
 
       // What the employee self-reported: the raw counted entries behind the
@@ -108,6 +124,7 @@ export const reviewQueue = query({
         pendingEvidence,
         lateEvidence,
         evidenceElsewhere,
+        duplicateEvidence,
         kpiCategory: assignment.kpiCategory ?? "core",
         cadenceCompliant: m.cadenceCompliant,
         scoringBlocked: assignment.scoringBlocked,
@@ -294,6 +311,8 @@ export const deleteSubmission = mutation({
     }
 
     // Evidence gates may change on every period of this KPI — recompute all.
+    // Other periods that are already approved stay official (their frozen
+    // snapshot is untouched); only the deleted period reopens.
     const measurements = await ctx.db
       .query("kpiMeasurements")
       .withIndex("by_assignment_period", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
@@ -301,7 +320,9 @@ export const deleteSubmission = mutation({
     const periods = new Set(measurements.map((m) => m.periodKey));
     periods.add(periodKey);
     for (const pk of periods) {
-      await recomputeMeasurement(ctx, assignment, pk);
+      await recomputeMeasurement(ctx, assignment, pk, {
+        keepOfficial: pk !== periodKey,
+      });
     }
 
     // Notify the employee — same channel as approval/rejection decisions.

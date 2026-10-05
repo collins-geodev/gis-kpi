@@ -169,6 +169,12 @@ export default defineSchema({
      * as on time (e.g. the July 2026 go-live month). Recomputes honor it.
      */
     cadenceGrace: v.optional(v.boolean()),
+    /**
+     * Optional evidence-upload deadline (e.g. the 3rd of the next month).
+     * Unset = the period's `dueAt`. Uploads after it are flagged "late" on
+     * the review queue; they still count toward the period.
+     */
+    evidenceDueAt: v.optional(v.number()),
   })
     .index("by_year_grain", ["performanceYearId", "grain"])
     .index("by_periodKey", ["periodKey"])

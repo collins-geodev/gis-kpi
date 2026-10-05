@@ -4,6 +4,7 @@
  * workflow; these two internal functions gate download access on every request.
  */
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { ConvexError, v } from "convex/values";
@@ -20,8 +21,32 @@ import {
 import { recordAudit } from "./audit";
 import { recomputeMeasurement } from "./measurementsModel";
 import { evidenceSupportsPeriod } from "./lib/evidencePeriod";
+import { crossEmployeeDuplicates } from "./lib/duplicates";
 import type { Frequency } from "./lib/types";
 import { vConfidentiality } from "./validators";
+
+/**
+ * For each live evidence item, the OTHER employees who uploaded the same file
+ * (checksum, link, or filename + size — see lib/duplicates.ts). Scans the
+ * whole evidence table, so callers only use it for admin views.
+ */
+export async function duplicateEvidenceIndex(
+  ctx: Pick<QueryCtx, "db">,
+): Promise<Map<string, Set<string>>> {
+  const all = (await ctx.db.query("evidenceFiles").take(4000)).filter(
+    (e) => e.retentionState !== "deleted",
+  );
+  return crossEmployeeDuplicates(
+    all.map((e) => ({
+      id: e._id,
+      employeeId: e.employeeId,
+      checksum: e.checksum,
+      externalUrl: e.externalUrl,
+      originalFilename: e.originalFilename,
+      fileSize: e.fileSize,
+    })),
+  );
+}
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^\w.\- ]+/g, "_").slice(0, 200) || "evidence";
@@ -167,7 +192,7 @@ export const saveEvidence = mutation({
       originalFilename: sanitizeFilename(args.originalFilename),
       mimeType: args.mimeType,
       fileSize: args.fileSize,
-      checksum: args.checksum,
+      checksum: args.checksum?.trim().slice(0, 128) || undefined,
       category: args.category.slice(0, 80),
       title: args.title.slice(0, 200),
       description: args.description?.slice(0, 2000),
@@ -341,7 +366,7 @@ export const approveAllForAssignment = mutation({
     const periods = new Set(measurements.map((m) => m.periodKey));
     for (const e of pending) if (e.periodKey) periods.add(e.periodKey);
     for (const periodKey of periods) {
-      await recomputeMeasurement(ctx, assignment, periodKey);
+      await recomputeMeasurement(ctx, assignment, periodKey, { keepOfficial: true });
     }
 
     await recordAudit(ctx, {
@@ -435,7 +460,7 @@ export const reviewEvidence = mutation({
         const periods = new Set(measurements.map((m) => m.periodKey));
         if (evidence.periodKey) periods.add(evidence.periodKey);
         for (const periodKey of periods) {
-          await recomputeMeasurement(ctx, assignment, periodKey);
+          await recomputeMeasurement(ctx, assignment, periodKey, { keepOfficial: true });
         }
       }
     }
@@ -576,7 +601,7 @@ export const removeEvidence = mutation({
         const periods = new Set(measurements.map((m) => m.periodKey));
         if (evidence.periodKey) periods.add(evidence.periodKey);
         for (const periodKey of periods) {
-          await recomputeMeasurement(ctx, assignment, periodKey);
+          await recomputeMeasurement(ctx, assignment, periodKey, { keepOfficial: true });
         }
       }
     }
@@ -625,6 +650,17 @@ export const listCentre = query({
       .slice(0, 400);
 
     const { user, roles } = await getAuthContext(ctx);
+    // Admins are warned when the same file was uploaded by another employee.
+    const isAdmin = roles.some((r) => ["kpi_admin", "system_admin"].includes(r));
+    const duplicates = isAdmin ? await duplicateEvidenceIndex(ctx) : null;
+    const nameOf = new Map<string, string>();
+    const employeeName = async (id: Id<"employees">) => {
+      const cached = nameOf.get(id);
+      if (cached !== undefined) return cached;
+      const name = (await ctx.db.get(id))?.displayName ?? "—";
+      nameOf.set(id, name);
+      return name;
+    };
     // Whether any work has been logged for an assignment — evidence alone
     // never produces a score, so rows without an activity get a nudge.
     const activityByAssignment = new Map<string, boolean>();
@@ -643,7 +679,12 @@ export const listCentre = query({
     for (const e of rows) {
       const assignment = e.kpiAssignmentId ? await ctx.db.get(e.kpiAssignmentId) : null;
       const employee = await ctx.db.get(e.employeeId);
+      const dupIds = duplicates?.get(e._id);
+      const duplicateWith = dupIds
+        ? await Promise.all([...dupIds].map((id) => employeeName(id as Id<"employees">)))
+        : [];
       out.push({
+        duplicateWith,
         activityLogged: e.kpiAssignmentId ? await hasActivity(e.kpiAssignmentId) : true,
         id: e._id,
         canDelete: canDeleteEvidence(e, user, roles),

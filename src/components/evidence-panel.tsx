@@ -13,6 +13,18 @@ import type { AppRole } from "@convex/lib/types";
 import { suggestEvidence } from "@/lib/evidence-suggestions";
 import { periodLabel } from "@convex/lib/format";
 
+/** SHA-256 of a file (hex) — lets admins spot the same file uploaded twice. */
+async function sha256Hex(file: File): Promise<string | undefined> {
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    return Array.from(new Uint8Array(digest), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("");
+  } catch {
+    return undefined; // never block an upload on the fingerprint
+  }
+}
+
 const REVIEW_VARIANT: Record<string, React.ComponentProps<typeof Badge>["variant"]> = {
   submitted: "muted",
   verified: "info",
@@ -95,6 +107,7 @@ export function EvidencePanel({
     setBusy(true);
     setError(null);
     try {
+      const checksum = await sha256Hex(file);
       const url = await generateUploadUrl();
       const res = await fetch(url, {
         method: "POST",
@@ -109,6 +122,7 @@ export function EvidencePanel({
         originalFilename: file.name,
         mimeType: file.type || "application/octet-stream",
         fileSize: file.size,
+        ...(checksum ? { checksum } : {}),
         category,
         title: title || file.name,
         ...(deferNotice ? { deferNotice: true } : {}),

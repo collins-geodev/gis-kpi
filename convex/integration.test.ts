@@ -2562,3 +2562,246 @@ describe("returning already-approved entries", () => {
     ).rejects.toThrow(/already returned/i);
   });
 });
+
+describe("approved periods stay official through evidence decisions", () => {
+  const SEP_2026 = Date.UTC(2026, 8, 15, 11);
+
+  async function approvedAugust() {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "ok@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "oa@x.com",
+      roles: ["system_admin"],
+    });
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      externalUrl: "https://example.com/aug",
+      originalFilename: "aug",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "qa_log",
+      title: "August log",
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+    await admin.mutation(api.evidence.approveAllForAssignment, {
+      kpiAssignmentId: assignmentId,
+    });
+    await admin.mutation(api.approvals.approveEmployeePeriod, {
+      employeeId: empId,
+      periodKey: "2026-M08",
+    });
+    const measurement = (periodKey: string) =>
+      t.run(async (ctx) =>
+        ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignmentId).eq("periodKey", periodKey),
+          )
+          .first(),
+      );
+    expect((await measurement("2026-M08"))?.isProvisional).toBe(false);
+    return { t, emp, admin, empId, assignmentId, measurement };
+  }
+
+  test("approving September's evidence leaves the approved August official", async () => {
+    const { emp, admin, assignmentId, measurement } = await approvedAugust();
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M09",
+      activityAt: SEP_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 8,
+      denominator: 10,
+    });
+    const evidenceId = await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M09",
+      externalUrl: "https://example.com/sep",
+      originalFilename: "sep",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      category: "qa_log",
+      title: "September log",
+    });
+    await admin.mutation(api.evidence.reviewEvidence, {
+      evidenceId,
+      decision: "approve",
+    });
+    expect((await measurement("2026-M09"))?.evidenceComplete).toBe(true);
+    expect((await measurement("2026-M08"))?.isProvisional).toBe(false);
+
+    await admin.mutation(api.evidence.approveAllForAssignment, {
+      kpiAssignmentId: assignmentId,
+    });
+    expect((await measurement("2026-M08"))?.isProvisional).toBe(false);
+    const pending = await admin.query(api.approvals.reviewQueue, {});
+    expect(
+      pending.some((r) => r.assignmentId === assignmentId && r.periodKey === "2026-M08"),
+    ).toBe(false);
+  });
+
+  test("repairReopenedApprovals restores only rows unchanged since approval", async () => {
+    const { t, admin, assignmentId, measurement } = await approvedAugust();
+    // Simulate the old bug: an evidence recompute flipped August provisional.
+    const mId = (await measurement("2026-M08"))!._id;
+    await t.run(async (ctx) => ctx.db.patch(mId, { isProvisional: true }));
+
+    const dry = await t.mutation(internal.migrations.repairReopenedApprovals, {
+      dryRun: true,
+    });
+    expect(dry.restored).toBe(1);
+    expect((await measurement("2026-M08"))?.isProvisional).toBe(true);
+    const real = await t.mutation(internal.migrations.repairReopenedApprovals, {});
+    expect(real.restored).toBe(1);
+    expect((await measurement("2026-M08"))?.isProvisional).toBe(false);
+
+    // An entry deliberately returned after approval is NOT re-officialised.
+    const activityId = await t.run(
+      async (ctx) =>
+        (await ctx.db
+          .query("activities")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+          )
+          .first())!._id,
+    );
+    await admin.mutation(api.approvals.recallActivityApproval, {
+      activityIds: [activityId],
+      reason: "Wrong batch",
+    });
+    const again = await t.mutation(internal.migrations.repairReopenedApprovals, {});
+    expect(again.restored).toBe(0);
+  });
+});
+
+describe("evidence integrity flags", () => {
+  test("duplicates across employees are flagged for admins only; late uploads use the evidence deadline", async () => {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const { as: emp } = await makeUser(t, {
+      email: "d1@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "da@x.com",
+      roles: ["system_admin"],
+    });
+    const { as: mgr } = await makeUser(t, { email: "dm@x.com", roles: ["manager"] });
+    const { assignmentId, otherEmp, otherAssignment } = await t.run(async (ctx) => {
+      const all = await ctx.db.query("kpiAssignments").take(500);
+      const mine = all.find(
+        (a) => a.employeeId === empId && a.canonicalKey === "asset_integration",
+      )!;
+      const other = all.find((a) => a.employeeId !== empId)!;
+      return {
+        assignmentId: mine._id,
+        otherEmp: other.employeeId,
+        otherAssignment: other._id,
+      };
+    });
+    // Another employee holds the same file (same checksum), uploaded earlier.
+    await t.run(async (ctx) => {
+      const uploader = (await ctx.db.query("users").first())!;
+      await ctx.db.insert("evidenceFiles", {
+        employeeId: otherEmp,
+        kpiAssignmentId: otherAssignment,
+        periodKey: "2026-M08",
+        externalUrl: undefined,
+        originalFilename: "other-name.pdf",
+        mimeType: "application/pdf",
+        fileSize: 5000,
+        checksum: "deadbeef",
+        category: "qa_log",
+        title: "Their copy",
+        uploadedByUserId: uploader._id,
+        uploadedAt: Date.UTC(2026, 7, 10),
+        version: 1,
+        confidentiality: "internal",
+        reviewStatus: "submitted",
+        retentionState: "active",
+      });
+    });
+    const evidenceId = await emp.mutation(api.evidence.saveEvidence, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      externalUrl: "https://example.com/mine",
+      originalFilename: "mine.pdf",
+      mimeType: "text/uri-list",
+      fileSize: 0,
+      checksum: "DEADBEEF",
+      category: "qa_log",
+      title: "My copy",
+    });
+    await emp.mutation(api.activities.create, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    });
+
+    const centre = await admin.query(api.evidence.listCentre, {});
+    expect(centre.find((r) => r.id === evidenceId)?.duplicateWith.length).toBe(1);
+    const mgrCentre = await mgr.query(api.evidence.listCentre, {});
+    expect(mgrCentre.every((r) => r.duplicateWith.length === 0)).toBe(true);
+
+    const row = async () =>
+      (await admin.query(api.approvals.reviewQueue, {})).find(
+        (r) => r.assignmentId === assignmentId && r.periodKey === "2026-M08",
+      )!;
+    expect((await row()).duplicateEvidence).toBe(1);
+    const mgrQueue = await mgr.query(api.approvals.reviewQueue, {});
+    expect(mgrQueue.every((r) => r.duplicateEvidence === 0)).toBe(true);
+
+    const uploadAt = (ms: number) =>
+      t.run(async (ctx) => ctx.db.patch(evidenceId, { uploadedAt: ms }));
+    // No evidence deadline: August's submission due date (5 Sep) applies.
+    await uploadAt(Date.UTC(2026, 8, 4, 12));
+    expect((await row()).lateEvidence).toBe(0);
+    await uploadAt(Date.UTC(2026, 8, 20, 12));
+    expect((await row()).lateEvidence).toBe(1);
+
+    // Evidence due by the 3rd: a 4 Sep upload is now late, 2 Sep is not.
+    const set = await t.mutation(internal.migrations.setEvidenceDeadlines, {
+      dayOfNextMonth: 3,
+      periodKey: "2026-M08",
+    });
+    expect(set.updated).toBe(1);
+    // End of 3 Sep 2026, Lagos time (UTC+1).
+    expect(set.sample[0]!.evidenceDueAt).toBe("2026-09-03T22:59:59.999Z");
+    await uploadAt(Date.UTC(2026, 8, 4, 12));
+    expect((await row()).lateEvidence).toBe(1);
+    await uploadAt(Date.UTC(2026, 8, 2, 12));
+    expect((await row()).lateEvidence).toBe(0);
+    await expect(
+      t.mutation(internal.migrations.setEvidenceDeadlines, { dayOfNextMonth: 31 }),
+    ).rejects.toThrow(/1 to 28/);
+  });
+});

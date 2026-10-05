@@ -27,10 +27,12 @@ export async function periodEvidence(
   complete: boolean;
   approved: number;
   pending: number;
-  /** In-period files uploaded after the period's submission deadline. */
+  /** In-period files uploaded after the period's evidence deadline. */
   late: number;
   /** Other cadence periods that DO hold approved evidence (sorted). */
   approvedElsewhere: string[];
+  /** Ids of the live files supporting this period. */
+  fileIds: string[];
 }> {
   const freq = assignment.frequency as Frequency;
   const files = (
@@ -49,9 +51,12 @@ export async function periodEvidence(
     .query("trackingPeriods")
     .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
     .first();
+  // Evidence has its own deadline when an admin set one; otherwise the
+  // period's submission deadline applies. Cadence grace waives both.
+  const evidenceDue = period ? (period.evidenceDueAt ?? period.dueAt) : null;
   const late =
-    period && period.cadenceGrace !== true
-      ? inPeriod.filter((e) => e.uploadedAt > period.dueAt).length
+    period && evidenceDue !== null && period.cadenceGrace !== true
+      ? inPeriod.filter((e) => e.uploadedAt > evidenceDue).length
       : 0;
 
   const elsewhere = new Set<string>();
@@ -67,15 +72,35 @@ export async function periodEvidence(
     pending,
     late,
     approvedElsewhere: [...elsewhere].sort(),
+    fileIds: inPeriod.map((e) => e._id),
   };
 }
 
-/** Recompute the provisional measurement for one (assignment, period). */
+/**
+ * Recompute the provisional measurement for one (assignment, period).
+ *
+ * A recompute normally (re)opens the row as provisional — the inputs changed,
+ * so it needs review again. Callers whose change cannot alter an APPROVED
+ * period's numbers (evidence decisions, which are period-scoped) pass
+ * `keepOfficial` so an official row is left exactly as approved instead of
+ * silently dropping back into the review queue beside its frozen snapshot.
+ */
 export async function recomputeMeasurement(
   ctx: MutationCtx,
   assignment: Doc<"kpiAssignments">,
   periodKey: string,
+  opts: { keepOfficial?: boolean } = {},
 ): Promise<void> {
+  if (opts.keepOfficial) {
+    const current = await ctx.db
+      .query("kpiMeasurements")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", assignment._id).eq("periodKey", periodKey),
+      )
+      .first();
+    if (current && !current.isProvisional) return;
+  }
+
   const activities = await ctx.db
     .query("activities")
     .withIndex("by_assignment_period", (q) =>
