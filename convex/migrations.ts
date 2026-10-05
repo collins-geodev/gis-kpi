@@ -9,7 +9,11 @@ import { BASELINE_PERFORMANCE_YEAR, FULL_WEIGHT_TOTAL, JOB_ROLES } from "./lib/t
 import { v } from "convex/values";
 import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
-import { periodEvidence, recomputeMeasurement } from "./measurementsModel";
+import {
+  cadenceCompliance,
+  periodEvidence,
+  recomputeMeasurement,
+} from "./measurementsModel";
 import { vCanonicalKpiKey } from "./validators";
 import { LAGOS_OFFSET_MS, cadencePeriodKey } from "./lib/periods";
 import { lagosMonthKeyOf } from "./lib/evidencePeriod";
@@ -550,7 +554,8 @@ export const listReductionPins = internalQuery({
  * it counts as on time. Sets the flag for future recomputes AND surgically
  * patches existing measurements' cadenceCompliant — deliberately NOT a full
  * recompute, which would flip approved (official) measurements back to
- * provisional. Idempotent.
+ * provisional. Revoking re-judges each measurement on when its entries were
+ * submitted against the period deadline. Idempotent.
  *
  *   npx convex run migrations:grantCadenceGrace '{"periodKey":"2026-M07"}' --prod
  *   npx convex run migrations:grantCadenceGrace '{"periodKey":"2026-M07","revoke":true}' --prod
@@ -574,7 +579,11 @@ export const grantCadenceGrace = internalMutation({
     const measurements = await ctx.db.query("kpiMeasurements").take(2000);
     for (const m of measurements) {
       if (m.periodKey !== periodKey) continue;
-      const compliant = granting ? true : Date.now() <= period.dueAt;
+      let compliant = true;
+      if (!granting) {
+        const assignment = await ctx.db.get(m.kpiAssignmentId);
+        if (assignment) compliant = await cadenceCompliance(ctx, assignment, periodKey);
+      }
       if (m.cadenceCompliant !== compliant) {
         await ctx.db.patch(m._id, { cadenceCompliant: compliant });
         measurementsUpdated++;
@@ -927,8 +936,8 @@ export const setEvidenceDeadlines = internalMutation({
  * Moving a deadline later also:
  *  - reopens a period the overdue job had flagged "grace" when the new
  *    deadline has not passed yet;
- *  - clears "submitted late" on measurements last computed before the new
- *    deadline (they were on time under it). Nothing is ever made late.
+ *  - clears "submitted late" on measurements whose entries were all
+ *    submitted by the new deadline. Nothing is ever made late.
  *
  *   npx convex run migrations:setSubmissionDeadlines '{"dayOfNextMonth":5,"dryRun":true}' --prod
  */
@@ -982,7 +991,10 @@ export const setSubmissionDeadlines = internalMutation({
       if (due > p.dueAt) {
         for (const m of measurements) {
           if (m.periodKey !== p.periodKey || m.cadenceCompliant) continue;
-          if (m.computedAt > due) continue;
+          const assignment = await ctx.db.get(m.kpiAssignmentId);
+          if (!assignment) continue;
+          // The period row may not be patched yet (dry run) — judge on `due`.
+          if (!(await cadenceCompliance(ctx, assignment, p.periodKey, due))) continue;
           measurementsNowOnTime++;
           if (!dryRun) await ctx.db.patch(m._id, { cadenceCompliant: true });
         }

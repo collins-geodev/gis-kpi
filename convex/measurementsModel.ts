@@ -85,6 +85,47 @@ export async function periodEvidence(
   };
 }
 
+/** When an entry was submitted (older rows: when it was created). */
+export function submittedAtOf(a: { submittedAt?: number; createdAt: number }): number {
+  return a.submittedAt ?? a.createdAt;
+}
+
+/**
+ * Whether a period's counted entries were all submitted by its deadline.
+ * Admin grace (e.g. the go-live month) makes everything on time; no period
+ * record → on time. `dueAt` may be overridden (deadline migrations).
+ */
+export function entriesOnTime(
+  counted: { submittedAt?: number; createdAt: number }[],
+  period: { dueAt: number; cadenceGrace?: boolean } | null,
+  dueAt: number | undefined = period?.dueAt,
+): boolean {
+  if (!period || period.cadenceGrace === true || dueAt === undefined) return true;
+  return counted.every((a) => submittedAtOf(a) <= dueAt);
+}
+
+/** Recompute just the "submitted late" flag inputs for one (assignment, period). */
+export async function cadenceCompliance(
+  ctx: Pick<QueryCtx, "db">,
+  assignment: Doc<"kpiAssignments">,
+  periodKey: string,
+  dueAt?: number,
+): Promise<boolean> {
+  const period = await ctx.db
+    .query("trackingPeriods")
+    .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
+    .first();
+  const counted = (
+    await ctx.db
+      .query("activities")
+      .withIndex("by_assignment_period", (q) =>
+        q.eq("kpiAssignmentId", assignment._id).eq("periodKey", periodKey),
+      )
+      .take(1000)
+  ).filter((a) => COUNTED_STATES.includes(a.status));
+  return entriesOnTime(counted, period, dueAt ?? period?.dueAt);
+}
+
 /** Cadence periods of this KPI that have counted (logged) work. */
 export async function workPeriodsOf(
   ctx: Pick<QueryCtx, "db">,
@@ -211,11 +252,10 @@ export async function recomputeMeasurement(
     .query("trackingPeriods")
     .withIndex("by_periodKey", (q) => q.eq("periodKey", periodKey))
     .first();
-  // Admin-granted grace on a period (e.g. the go-live month) means every
-  // submission in it counts as on time, no matter when it lands.
-  const cadenceCompliant = period
-    ? period.cadenceGrace === true || Date.now() <= period.dueAt
-    : true;
+  // Judged on when the entries were SUBMITTED, never on when this recompute
+  // happens to run (an evidence approval after the deadline must not turn an
+  // on-time submission late).
+  const cadenceCompliant = entriesOnTime(counted, period);
 
   const doc = {
     kpiAssignmentId: assignment._id,

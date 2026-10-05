@@ -300,6 +300,13 @@ export default defineSchema({
     updatedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
+    /**
+     * When the entry's content was last submitted (create / content edit) —
+     * what "submitted late" is judged on. Review actions never change it, and
+     * fixing an entry a reviewer sent back keeps the original time. Unset on
+     * older rows: `createdAt` applies.
+     */
+    submittedAt: v.optional(v.number()),
   })
     .index("by_employee_period", ["employeeId", "periodKey"])
     .index("by_assignment_period", ["kpiAssignmentId", "periodKey"])

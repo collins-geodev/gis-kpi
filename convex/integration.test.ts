@@ -10,6 +10,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { recomputeMeasurement } from "./measurementsModel";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -3030,6 +3031,7 @@ describe("monthly entry deadline", () => {
   test("new years use 23:59 on the 5th; the migration moves old deadlines and clears stale late flags", async () => {
     const t = harness();
     await t.mutation(internal.seed.seedBaseline, {});
+    const { userId } = await makeUser(t, { email: "dl@x.com" });
     const period = (pk: string) =>
       t.run(async (ctx) =>
         ctx.db
@@ -3042,8 +3044,9 @@ describe("monthly entry deadline", () => {
     const q3Due = (await period("2026-Q3"))!.dueAt;
 
     // An older deployment: August due at 00:00 on 5 Sep, flagged grace, and a
-    // measurement recomputed on 5 Sep (on time under the new rule) marked late,
-    // another recomputed on 6 Sep (late under both).
+    // measurement whose entry was submitted on 5 Sep (on time under the new
+    // rule) marked late, another submitted on 6 Sep (late under both). Both
+    // were recomputed later still — only the submission time matters.
     const startOf5Sep = Date.UTC(2026, 8, 5) - 60 * 60 * 1000;
     const [onTimeId, lateId] = await t.run(async (ctx) => {
       const p = (await ctx.db
@@ -3054,6 +3057,21 @@ describe("monthly entry deadline", () => {
       const assignments = await ctx.db.query("kpiAssignments").take(2);
       const ids = [];
       for (const [i, a] of assignments.entries()) {
+        const submittedAt = i === 0 ? Date.UTC(2026, 8, 5, 12) : Date.UTC(2026, 8, 6, 12);
+        await ctx.db.insert("activities", {
+          employeeId: a.employeeId,
+          kpiAssignmentId: a._id,
+          periodKey: "2026-M08",
+          activityAt: Date.UTC(2026, 7, 20),
+          title: "work",
+          description: "",
+          quantity: 1,
+          status: "submitted",
+          createdByUserId: userId,
+          createdAt: Date.UTC(2026, 7, 20),
+          updatedAt: submittedAt,
+          submittedAt,
+        });
         ids.push(
           await ctx.db.insert("kpiMeasurements", {
             kpiAssignmentId: a._id,
@@ -3071,7 +3089,7 @@ describe("monthly entry deadline", () => {
             evidenceComplete: true,
             cadenceCompliant: false,
             isProvisional: true,
-            computedAt: i === 0 ? Date.UTC(2026, 8, 5, 12) : Date.UTC(2026, 8, 6, 12),
+            computedAt: Date.UTC(2026, 8, 20),
             calcVersion: "test",
           } as never),
         );
@@ -3108,5 +3126,145 @@ describe("monthly entry deadline", () => {
         })
       ).updated,
     ).toBe(0);
+  });
+});
+
+describe("submitted-late is judged on submission time", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  async function setup() {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { as: emp } = await makeUser(t, {
+      email: "late@x.com",
+      roles: ["employee"],
+      employeeBusinessId: "IKD034860",
+    });
+    const { as: admin } = await makeUser(t, {
+      email: "late-admin@x.com",
+      roles: ["system_admin"],
+    });
+    const empId = await employeeIdByBiz(t, "IKD034860");
+    const assignmentId = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiAssignments")
+        .withIndex("by_employee_year", (q) => q.eq("employeeId", empId))
+        .collect();
+      return list.find((a) => a.canonicalKey === "asset_integration")!._id;
+    });
+    await unlockCapture(t, assignmentId);
+    const setDue = (dueAt: number) =>
+      t.run(async (ctx) => {
+        const p = (await ctx.db
+          .query("trackingPeriods")
+          .withIndex("by_periodKey", (q) => q.eq("periodKey", "2026-M08"))
+          .first())!;
+        await ctx.db.patch(p._id, { dueAt, status: "open" });
+      });
+    const compliant = () =>
+      t.run(
+        async (ctx) =>
+          (await ctx.db
+            .query("kpiMeasurements")
+            .withIndex("by_assignment_period", (q) =>
+              q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+            )
+            .first())!.cadenceCompliant,
+      );
+    // The entry was submitted two days ago; the deadline passed yesterday.
+    const submittedBeforeDeadline = async (id: Id<"activities">) => {
+      await t.run(async (ctx) => {
+        await ctx.db.patch(id, { submittedAt: Date.now() - 2 * DAY });
+      });
+      await setDue(Date.now() - DAY);
+    };
+    const recompute = () =>
+      t.run(async (ctx) => {
+        await recomputeMeasurement(ctx, (await ctx.db.get(assignmentId))!, "2026-M08");
+      });
+    const entry = {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      activityAt: AUG_2026,
+      title: "Integrated assets",
+      description: "batch",
+      numerator: 9,
+      denominator: 10,
+    };
+    const { kpiAssignmentId: _, ...edit } = entry;
+    return {
+      t,
+      emp,
+      admin,
+      assignmentId,
+      setDue,
+      compliant,
+      submittedBeforeDeadline,
+      recompute,
+      entry,
+      edit,
+    };
+  }
+
+  test("a recompute after the deadline keeps an on-time entry on time", async () => {
+    const { emp, setDue, compliant, submittedBeforeDeadline, recompute, entry } =
+      await setup();
+    await setDue(Date.now() + DAY);
+    const id = await emp.mutation(api.activities.create, entry);
+    expect(await compliant()).toBe(true);
+    // The deadline passes; an evidence decision / approval recomputes later.
+    await submittedBeforeDeadline(id);
+    await recompute();
+    expect(await compliant()).toBe(true);
+  });
+
+  test("an entry submitted after the deadline is late", async () => {
+    const { emp, setDue, compliant, entry } = await setup();
+    await setDue(Date.now() - DAY);
+    await emp.mutation(api.activities.create, entry);
+    expect(await compliant()).toBe(false);
+  });
+
+  test("a voluntary edit after the deadline is late; fixing a returned entry is not", async () => {
+    const {
+      emp,
+      admin,
+      assignmentId,
+      setDue,
+      compliant,
+      submittedBeforeDeadline,
+      entry,
+      edit,
+    } = await setup();
+    await setDue(Date.now() + DAY);
+    const id = await emp.mutation(api.activities.create, entry);
+    await submittedBeforeDeadline(id);
+
+    // Sent back by the reviewer, then fixed after the deadline: still on time.
+    await admin.mutation(api.approvals.rejectSubmission, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-M08",
+      reason: "Recount the batch",
+    });
+    await emp.mutation(api.activities.update, { activityId: id, ...edit, numerator: 8 });
+    expect(await compliant()).toBe(true);
+
+    // A voluntary change after the deadline is a new (late) submission.
+    await emp.mutation(api.activities.update, { activityId: id, ...edit, numerator: 7 });
+    expect(await compliant()).toBe(false);
+  });
+
+  test("revoking grace re-judges entries on their submission time", async () => {
+    const { t, emp, setDue, compliant, submittedBeforeDeadline, entry } = await setup();
+    await setDue(Date.now() + DAY);
+    const id = await emp.mutation(api.activities.create, entry);
+    await submittedBeforeDeadline(id);
+    await t.mutation(internal.migrations.grantCadenceGrace, { periodKey: "2026-M08" });
+    expect(await compliant()).toBe(true);
+    await t.mutation(internal.migrations.grantCadenceGrace, {
+      periodKey: "2026-M08",
+      revoke: true,
+    });
+    // Submitted before the deadline → stays on time once grace is gone.
+    expect(await compliant()).toBe(true);
   });
 });

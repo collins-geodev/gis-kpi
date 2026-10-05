@@ -272,6 +272,7 @@ export const create = mutation({
       updatedByUserId: user._id,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      submittedAt: Date.now(),
     });
 
     await recomputeMeasurement(ctx, assignment, args.periodKey);
@@ -608,6 +609,12 @@ export const update = mutation({
       status: activity.status === "needs_changes" ? "submitted" : activity.status,
       updatedByUserId: user._id,
       updatedAt: Date.now(),
+      // A voluntary edit is a new submission; fixing an entry a reviewer sent
+      // back keeps its original time (requested rework is never "late").
+      submittedAt:
+        activity.status === "needs_changes"
+          ? (activity.submittedAt ?? activity.createdAt)
+          : Date.now(),
     });
 
     await recomputeMeasurement(ctx, assignment, oldPeriodKey);
