@@ -663,18 +663,15 @@ export default function ActivitiesPage() {
                     </p>
                   ) : (
                     <p className="flex items-start gap-2">
-                      <CheckCircle2
-                        className="mt-0.5 h-4 w-4 shrink-0"
-                        aria-hidden
-                      />
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                       <span>
-                      Already logged <strong>{existing.count}</strong>{" "}
-                      {existing.count === 1 ? "entry" : "entries"} for this period (
-                      {existing.entries
-                        .map((e) => `“${e.title.slice(0, 40)}”`)
-                        .join(", ")}
-                      ) — entries add up, so only add this if it is{" "}
-                      <strong>new work</strong>, not a re-log.
+                        Already logged <strong>{existing.count}</strong>{" "}
+                        {existing.count === 1 ? "entry" : "entries"} for this period (
+                        {existing.entries
+                          .map((e) => `“${e.title.slice(0, 40)}”`)
+                          .join(", ")}
+                        ) — entries add up, so only add this if it is{" "}
+                        <strong>new work</strong>, not a re-log.
                       </span>
                     </p>
                   )}
