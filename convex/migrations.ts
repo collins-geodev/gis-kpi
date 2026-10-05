@@ -2,7 +2,7 @@
  * One-off, audited data migrations run via `npx convex run` — never from the
  * UI. Each is idempotent so re-running is safe.
  */
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { NON_CORE_TEMPLATES } from "./lib/catalogue";
 import { BASELINE_PERFORMANCE_YEAR, FULL_WEIGHT_TOTAL, JOB_ROLES } from "./lib/types";
@@ -10,7 +10,9 @@ import { v } from "convex/values";
 import { recordAudit } from "./audit";
 import { isStillBlocked } from "./dataQuality";
 import {
+  COUNTED_STATES,
   cadenceCompliance,
+  entriesOnTime,
   periodEvidence,
   recomputeMeasurement,
 } from "./measurementsModel";
@@ -1010,6 +1012,196 @@ export const setSubmissionDeadlines = internalMutation({
       });
     }
     return { updated, reopened, measurementsNowOnTime, sample };
+  },
+});
+
+/**
+ * When an entry from before `submittedAt` existed was really submitted,
+ * replayed from its audit trail: creation, then every content edit that was
+ * not a fix to an entry a reviewer sent back (those keep the earlier time —
+ * the same rule `activities.update` now applies). `audited` is false when the
+ * entry's creation is missing from the log (log cleared) — edits may be lost,
+ * so the time is a guess.
+ */
+async function replaySubmittedAt(
+  ctx: Pick<MutationCtx, "db">,
+  activity: Doc<"activities">,
+): Promise<{ at: number; audited: boolean }> {
+  const logs = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_entity", (q) =>
+      q.eq("entityType", "activity").eq("entityId", activity._id),
+    )
+    .take(500);
+  let at = activity.createdAt;
+  for (const log of logs
+    .filter((l) => l.action === "update_activity")
+    .sort((x, y) => x.at - y.at)) {
+    if (log.before?.status !== "needs_changes") at = log.at;
+  }
+  return { at, audited: logs.some((l) => l.action === "create_activity") };
+}
+
+/**
+ * Repair "submitted late" flags set under the old rule, which judged
+ * lateness on when a measurement was RECOMPUTED (e.g. an evidence approval
+ * after the deadline turned an on-time submission late). Each late
+ * measurement is re-judged on when its counted entries were submitted:
+ * `submittedAt`, or for older entries the time replayed from the audit log.
+ *
+ * Only clears late flags — nothing is ever made late (`wouldBecomeLate`
+ * reports on-time flags the new rule disagrees with, for information). Only
+ * the flag is patched, so approved (official) measurements stay official;
+ * frozen score snapshots are left as approved. Older entries with an audit
+ * trail get `submittedAt` backfilled so later recomputes agree.
+ *
+ * `dryRun` lists every proposal without writing; `confidentOnly` skips
+ * measurements with an entry whose audit trail is incomplete. Idempotent.
+ *
+ *   npx convex run migrations:repairLateFlags '{"dryRun":true}' --prod
+ *   npx convex run migrations:repairLateFlags '{"periodKey":"2026-M08"}' --prod
+ */
+export const repairLateFlags = internalMutation({
+  args: {
+    periodKey: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+    confidentOnly: v.optional(v.boolean()),
+  },
+  returns: v.object({
+    checked: v.number(),
+    nowOnTime: v.number(),
+    stillLate: v.number(),
+    skippedUncertain: v.number(),
+    wouldBecomeLate: v.number(),
+    entriesBackfilled: v.number(),
+    proposals: v.array(
+      v.object({
+        employee: v.string(),
+        kpi: v.string(),
+        periodKey: v.string(),
+        due: v.string(),
+        lastSubmitted: v.string(),
+        official: v.boolean(),
+        confidence: v.union(
+          v.literal("recorded"),
+          v.literal("audit"),
+          v.literal("guess"),
+        ),
+      }),
+    ),
+  }),
+  handler: async (ctx, { periodKey, dryRun, confidentOnly }) => {
+    const measurements = (await ctx.db.query("kpiMeasurements").take(4000)).filter(
+      (m) => periodKey === undefined || m.periodKey === periodKey,
+    );
+    const periods = new Map<string, Doc<"trackingPeriods"> | null>();
+    let checked = 0;
+    let nowOnTime = 0;
+    let stillLate = 0;
+    let skippedUncertain = 0;
+    let wouldBecomeLate = 0;
+    let entriesBackfilled = 0;
+    const proposals = [];
+    for (const m of measurements) {
+      if (!periods.has(m.periodKey)) {
+        periods.set(
+          m.periodKey,
+          await ctx.db
+            .query("trackingPeriods")
+            .withIndex("by_periodKey", (q) => q.eq("periodKey", m.periodKey))
+            .first(),
+        );
+      }
+      const period = periods.get(m.periodKey)!;
+      const counted = (
+        await ctx.db
+          .query("activities")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", m.kpiAssignmentId).eq("periodKey", m.periodKey),
+          )
+          .take(1000)
+      ).filter((a) => COUNTED_STATES.includes(a.status));
+      if (counted.length === 0) continue;
+      checked++;
+
+      const times = [];
+      for (const a of counted) {
+        if (a.submittedAt !== undefined) {
+          times.push({ activity: a, at: a.submittedAt, confidence: "recorded" as const });
+        } else {
+          const { at, audited } = await replaySubmittedAt(ctx, a);
+          times.push({
+            activity: a,
+            at,
+            confidence: audited ? ("audit" as const) : ("guess" as const),
+          });
+        }
+      }
+      const onTime = entriesOnTime(
+        times.map((x) => ({ submittedAt: x.at, createdAt: x.activity.createdAt })),
+        period,
+      );
+
+      if (!dryRun) {
+        for (const x of times) {
+          if (x.confidence !== "audit") continue;
+          await ctx.db.patch(x.activity._id, { submittedAt: x.at });
+          entriesBackfilled++;
+        }
+      }
+      if (m.cadenceCompliant) {
+        if (!onTime) wouldBecomeLate++;
+        continue;
+      }
+      if (!onTime) {
+        stillLate++;
+        continue;
+      }
+      const confidence: "recorded" | "audit" | "guess" = times.some(
+        (x) => x.confidence === "guess",
+      )
+        ? "guess"
+        : times.some((x) => x.confidence === "audit")
+          ? "audit"
+          : "recorded";
+      if (confidentOnly && confidence === "guess") {
+        skippedUncertain++;
+        continue;
+      }
+      nowOnTime++;
+      if (proposals.length < 200) {
+        const assignment = await ctx.db.get(m.kpiAssignmentId);
+        const employee = await ctx.db.get(m.employeeId);
+        proposals.push({
+          employee: employee?.displayName ?? String(m.employeeId),
+          kpi: assignment?.objective ?? String(m.kpiAssignmentId),
+          periodKey: m.periodKey,
+          due: period ? new Date(period.dueAt).toISOString() : "none",
+          lastSubmitted: new Date(Math.max(...times.map((x) => x.at))).toISOString(),
+          official: !m.isProvisional,
+          confidence,
+        });
+      }
+      if (!dryRun) await ctx.db.patch(m._id, { cadenceCompliant: true });
+    }
+    if (!dryRun && (nowOnTime > 0 || entriesBackfilled > 0)) {
+      await recordAudit(ctx, {
+        entityType: "kpiMeasurement",
+        entityId: periodKey ?? "all",
+        action: "repair_late_flags",
+        reason: "Late flags re-judged on when entries were submitted",
+        after: { checked, nowOnTime, stillLate, skippedUncertain, entriesBackfilled },
+      });
+    }
+    return {
+      checked,
+      nowOnTime,
+      stillLate,
+      skippedUncertain,
+      wouldBecomeLate,
+      entriesBackfilled,
+      proposals,
+    };
   },
 });
 

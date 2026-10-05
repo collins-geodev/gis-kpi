@@ -3267,4 +3267,91 @@ describe("submitted-late is judged on submission time", () => {
     // Submitted before the deadline → stays on time once grace is gone.
     expect(await compliant()).toBe(true);
   });
+
+  describe("repairLateFlags", () => {
+    /** Make an entry look pre-`submittedAt` and its measurement wrongly late. */
+    async function legacy(
+      t: Awaited<ReturnType<typeof setup>>["t"],
+      id: Id<"activities">,
+      assignmentId: Id<"kpiAssignments">,
+    ) {
+      await t.run(async (ctx) => {
+        await ctx.db.patch(id, {
+          submittedAt: undefined,
+          createdAt: Date.now() - 2 * DAY,
+        });
+        const m = (await ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignmentId).eq("periodKey", "2026-M08"),
+          )
+          .first())!;
+        await ctx.db.patch(m._id, { cadenceCompliant: false });
+      });
+    }
+
+    test("clears a late flag on an entry submitted before the deadline", async () => {
+      const { t, emp, assignmentId, setDue, compliant, entry } = await setup();
+      await setDue(Date.now() + DAY);
+      const id = await emp.mutation(api.activities.create, entry);
+      await setDue(Date.now() - DAY);
+      await legacy(t, id, assignmentId);
+
+      const dry = await t.mutation(internal.migrations.repairLateFlags, { dryRun: true });
+      expect(dry.nowOnTime).toBe(1);
+      expect(dry.proposals[0]!.confidence).toBe("audit");
+      expect(await compliant()).toBe(false);
+
+      const res = await t.mutation(internal.migrations.repairLateFlags, {});
+      expect(res.nowOnTime).toBe(1);
+      expect(res.entriesBackfilled).toBe(1);
+      expect(await compliant()).toBe(true);
+      const act = await t.run(async (ctx) => (await ctx.db.get(id))!);
+      expect(act.submittedAt).toBe(act.createdAt);
+      // Idempotent.
+      expect((await t.mutation(internal.migrations.repairLateFlags, {})).nowOnTime).toBe(
+        0,
+      );
+    });
+
+    test("keeps the flag when an older entry was edited after the deadline", async () => {
+      const { t, emp, assignmentId, setDue, compliant, entry, edit } = await setup();
+      await setDue(Date.now() + DAY);
+      const id = await emp.mutation(api.activities.create, entry);
+      await setDue(Date.now() - DAY);
+      await emp.mutation(api.activities.update, {
+        activityId: id,
+        ...edit,
+        numerator: 7,
+      });
+      await legacy(t, id, assignmentId);
+
+      const res = await t.mutation(internal.migrations.repairLateFlags, {});
+      expect(res.nowOnTime).toBe(0);
+      expect(res.stillLate).toBe(1);
+      expect(await compliant()).toBe(false);
+    });
+
+    test("confidentOnly skips entries whose audit trail is gone", async () => {
+      const { t, emp, assignmentId, setDue, compliant, entry } = await setup();
+      await setDue(Date.now() + DAY);
+      const id = await emp.mutation(api.activities.create, entry);
+      await setDue(Date.now() - DAY);
+      await legacy(t, id, assignmentId);
+      await t.run(async (ctx) => {
+        for (const l of await ctx.db.query("auditLogs").collect())
+          await ctx.db.delete(l._id);
+      });
+
+      const res = await t.mutation(internal.migrations.repairLateFlags, {
+        confidentOnly: true,
+      });
+      expect(res.skippedUncertain).toBe(1);
+      expect(await compliant()).toBe(false);
+      const guess = await t.mutation(internal.migrations.repairLateFlags, {
+        dryRun: true,
+      });
+      expect(guess.proposals[0]!.confidence).toBe("guess");
+    });
+  });
 });

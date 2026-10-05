@@ -11,7 +11,7 @@ import type { Frequency } from "./lib/types";
 import { CALC_VERSION, computeAttainment, weightedContribution } from "./lib/scoring";
 import { statusFromAttainment } from "./lib/thresholds";
 
-const COUNTED_STATES = ["submitted", "verified", "approved"];
+export const COUNTED_STATES = ["submitted", "verified", "approved"];
 
 /**
  * Evidence state of ONE (assignment, period). Only live (not deleted) files
