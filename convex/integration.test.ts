@@ -2558,6 +2558,21 @@ describe("returning already-approved entries", () => {
         periodKey: "2026-Q3",
       }),
     ).rejects.toThrow(/nothing to recall/i);
+
+    // The reopened quarter is never approved on its own — only via the month
+    // that closes it — so no quarter-only snapshot reaches the score history.
+    await expect(
+      admin.mutation(api.approvals.approveEmployeePeriod, {
+        employeeId: empId,
+        periodKey: "2026-Q3",
+      }),
+    ).rejects.toThrow(/approve Sep 2026 instead/);
+    await expect(
+      admin.mutation(api.approvals.approveEmployeePeriod, {
+        employeeId: empId,
+        periodKey: "2026",
+      }),
+    ).rejects.toThrow(/approve Dec 2026 instead/);
   });
 
   test("changing a target rescores provisional measurements at once", async () => {

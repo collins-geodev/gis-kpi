@@ -14,12 +14,12 @@ import { ConvexError, v } from "convex/values";
 import { assertEmployeeReadScope, readableEmployeeIds, requireRole } from "./authz";
 import { recordAudit } from "./audit";
 import { resolveDisplayName } from "./emails";
-import { formatPercent } from "./lib/format";
+import { formatPercent, periodLabel } from "./lib/format";
 import { CALC_VERSION, scoreScorecard, type ScorecardItem } from "./lib/scoring";
 import { periodEvidence, recomputeMeasurement } from "./measurementsModel";
 import { duplicateEvidenceIndex } from "./evidence";
 import { BASELINE_PERFORMANCE_YEAR, type Frequency } from "./lib/types";
-import { cadencePeriodKey } from "./lib/periods";
+import { cadencePeriodKey, closingMonthKey } from "./lib/periods";
 import { describeActivityInputs, describeSelfReport } from "./lib/selfReport";
 
 /** Provisional measurements awaiting review, within the caller's scope. */
@@ -930,6 +930,16 @@ export const approveEmployeePeriod = mutation({
   handler: async (ctx, { employeeId, periodKey, reason }) => {
     const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
     await assertEmployeeReadScope(ctx, employeeId);
+
+    // Approvals are monthly. A quarter/year on its own would score every
+    // monthly KPI as "no data" and leave a misleading snapshot in the score
+    // history; its KPIs are frozen by the month that closes it instead.
+    const closingMonth = closingMonthKey(periodKey);
+    if (closingMonth) {
+      throw new ConvexError(
+        `${periodLabel(periodKey)} is not approved on its own — approve ${periodLabel(closingMonth)} instead; that approval includes the ${periodLabel(periodKey)} KPIs. If ${periodLabel(closingMonth)} is already approved, recall it and approve it again.`,
+      );
+    }
 
     const year = await ctx.db
       .query("performanceYears")

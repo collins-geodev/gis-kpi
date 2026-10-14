@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAGOS_OFFSET_MS,
+  closingMonthKey,
   generateYearPeriods,
   lagosDayKeyOf,
   lagosWeekKeyOf,
@@ -50,5 +51,15 @@ describe("deadlines", () => {
     expect(due("2026-Q3")).toBe(Date.UTC(2026, 9, 5, 22, 59, 59, 999));
     expect(due("2026-Q4")).toBe(Date.UTC(2027, 0, 5, 22, 59, 59, 999));
     expect(due("2026")).toBe(Date.UTC(2027, 0, 5, 22, 59, 59, 999));
+  });
+});
+
+describe("closingMonthKey", () => {
+  it("maps quarters and years to the month that closes them", () => {
+    expect(closingMonthKey("2026-Q1")).toBe("2026-M03");
+    expect(closingMonthKey("2026-Q3")).toBe("2026-M09");
+    expect(closingMonthKey("2026-Q4")).toBe("2026-M12");
+    expect(closingMonthKey("2026")).toBe("2026-M12");
+    expect(closingMonthKey("2026-M09")).toBeNull();
   });
 });

@@ -159,6 +159,20 @@ export function cadencePeriodKey(freq: Frequency, periodKey: string): string {
   return periodKey;
 }
 
+/**
+ * The month that closes a quarter/year bucket ("2026-Q3" → "2026-M09",
+ * "2026" → "2026-M12"); null for anything that is not a quarter or year key.
+ * Approvals are made per month — the closing month's approval is the one that
+ * freezes the whole bucket.
+ */
+export function closingMonthKey(periodKey: string): string | null {
+  const q = /^(\d{4})-Q([1-4])$/.exec(periodKey);
+  if (q) return monthKey(Number(q[1]), Number(q[2]) * 3 - 1);
+  const y = /^(\d{4})$/.exec(periodKey);
+  if (y) return monthKey(Number(y[1]), 11);
+  return null;
+}
+
 // --- Day/week grouping of activity timestamps (for incremental breakdowns) --
 
 /** Lagos calendar-day key ("2026-08-18") for an epoch instant. */

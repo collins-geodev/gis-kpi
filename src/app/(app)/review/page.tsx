@@ -27,6 +27,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { AppRole } from "@convex/lib/types";
+import { closingMonthKey } from "@convex/lib/periods";
 
 type QueueRow = {
   ready: boolean;
@@ -354,6 +355,8 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
           {groups.map((g) => {
             const allReady = g.items.every((i) => i.ready);
             const official = g.items.every((i) => i.isProvisional === false);
+            // Quarter/year KPIs are approved with the month that closes them.
+            const closingMonth = closingMonthKey(g.periodKey);
             const gk = `${g.employeeId}::${g.periodKey}`;
             const blockers =
               official || allReady ? [] : blockerReasons(g.items, g.periodKey);
@@ -420,6 +423,14 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                       >
                         <Undo2 className="h-4 w-4" /> Recall approval
                       </Button>
+                    ) : closingMonth ? (
+                      <span
+                        className="max-w-xs text-right text-xs text-muted-foreground"
+                        title="Quarterly and annual KPIs are frozen by the month approval that closes their period"
+                      >
+                        Approved with {periodLabel(closingMonth)} — approve that month
+                        {` (recall it first if it's already approved).`}
+                      </span>
                     ) : (
                       <Button
                         size="sm"
