@@ -8,7 +8,16 @@ import type { Id } from "@convex/_generated/dataModel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  Paperclip,
+  Trash2,
+  Upload,
+  XCircle,
+} from "lucide-react";
+import { EvidenceDownloadButton } from "@/components/evidence-download-button";
 import type { AppRole } from "@convex/lib/types";
 import { suggestEvidence } from "@/lib/evidence-suggestions";
 import { formatDate, formatDateTime, periodLabel } from "@convex/lib/format";
@@ -63,7 +72,17 @@ export function EvidencePanel({
   const reviewEvidence = useMutation(api.evidence.reviewEvidence);
   const removeEvidence = useMutation(api.evidence.removeEvidence);
   const setEvidencePeriod = useMutation(api.evidence.setEvidencePeriod);
+  const undoDecision = useMutation(api.evidence.undoEvidenceDecision);
   const [retagging, setRetagging] = useState<string | null>(null);
+  // Files the reviewer opened in this session — approving unread is warned.
+  const [opened, setOpened] = useState<Set<string>>(new Set());
+  // The last decision, kept on screen with an Undo until dismissed.
+  const [decided, setDecided] = useState<{
+    id: string;
+    title: string;
+    outcome: "approved" | "rejected";
+  } | null>(null);
+  const [deciding, setDeciding] = useState<string | null>(null);
 
   const roles = (me?.roles ?? []) as AppRole[];
   const canReview = roles.some((r) =>
@@ -115,6 +134,59 @@ export function EvidencePanel({
       setError(errorMessage(e, "Could not change the evidence period."));
     } finally {
       setRetagging(null);
+    }
+  }
+
+  async function decide(
+    e: { id: string; title: string; hasFile: boolean; externalUrl: string | null },
+    decision: "approve" | "reject",
+  ) {
+    let comment: string | undefined;
+    if (decision === "approve") {
+      const unread = (e.hasFile || e.externalUrl) && !opened.has(e.id);
+      const ok = window.confirm(
+        `Approve “${e.title.slice(0, 80)}”?${
+          unread
+            ? "\n\nYou haven't opened this evidence yet. Use View first if you need to check it."
+            : ""
+        }\n\nIt will count toward the KPI's evidence gate and the employee is notified.`,
+      );
+      if (!ok) return;
+    } else {
+      comment = window.prompt("Reason for rejecting?")?.trim() || undefined;
+      if (!comment) return;
+    }
+    setDeciding(e.id);
+    setError(null);
+    try {
+      await reviewEvidence({
+        evidenceId: e.id as Id<"evidenceFiles">,
+        decision,
+        ...(comment ? { comment } : {}),
+      });
+      setDecided({
+        id: e.id,
+        title: e.title,
+        outcome: decision === "approve" ? "approved" : "rejected",
+      });
+    } catch (err) {
+      setError(errorMessage(err, "Could not record the decision."));
+    } finally {
+      setDeciding(null);
+    }
+  }
+
+  async function undo() {
+    if (!decided) return;
+    setDeciding(decided.id);
+    setError(null);
+    try {
+      await undoDecision({ evidenceId: decided.id as Id<"evidenceFiles"> });
+      setDecided(null);
+    } catch (err) {
+      setError(errorMessage(err, "Could not undo."));
+    } finally {
+      setDeciding(null);
     }
   }
 
@@ -271,6 +343,37 @@ export function EvidencePanel({
           </p>
         </div>
 
+        {decided && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex flex-wrap items-center gap-2 rounded-md border border-success/50 bg-success/5 p-2 text-sm"
+          >
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+            <span className="flex-1">
+              “{decided.title.slice(0, 80)}” {decided.outcome} — the employee has been
+              notified.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={deciding === decided.id}
+              title="Put this item back under review — the employee is told to disregard the decision"
+              onClick={undo}
+            >
+              Undo
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Dismiss"
+              onClick={() => setDecided(null)}
+            >
+              <XCircle className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
         {/* List */}
         {evidence && evidence.length > 0 ? (
           <ul className="space-y-2">
@@ -347,6 +450,7 @@ export function EvidencePanel({
                         href={e.externalUrl}
                         target="_blank"
                         rel="noreferrer noopener"
+                        onClick={() => setOpened((s) => new Set(s).add(e.id))}
                         className="ml-2 inline-flex items-center gap-0.5 text-accent hover:underline"
                       >
                         open <ExternalLink className="h-3 w-3" />
@@ -355,30 +459,31 @@ export function EvidencePanel({
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
+                  {e.hasFile && e.scanStatus !== "flagged" && (
+                    <span className="mr-1">
+                      <EvidenceDownloadButton
+                        evidenceId={e.id}
+                        label="View"
+                        onOpened={() => setOpened((s) => new Set(s).add(e.id))}
+                      />
+                    </span>
+                  )}
                   {canReview && !["approved", "rejected"].includes(e.reviewStatus) && (
                     <>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() =>
-                          reviewEvidence({ evidenceId: e.id, decision: "approve" })
-                        }
+                        disabled={deciding === e.id}
+                        title="Approve — you'll be asked to confirm"
+                        onClick={() => decide(e, "approve")}
                       >
                         Approve
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => {
-                          const comment =
-                            window.prompt("Reason for rejecting?") ?? undefined;
-                          if (comment)
-                            reviewEvidence({
-                              evidenceId: e.id,
-                              decision: "reject",
-                              comment,
-                            });
-                        }}
+                        disabled={deciding === e.id}
+                        onClick={() => decide(e, "reject")}
                       >
                         Reject
                       </Button>

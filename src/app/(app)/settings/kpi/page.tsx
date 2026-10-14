@@ -32,7 +32,7 @@ import {
   TARGET_TYPES,
   type AppRole,
 } from "@convex/lib/types";
-import { formatDate } from "@convex/lib/format";
+import { formatDate, periodLabel } from "@convex/lib/format";
 import { CheckCircle2, Loader2, Lock, Save } from "lucide-react";
 
 export default function KpiSettingsPage() {
@@ -327,6 +327,7 @@ function KpiEditorCard({ a }: { a: Assignment }) {
   });
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [frozen, setFrozen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const set = (k: keyof typeof f, v: string | boolean) =>
@@ -338,7 +339,7 @@ function KpiEditorCard({ a }: { a: Assignment }) {
     setError(null);
     try {
       const targetNum = Number(f.target);
-      await update({
+      const res = await update({
         assignmentId: a.id as Id<"kpiAssignments">,
         objective: f.objective,
         metric: f.metric,
@@ -358,6 +359,7 @@ function KpiEditorCard({ a }: { a: Assignment }) {
         status: f.status as never,
         reason: "Edited in KPI Settings",
       });
+      setFrozen(res.frozenPeriods);
       setSaved(true);
     } catch (e) {
       setError(errorMessage(e, "Save failed."));
@@ -496,11 +498,18 @@ function KpiEditorCard({ a }: { a: Assignment }) {
           </Button>
           {saved && (
             <span className="flex items-center gap-1 text-sm text-success">
-              <CheckCircle2 className="h-4 w-4" /> Saved
+              <CheckCircle2 className="h-4 w-4" /> Saved — open periods rescored
             </span>
           )}
           {error && <span className="text-sm text-critical">{error}</span>}
         </div>
+        {saved && frozen.length > 0 && (
+          <p className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs text-warning">
+            Already approved and frozen, so they keep the score from the old settings:{" "}
+            {frozen.map((p) => periodLabel(p)).join(", ")}. To rescore one, recall its
+            approval in the Review queue (Approved view) and approve it again.
+          </p>
+        )}
       </CardContent>
     </Card>
   );

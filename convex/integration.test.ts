@@ -2477,8 +2477,110 @@ describe("returning already-approved entries", () => {
     expect(await status(ids[0]!)).toBe("approved");
     expect(await status(ids[1]!)).toBe("approved");
     expect((await measurement())?.isProvisional).toBe(false);
-    return { t, emp, admin, assignmentId, ids, status, measurement, snapshots };
+    return { t, emp, admin, assignmentId, empId, ids, status, measurement, snapshots };
   }
+
+  test("a quarter frozen by a month approval can be recalled and rescores", async () => {
+    const { t, admin, assignmentId, empId, status, ids, measurement, snapshots } =
+      await approvedTwoEntries();
+    // The quarter has no snapshot of its own — the August approval froze it.
+    const q3Snapshots = await t.run(async (ctx) =>
+      ctx.db
+        .query("scoreSnapshots")
+        .withIndex("by_scope_period", (q) =>
+          q.eq("scope", "individual").eq("scopeRef", empId).eq("periodKey", "2026-Q3"),
+        )
+        .take(10),
+    );
+    expect(q3Snapshots.length).toBe(0);
+
+    // The target is lowered while the quarter is frozen: the official row keeps
+    // the old target, and the caller is told which period stayed frozen.
+    const { as: kpiAdmin } = await makeUser(t, {
+      email: "ka@x.com",
+      roles: ["kpi_admin"],
+    });
+    const res = await kpiAdmin.mutation(api.kpiSettings.updateAssignment, {
+      assignmentId,
+      target: 1,
+    });
+    expect(res.frozenPeriods).toContain("2026-Q3");
+    const frozen = await measurement();
+    expect(frozen?.isProvisional).toBe(false);
+    expect(frozen?.target).not.toBe(1);
+
+    const annualBefore = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiMeasurements")
+        .filter((q) => q.eq(q.field("employeeId"), empId))
+        .collect();
+      return list.filter((m) => m.periodKey === "2026" && !m.isProvisional).length;
+    });
+
+    const recall = await admin.mutation(api.approvals.recallPeriodApproval, {
+      employeeId: empId,
+      periodKey: "2026-Q3",
+      reason: "Target corrected",
+    });
+    expect(recall.measurementsReopened).toBe(1);
+    expect(recall.alsoFrozenIn).toEqual(["2026-M08"]);
+
+    // Reopened, rescored against the new target, entries back under review.
+    const m = await measurement();
+    expect(m?.isProvisional).toBe(true);
+    expect(m?.target).toBe(1);
+    expect(m?.cappedAttainment).toBeGreaterThanOrEqual(1);
+    expect(await status(ids[0]!)).toBe("submitted");
+    // The month snapshot stays on record; annual KPIs are not dragged along.
+    expect((await snapshots()).length).toBe(1);
+    const annualAfter = await t.run(async (ctx) => {
+      const list = await ctx.db
+        .query("kpiMeasurements")
+        .filter((q) => q.eq(q.field("employeeId"), empId))
+        .collect();
+      return list.filter((m) => m.periodKey === "2026" && !m.isProvisional).length;
+    });
+    expect(annualAfter).toBe(annualBefore);
+
+    // Reopened → the score adjustment is usable again.
+    await kpiAdmin.mutation(api.overrides.apply, {
+      kpiAssignmentId: assignmentId,
+      periodKey: "2026-Q3",
+      overrideValue: 0.9,
+      reason: "Documented adjustment",
+    });
+    expect((await measurement())?.cappedAttainment).toBe(0.9);
+
+    // Nothing left to recall → a clear error, not a silent no-op.
+    await expect(
+      admin.mutation(api.approvals.recallPeriodApproval, {
+        employeeId: empId,
+        periodKey: "2026-Q3",
+      }),
+    ).rejects.toThrow(/nothing to recall/i);
+  });
+
+  test("changing a target rescores provisional measurements at once", async () => {
+    const { t, admin, assignmentId, empId, measurement } = await approvedTwoEntries();
+    await admin.mutation(api.approvals.recallPeriodApproval, {
+      employeeId: empId,
+      periodKey: "2026-M08",
+    });
+    expect((await measurement())?.isProvisional).toBe(true);
+    const { as: kpiAdmin } = await makeUser(t, {
+      email: "kb@x.com",
+      roles: ["kpi_admin"],
+    });
+    const res = await kpiAdmin.mutation(api.kpiSettings.updateAssignment, {
+      assignmentId,
+      target: 8,
+    });
+    expect(res.rescored).toBeGreaterThanOrEqual(1);
+    expect(res.frozenPeriods).toEqual([]);
+    const m = await measurement();
+    expect(m?.target).toBe(8);
+    expect(m?.cappedAttainment).toBe(0.25); // 2 sessions of 8
+  });
 
   test("entry-level recall returns one approved entry and leaves the others", async () => {
     const { t, emp, admin, ids, status, measurement, snapshots } =
@@ -3358,5 +3460,95 @@ describe("submitted-late is judged on submission time", () => {
       });
       expect(guess.proposals[0]!.confidence).toBe("guess");
     });
+  });
+});
+
+describe("evidence review safeguards", () => {
+  async function pendingEvidence(retentionState: "active" | "legal_hold" = "active") {
+    const t = harness();
+    await t.mutation(internal.seed.seedBaseline, {});
+    const { assignmentId, empId } = await t.run(async (ctx) => {
+      const a = (await ctx.db.query("kpiAssignments").take(200)).find(
+        (x) => x.canonicalKey === "mentorship_training",
+      )!;
+      return { assignmentId: a._id, empId: a.employeeId };
+    });
+    const { as: reviewer, userId } = await makeUser(t, {
+      email: "rv@x.com",
+      roles: ["system_admin"],
+    });
+    const add = (title: string, state: "active" | "legal_hold", uploadedAt: number) =>
+      t.run(async (ctx) =>
+        ctx.db.insert("evidenceFiles", {
+          employeeId: empId,
+          kpiAssignmentId: assignmentId,
+          periodKey: "2026-M08",
+          externalUrl: `https://example.com/${title}`,
+          originalFilename: title,
+          mimeType: "text/uri-list",
+          fileSize: 0,
+          category: "attendance",
+          title,
+          uploadedByUserId: userId,
+          uploadedAt,
+          version: 1,
+          confidentiality: "internal",
+          reviewStatus: "submitted",
+          retentionState: state,
+        }),
+      );
+    const open = await add("open-item", "active", Date.UTC(2026, 7, 20));
+    const held = await add("held-item", retentionState, Date.UTC(2026, 7, 21));
+    return { t, reviewer, assignmentId, open, held, add };
+  }
+
+  test("bulk approve skips held items and reports them", async () => {
+    const { t, reviewer, assignmentId, open, held } = await pendingEvidence("legal_hold");
+    const res = await reviewer.mutation(api.evidence.approveAllForAssignment, {
+      kpiAssignmentId: assignmentId,
+    });
+    expect(res).toEqual({ approved: 1, skipped: 1 });
+    const statusOf = (id: Id<"evidenceFiles">) =>
+      t.run(async (ctx) => (await ctx.db.get(id))!.reviewStatus);
+    expect(await statusOf(open)).toBe("approved");
+    expect(await statusOf(held)).toBe("submitted");
+  });
+
+  test("a single evidence approval can be undone", async () => {
+    const { t, reviewer, open } = await pendingEvidence();
+    await reviewer.mutation(api.evidence.reviewEvidence, {
+      evidenceId: open,
+      decision: "approve",
+    });
+    await reviewer.mutation(api.evidence.undoEvidenceDecision, { evidenceId: open });
+    expect(await t.run(async (ctx) => (await ctx.db.get(open))!.reviewStatus)).toBe(
+      "submitted",
+    );
+    await expect(
+      reviewer.mutation(api.evidence.undoEvidenceDecision, { evidenceId: open }),
+    ).rejects.toThrow(/nothing to undo/i);
+  });
+
+  test("the Evidence Centre lists the newest uploads past 500 rows", async () => {
+    const { t, reviewer, add } = await pendingEvidence();
+    // 520 older items, a few deleted, then the latest upload.
+    await t.run(async (ctx) => {
+      const base = (await ctx.db.query("evidenceFiles").first())!;
+      const { _id, _creationTime, ...doc } = base;
+      void _id;
+      void _creationTime;
+      for (let i = 0; i < 520; i++) {
+        await ctx.db.insert("evidenceFiles", {
+          ...doc,
+          title: `old-${i}`,
+          uploadedAt: Date.UTC(2026, 6, 1) + i,
+          retentionState: i < 20 ? "deleted" : "active",
+        });
+      }
+    });
+    await add("newest-upload", "active", Date.UTC(2026, 9, 14));
+    const rows = await reviewer.query(api.evidence.listCentre, {});
+    expect(rows[0]!.title).toBe("newest-upload");
+    expect(rows.length).toBe(2 + 500 + 1); // fixtures + live old items + newest
   });
 });

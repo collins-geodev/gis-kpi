@@ -58,6 +58,9 @@ function sanitizeFilename(name: string): string {
 }
 
 const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024; // 25 MB
+
+/** Upper bound on evidence rows one listing reads (well above team volume). */
+export const EVIDENCE_READ_LIMIT = 5000;
 const ALLOWED_MIME_PREFIXES = [
   "image/",
   "application/pdf",
@@ -322,9 +325,19 @@ export const saveEvidence = mutation({
 });
 
 /**
+ * Evidence a bulk action must never decide on the reviewer's behalf: items on
+ * legal hold or scheduled for deletion, and files the malware scanner flagged.
+ * They stay pending until someone opens and decides them one by one.
+ */
+function isHeld(e: { retentionState: string; scanStatus?: string }): boolean {
+  return e.retentionState !== "active" || e.scanStatus === "flagged";
+}
+
+/**
  * One-click reviewer action for the review queue: approve every pending
  * (submitted/verified) evidence item on a KPI, recompute its gates once, and
- * send the employee a single combined notification.
+ * send the employee a single combined notification. Held items are skipped
+ * (see isHeld) and counted in `skipped`.
  */
 export const approveAllForAssignment = mutation({
   args: {
@@ -335,7 +348,7 @@ export const approveAllForAssignment = mutation({
      */
     periodKey: v.optional(v.string()),
   },
-  returns: v.object({ approved: v.number() }),
+  returns: v.object({ approved: v.number(), skipped: v.number() }),
   handler: async (ctx, { kpiAssignmentId, periodKey: onlyPeriod }) => {
     const { user } = await requireRole(ctx, [
       "reviewer",
@@ -351,14 +364,16 @@ export const approveAllForAssignment = mutation({
       .query("evidenceFiles")
       .withIndex("by_assignment", (q) => q.eq("kpiAssignmentId", kpiAssignmentId))
       .take(500);
-    const pending = evidence.filter(
+    const candidates = evidence.filter(
       (e) =>
         e.retentionState !== "deleted" &&
         ["submitted", "verified"].includes(e.reviewStatus) &&
         (onlyPeriod === undefined ||
           evidenceSupportsPeriod(assignment.frequency as Frequency, e, onlyPeriod)),
     );
-    if (pending.length === 0) return { approved: 0 };
+    const pending = candidates.filter((e) => !isHeld(e));
+    const skipped = candidates.length - pending.length;
+    if (pending.length === 0) return { approved: 0, skipped };
 
     for (const e of pending) {
       await ctx.db.patch(e._id, { reviewStatus: "approved" });
@@ -381,6 +396,7 @@ export const approveAllForAssignment = mutation({
       actorUserId: user._id,
       after: {
         approved: pending.length,
+        skippedHeld: skipped,
         titles: pending.map((e) => e.title.slice(0, 80)),
       },
     });
@@ -418,7 +434,7 @@ export const approveAllForAssignment = mutation({
         notices,
       });
     }
-    return { approved: pending.length };
+    return { approved: pending.length, skipped };
   },
 });
 
@@ -532,6 +548,99 @@ export const reviewEvidence = mutation({
         entityType: "evidenceFile",
         entityId: evidenceId,
         auditAction: `evidence_decision_${reviewStatus}`,
+        notices,
+      });
+    }
+    return null;
+  },
+});
+
+/**
+ * Undo a single evidence decision made in error: an approved / verified /
+ * rejected item returns to `submitted` (back in the review queue), the KPI's
+ * evidence gates recompute — approved periods stay frozen — and the employee
+ * is told the earlier decision was withdrawn. Audited.
+ */
+export const undoEvidenceDecision = mutation({
+  args: { evidenceId: v.id("evidenceFiles") },
+  returns: v.null(),
+  handler: async (ctx, { evidenceId }) => {
+    const { user } = await requireRole(ctx, [
+      "reviewer",
+      "manager",
+      "kpi_admin",
+      "system_admin",
+    ]);
+    const evidence = await ctx.db.get(evidenceId);
+    if (!evidence || evidence.retentionState === "deleted") {
+      throw new ConvexError("Evidence not found — it may have been deleted.");
+    }
+    await assertEmployeeReadScope(ctx, evidence.employeeId);
+    if (!["approved", "verified", "rejected"].includes(evidence.reviewStatus)) {
+      throw new ConvexError("Nothing to undo — this evidence has no review decision.");
+    }
+
+    await ctx.db.patch(evidenceId, {
+      reviewStatus: "submitted",
+      reviewerComments: undefined,
+    });
+    if (evidence.kpiAssignmentId) {
+      const assignment = await ctx.db.get(evidence.kpiAssignmentId);
+      if (assignment) {
+        const measurements = await ctx.db
+          .query("kpiMeasurements")
+          .withIndex("by_assignment_period", (q) =>
+            q.eq("kpiAssignmentId", assignment._id),
+          )
+          .take(500);
+        const periods = new Set(measurements.map((m) => m.periodKey));
+        if (evidence.periodKey) periods.add(evidence.periodKey);
+        for (const periodKey of periods) {
+          await recomputeMeasurement(ctx, assignment, periodKey, { keepOfficial: true });
+        }
+      }
+    }
+    await recordAudit(ctx, {
+      entityType: "evidenceFile",
+      entityId: evidenceId,
+      action: "evidence_undo_decision",
+      actorUserId: user._id,
+      before: { reviewStatus: evidence.reviewStatus },
+      after: { reviewStatus: "submitted" },
+    });
+
+    const reviewerName = await resolveDisplayName(ctx, user);
+    const linked = await ctx.db
+      .query("users")
+      .withIndex("by_employee", (q) => q.eq("employeeId", evidence.employeeId))
+      .take(10);
+    const notices = [];
+    for (const target of linked) {
+      if (!target.email || target.isActive === false || target._id === user._id) continue;
+      notices.push({
+        userId: target._id,
+        email: target.email,
+        recipientName: await resolveDisplayName(ctx, target),
+        subject: `Please disregard the earlier decision — ${evidence.title.slice(0, 80)}`,
+        intro: `*${reviewerName}* withdrew the earlier “${evidence.reviewStatus}” decision on your evidence “${evidence.title.slice(0, 120)}”. It is back under review — no action is needed.`,
+        panelTitle: "Decision withdrawn",
+        rows: [
+          { label: "Evidence", value: evidence.title.slice(0, 200) },
+          { label: "Status now", value: "SUBMITTED — UNDER REVIEW", strong: true },
+        ],
+        ctaLabel: "Open in the dashboard",
+        ctaPath: evidence.kpiAssignmentId
+          ? `/kpi/${evidence.kpiAssignmentId}`
+          : "/evidence",
+        inAppTitle: `Evidence decision withdrawn — ${evidence.title.slice(0, 80)}`,
+        inAppBody: `${reviewerName} put it back under review; no action needed.`,
+      });
+    }
+    if (notices.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendNotices, {
+        entityType: "evidenceFile",
+        entityId: evidenceId,
+        auditAction: "evidence_decision_withdrawn",
         notices,
       });
     }
@@ -715,23 +824,25 @@ export const listCentre = query({
   args: {},
   handler: async (ctx) => {
     const readable = await readableEmployeeIds(ctx);
+    // Read NEWEST first and never cap the live list: a fixed oldest-first
+    // window silently hid every upload past it (and pinned the count at 400).
+    // Deleted tombstones are skipped before anything is counted.
     let rows;
     if (readable === "all") {
-      rows = await ctx.db.query("evidenceFiles").take(500);
+      rows = await ctx.db.query("evidenceFiles").order("desc").take(EVIDENCE_READ_LIMIT);
     } else {
       rows = [];
       for (const employeeId of readable) {
         const chunk = await ctx.db
           .query("evidenceFiles")
           .withIndex("by_employee_period", (q) => q.eq("employeeId", employeeId))
-          .take(200);
+          .take(EVIDENCE_READ_LIMIT);
         rows.push(...chunk);
       }
     }
     rows = rows
       .filter((e) => e.retentionState !== "deleted")
-      .sort((a, b) => b.uploadedAt - a.uploadedAt)
-      .slice(0, 400);
+      .sort((a, b) => b.uploadedAt - a.uploadedAt);
 
     const { user, roles } = await getAuthContext(ctx);
     // Admins are warned when the same file was uploaded by another employee.

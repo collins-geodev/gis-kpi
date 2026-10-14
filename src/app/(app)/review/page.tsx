@@ -137,16 +137,36 @@ ${approvedCount} already-approved ${approvedCount === 1 ? "entry is" : "entries 
     }
   }
 
-  async function doApproveEvidence(assignmentId: string, periodKey: string) {
+  async function doApproveEvidence(
+    assignmentId: string,
+    periodKey: string,
+    pendingCount: number,
+  ) {
+    if (
+      !window.confirm(
+        `Approve ${pendingCount === 1 ? "the pending evidence item" : `all ${pendingCount} pending evidence items`} for ${periodLabel(periodKey)} without opening ${pendingCount === 1 ? "it" : "them"}?
+
+Items on legal hold, scheduled for deletion or flagged by the malware scan are skipped. To check files first, open the KPI and use View.`,
+      )
+    ) {
+      return;
+    }
     setBusy(assignmentId);
     setError(null);
     try {
-      await approveEvidence({
+      const res = await approveEvidence({
         kpiAssignmentId: assignmentId as Id<"kpiAssignments">,
         periodKey,
       });
+      const held =
+        res.skipped > 0
+          ? ` ${res.skipped} held item${res.skipped === 1 ? " was" : "s were"} skipped — decide ${res.skipped === 1 ? "it" : "them"} individually on the KPI page.`
+          : "";
       setNotice({
-        text: `Evidence for ${periodLabel(periodKey)} approved — the employee has been notified.`,
+        text:
+          res.approved > 0
+            ? `${res.approved} evidence item${res.approved === 1 ? "" : "s"} for ${periodLabel(periodKey)} approved — the employee has been notified.${held}`
+            : `Nothing approved.${held}`,
       });
     } catch (e) {
       setError(errorMessage(e, "Evidence approval failed."));
@@ -379,13 +399,17 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                           setBusy(gk);
                           setError(null);
                           try {
-                            await recallApproval({
+                            const res = await recallApproval({
                               employeeId: g.employeeId as Id<"employees">,
                               periodKey: g.periodKey,
                               reason: reason.trim() || undefined,
                             });
+                            const frozenElsewhere =
+                              res.alsoFrozenIn.length > 0
+                                ? ` Note: the approved ${res.alsoFrozenIn.map((p) => periodLabel(p)).join(", ")} score still includes the earlier value — recall and re-approve ${res.alsoFrozenIn.length === 1 ? "that month" : "those months"} to update ${res.alsoFrozenIn.length === 1 ? "it" : "them"}.`
+                                : "";
                             setNotice({
-                              text: `Approval recalled — ${g.periodKey} is back under review and ${g.employeeName} has been notified.`,
+                              text: `Approval recalled — ${periodLabel(g.periodKey)} is back under review (rescored against the current KPI settings) and ${g.employeeName} has been notified.${frozenElsewhere}`,
                             });
                           } catch (e) {
                             setError(errorMessage(e, "Recall failed."));
@@ -458,7 +482,11 @@ Only this entry is returned — other entries are untouched. The KPI goes back i
                                   disabled={busy === i.assignmentId}
                                   title={`Approve the ${i.pendingEvidence} pending evidence item${i.pendingEvidence === 1 ? "" : "s"} for ${periodLabel(i.periodKey)} — the employee is notified`}
                                   onClick={() =>
-                                    doApproveEvidence(i.assignmentId, i.periodKey)
+                                    doApproveEvidence(
+                                      i.assignmentId,
+                                      i.periodKey,
+                                      i.pendingEvidence,
+                                    )
                                   }
                                 >
                                   <FileCheck2 className="h-4 w-4" /> Approve evidence

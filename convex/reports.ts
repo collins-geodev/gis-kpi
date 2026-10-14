@@ -13,6 +13,7 @@ import {
   requireUser,
 } from "./authz";
 import { recordAudit } from "./audit";
+import { EVIDENCE_READ_LIMIT } from "./evidence";
 import { scoreDueToDate, scoreScorecard, type ScorecardItem } from "./lib/scoring";
 import { ROLE_TEMPLATES } from "./lib/catalogue";
 import { BASELINE_PERFORMANCE_YEAR, FULL_WEIGHT_TOTAL, type JobRole } from "./lib/types";
@@ -173,8 +174,11 @@ export const dataset = query({
     }
 
     // Activity + evidence registers (bounded, scope-filtered).
-    const activityDocs = (await ctx.db.query("activities").take(1000))
+    // Newest first, so a busy month never pushes recent work out of the
+    // register.
+    const activityDocs = (await ctx.db.query("activities").order("desc").take(5000))
       .filter((a) => readableIds.has(a.employeeId))
+      .sort((a, b) => b.activityAt - a.activityAt)
       .slice(0, 400);
     const empName = new Map(employees.map((e) => [e._id, e.displayName]));
     const activities = activityDocs.map((a) => ({
@@ -186,9 +190,13 @@ export const dataset = query({
       status: a.status,
     }));
 
-    const evidenceDocs = (await ctx.db.query("evidenceFiles").take(1000))
-      .filter((e) => readableIds.has(e.employeeId))
-      .slice(0, 400);
+    // Same live set as the Evidence Centre: deleted items excluded, newest
+    // first, nothing silently dropped.
+    const evidenceDocs = (
+      await ctx.db.query("evidenceFiles").order("desc").take(EVIDENCE_READ_LIMIT)
+    )
+      .filter((e) => e.retentionState !== "deleted" && readableIds.has(e.employeeId))
+      .sort((a, b) => b.uploadedAt - a.uploadedAt);
     const evidence = evidenceDocs.map((e) => ({
       employeeName: empName.get(e.employeeId) ?? "",
       objective: e.kpiAssignmentId

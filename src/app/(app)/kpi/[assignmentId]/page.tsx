@@ -63,7 +63,10 @@ export default function KpiDetailPage() {
 
   // What the employee entered for one period, in the engine's own aggregation
   // — the human-readable claim behind each computed measurement row.
-  function selfReportFor(periodKey: string): { text: string; entries: number } {
+  function selfReportFor(
+    periodKey: string,
+    target: number,
+  ): { text: string; entries: number } {
     const inputs: ActivityInputLike[] = activities
       .filter((a) => a.periodKey === periodKey)
       .map((a) => ({
@@ -85,7 +88,7 @@ export default function KpiDetailPage() {
       text: describeSelfReport(
         assignment.measurementMode,
         assignment.direction,
-        assignment.target,
+        target,
         inputs,
       ),
       entries: inputs.length,
@@ -272,6 +275,7 @@ export default function KpiDetailPage() {
                   <TableHead>Period</TableHead>
                   <TableHead>Self-reported</TableHead>
                   <TableHead className="text-right">Actual</TableHead>
+                  <TableHead className="text-right">Target</TableHead>
                   <TableHead className="text-right">Attainment</TableHead>
                   <TableHead className="text-right">Contribution</TableHead>
                   <TableHead>Status</TableHead>
@@ -279,10 +283,37 @@ export default function KpiDetailPage() {
               </TableHeader>
               <TableBody>
                 {measurements.map((m) => {
-                  const sr = selfReportFor(m.periodKey);
+                  // Each row is described against the target it was SCORED
+                  // with — a frozen (approved) row keeps its old target.
+                  const sr = selfReportFor(m.periodKey, m.target);
+                  const staleTarget = !m.isProvisional && m.target !== assignment.target;
                   return (
                     <TableRow key={m.id}>
-                      <TableCell>{m.periodKey}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {m.periodKey}
+                          {!m.isProvisional && (
+                            <Badge
+                              variant="success"
+                              title="Approved — this score is frozen in the period's snapshot"
+                            >
+                              official · frozen
+                            </Badge>
+                          )}
+                        </div>
+                        {staleTarget && (
+                          <p className="mt-1 max-w-xs text-xs text-warning">
+                            Scored against the old target (
+                            {formatKpiTarget(
+                              m.target,
+                              assignment.targetType,
+                              assignment.measurementMode,
+                            )}
+                            ). The current target applies once the approval is recalled
+                            from the Review queue.
+                          </p>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {sr.text}{" "}
                         <span className="text-xs text-muted-foreground">
@@ -291,6 +322,15 @@ export default function KpiDetailPage() {
                       </TableCell>
                       <TableCell className="tabular text-right">
                         {m.rawActual === null ? "—" : formatNumber(m.rawActual, 2)}
+                      </TableCell>
+                      <TableCell
+                        className={`tabular text-right ${staleTarget ? "text-warning" : ""}`}
+                      >
+                        {formatKpiTarget(
+                          m.target,
+                          assignment.targetType,
+                          assignment.measurementMode,
+                        )}
                       </TableCell>
                       <TableCell className="tabular text-right">
                         {m.cappedAttainment === null

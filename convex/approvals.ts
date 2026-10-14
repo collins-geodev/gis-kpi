@@ -742,8 +742,14 @@ export const recallActivityApproval = mutation({
 /**
  * Recall a period approval made in error: the latest frozen snapshot is
  * removed, the period's measurements return to provisional (back into the
- * review queue), a "reopened" approvals record keeps the trail, and the
- * employee is notified.
+ * review queue) and are rescored against the KPI's current settings, a
+ * "reopened" approvals record keeps the trail, and the employee is notified.
+ *
+ * A quarter/year bucket (e.g. "2026-Q3") is usually frozen by a MONTH
+ * approval, so it has no snapshot of its own. Recalling it then reopens just
+ * that bucket's measurements; the month snapshot that froze it stays on
+ * record and is reported back (`alsoFrozenIn`) so the reviewer can recall and
+ * re-approve that month if its frozen score must change too.
  */
 export const recallPeriodApproval = mutation({
   args: {
@@ -751,7 +757,10 @@ export const recallPeriodApproval = mutation({
     periodKey: v.string(),
     reason: v.optional(v.string()),
   },
-  returns: v.object({ measurementsReopened: v.number() }),
+  returns: v.object({
+    measurementsReopened: v.number(),
+    alsoFrozenIn: v.array(v.string()),
+  }),
   handler: async (ctx, { employeeId, periodKey, reason }) => {
     const { user } = await requireRole(ctx, ["manager", "kpi_admin", "system_admin"]);
     await assertEmployeeReadScope(ctx, employeeId);
@@ -768,12 +777,7 @@ export const recallPeriodApproval = mutation({
       )
       .take(50);
     const latest = snapshots.sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (!latest) {
-      throw new ConvexError(
-        "No approved snapshot to recall for this employee and period.",
-      );
-    }
-    await ctx.db.delete(latest._id);
+    if (latest) await ctx.db.delete(latest._id);
 
     const assignments = await ctx.db
       .query("kpiAssignments")
@@ -782,8 +786,12 @@ export const recallPeriodApproval = mutation({
       )
       .collect();
     let measurementsReopened = 0;
+    const reopenedAssignments = new Set<string>();
     for (const assignment of assignments) {
       const lookupKey = cadencePeriodKey(assignment.frequency as Frequency, periodKey);
+      // Without a snapshot of its own, only the bucket's own rows reopen — an
+      // annual KPI is not dragged along by recalling a quarter.
+      if (!latest && lookupKey !== periodKey) continue;
       const m = await ctx.db
         .query("kpiMeasurements")
         .withIndex("by_assignment_period", (q) =>
@@ -806,7 +814,41 @@ export const recallPeriodApproval = mutation({
             await ctx.db.patch(a._id, { status: "submitted", updatedAt: Date.now() });
           }
         }
+        // Provisional again → live: rescore against the current target/caps
+        // (a target changed while the period was frozen takes effect now).
+        await recomputeMeasurement(ctx, assignment, lookupKey);
+        reopenedAssignments.add(assignment._id);
       }
+    }
+    if (!latest && measurementsReopened === 0) {
+      throw new ConvexError(
+        "Nothing to recall — this employee has no approved snapshot or official measurements for that period.",
+      );
+    }
+
+    // Other approved periods whose frozen snapshot still carries one of the
+    // reopened KPIs (e.g. the September approval that froze Q3).
+    const alsoFrozenIn: string[] = [];
+    if (!latest) {
+      const others = await ctx.db
+        .query("scoreSnapshots")
+        .withIndex("by_scope_period", (q) =>
+          q.eq("scope", "individual").eq("scopeRef", employeeId),
+        )
+        .take(500);
+      for (const s of others) {
+        const items = (s.payload?.items ?? []) as { assignmentId?: string }[];
+        const carries = items.some(
+          (it) => it.assignmentId && reopenedAssignments.has(it.assignmentId),
+        );
+        const insideBucket = (["Quarterly", "Annually"] as const).some(
+          (f) => cadencePeriodKey(f, s.periodKey) === periodKey,
+        );
+        if (carries && insideBucket && !alsoFrozenIn.includes(s.periodKey)) {
+          alsoFrozenIn.push(s.periodKey);
+        }
+      }
+      alsoFrozenIn.sort();
     }
 
     await ctx.db.insert("approvals", {
@@ -822,16 +864,18 @@ export const recallPeriodApproval = mutation({
 
     await recordAudit(ctx, {
       entityType: "scoreSnapshot",
-      entityId: latest._id,
+      entityId: latest?._id ?? `${employeeId}:${periodKey}`,
       action: "recall_period_approval",
       actorUserId: user._id,
       reason,
-      before: {
-        employeeId,
-        periodKey,
-        assignedWeightScore: latest.assignedWeightScore,
-        configuredWeight: latest.configuredWeight,
-      },
+      before: latest
+        ? {
+            employeeId,
+            periodKey,
+            assignedWeightScore: latest.assignedWeightScore,
+            configuredWeight: latest.configuredWeight,
+          }
+        : { employeeId, periodKey, snapshot: null, measurementsReopened },
     });
 
     const approverName = await resolveDisplayName(ctx, user);
@@ -867,7 +911,7 @@ export const recallPeriodApproval = mutation({
         notices,
       });
     }
-    return { measurementsReopened };
+    return { measurementsReopened, alsoFrozenIn };
   },
 });
 

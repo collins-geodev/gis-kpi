@@ -72,7 +72,7 @@ export const apply = mutation({
       .first();
     if (measurement && !measurement.isProvisional) {
       throw new ConvexError(
-        "This period is already approved and frozen — reopen it before overriding.",
+        "This period is already approved and frozen. Recall the approval first (Review queue → Approved (official) → Recall approval), then apply the adjustment and re-approve.",
       );
     }
 

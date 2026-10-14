@@ -9,6 +9,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { requireRole } from "./authz";
 import { recordAudit } from "./audit";
+import { recomputeMeasurement } from "./measurementsModel";
 import {
   vDirection,
   vFrequency,
@@ -115,6 +116,7 @@ export const updateYearSettings = mutation({
       },
       after: patch,
     });
+
     return null;
   },
 });
@@ -178,7 +180,12 @@ export const updateAssignment = mutation({
     status: v.optional(vKpiStatus),
     reason: v.optional(v.string()),
   },
-  returns: v.null(),
+  returns: v.object({
+    /** Provisional measurements rescored against the new settings. */
+    rescored: v.number(),
+    /** Approved (frozen) periods that keep their old score until recalled. */
+    frozenPeriods: v.array(v.string()),
+  }),
   handler: async (ctx, args) => {
     const { user } = await requireRole(ctx, [...KPI_ADMIN_ROLES]);
     const a = await ctx.db.get(args.assignmentId);
@@ -244,6 +251,42 @@ export const updateAssignment = mutation({
       },
       after: patch,
     });
-    return null;
+
+    // A change to how the KPI is scored applies straight away to every
+    // provisional measurement. Approved periods stay frozen (their snapshot is
+    // the official record) — the caller is told which, so they can be recalled.
+    const SCORING_FIELDS = [
+      "weight",
+      "target",
+      "targetType",
+      "direction",
+      "measurementMode",
+      "scoreCap",
+      "stretchCap",
+      "evidenceRequired",
+      "pinnedBaseline",
+    ] as const;
+    const scoringChanged = SCORING_FIELDS.some((k) => k in patch && patch[k] !== a[k]);
+    let rescored = 0;
+    const frozenPeriods: string[] = [];
+    if (scoringChanged) {
+      const updated = (await ctx.db.get(args.assignmentId))!;
+      const measurements = await ctx.db
+        .query("kpiMeasurements")
+        .withIndex("by_assignment_period", (q) =>
+          q.eq("kpiAssignmentId", args.assignmentId),
+        )
+        .take(500);
+      for (const m of measurements) {
+        if (!m.isProvisional) {
+          frozenPeriods.push(m.periodKey);
+          continue;
+        }
+        await recomputeMeasurement(ctx, updated, m.periodKey);
+        rescored++;
+      }
+      frozenPeriods.sort();
+    }
+    return { rescored, frozenPeriods };
   },
 });

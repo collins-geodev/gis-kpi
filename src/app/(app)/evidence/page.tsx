@@ -3,11 +3,11 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import { useAuthToken } from "@convex-dev/auth/react";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { PageHeader } from "@/components/page-header";
 import { EvidencePanel } from "@/components/evidence-panel";
+import { EvidenceDownloadButton as DownloadButton } from "@/components/evidence-download-button";
 import {
   Card,
   CardContent,
@@ -30,10 +30,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
-  Download,
   ExternalLink,
   FolderCheck,
-  Loader2,
   Paperclip,
   Trash2,
   XCircle,
@@ -63,81 +61,6 @@ function formatSize(bytes: number): string {
 function uploadMonthKey(ts: number): string {
   const d = new Date(ts + 60 * 60 * 1000); // Africa/Lagos = UTC+1
   return `${d.getUTCFullYear()}-M${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-/** Convex site URL (HTTP actions) derived from the deployment URL. */
-const CONVEX_SITE_URL =
-  process.env.NEXT_PUBLIC_CONVEX_SITE_URL ??
-  (process.env.NEXT_PUBLIC_CONVEX_URL ?? "").replace(".convex.cloud", ".convex.site");
-
-/** Opens an evidence file through the authenticated, audited streaming route. */
-function DownloadButton({ evidenceId }: { evidenceId: Id<"evidenceFiles"> }) {
-  const token = useAuthToken();
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-
-  async function open() {
-    if (!token || !CONVEX_SITE_URL) {
-      setFailure("Not signed in yet — wait a moment and try again.");
-      return;
-    }
-    setBusy(true);
-    setFailure(null);
-    try {
-      const res = await fetch(`${CONVEX_SITE_URL}/evidence?id=${evidenceId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        throw new Error(
-          `${res.status === 403 ? "No access" : "Download failed"} (HTTP ${res.status})`,
-        );
-      }
-      const filename =
-        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ??
-        "evidence";
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      // Popup blockers often kill window.open after an await — fall back to a
-      // same-page download link, which keeps the real filename too.
-      const tab = window.open(url, "_blank", "noopener");
-      if (!tab) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      setFailure(
-        err instanceof TypeError
-          ? "Network/CORS error — check your connection and retry."
-          : errorMessage(err, "Download failed."),
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={open}
-      disabled={busy}
-      title={failure ? `${failure} Click to try again.` : "Open file (audited)"}
-      className={`inline-flex items-center gap-1 text-xs hover:underline ${
-        failure ? "text-critical" : "text-accent"
-      }`}
-    >
-      {busy ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <Download className="h-3.5 w-3.5" />
-      )}
-      {failure ? "retry" : "open"}
-    </button>
-  );
 }
 
 export default function EvidenceCentrePage() {
